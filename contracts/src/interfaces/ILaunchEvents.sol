@@ -24,18 +24,22 @@ interface ILaunchEvents {
         uint16 protocolShareBps
     );
 
-    /// @param ethGross Gross ETH consumed by the trade, excluding successful excess refund.
+    /// @param ethGross Gross ETH consumed by the trade, excluding any final-fill excess.
+    /// @param ethRefund Excess ETH not consumed by a buy; zero for sells and buys without excess.
     /// @param tokenAmount Tokens received on a buy or supplied on a sell.
     /// @param newEthReserve Post-trade virtual ETH reserve `x`.
     /// @param newTokenReserve Post-trade virtual token reserve `y`.
     /// @dev Consumers can read real curve ETH from `IBondingCurveV1.realCurveEth()`. Spot
-    /// price derives from `newEthReserve / newTokenReserve`. RefundCredited is emitted only
-    /// when an immediate refund transfer fails and creates a pull-payment balance.
+    /// price derives from `newEthReserve / newTokenReserve`. For every buy, ETH supplied to
+    /// the curve equals `ethGross + ethRefund`. A failed immediate refund still records
+    /// `ethRefund`; RefundCredited additionally records the pull-payment balance. Sells set
+    /// `ethRefund` to zero, including when failed proceeds create a refund credit.
     event Trade(
         address indexed token,
         address indexed trader,
         bool isBuy,
         uint256 ethGross,
+        uint256 ethRefund,
         uint256 tokenAmount,
         uint256 protocolFee,
         uint256 creatorFee,
