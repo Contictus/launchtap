@@ -13,5 +13,4 @@ interface IUniswapV2Pair {
         view
         returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
     function mint(address to) external returns (uint256 liquidity);
-    function sync() external;
 }

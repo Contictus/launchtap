@@ -1,8 +1,7 @@
 # Contracts
 
-Foundry project for the launchpad contracts. V1 public interfaces, errors, events, and
-storage declarations are frozen by the Task 2 golden artifacts; executable market logic
-starts in later tasks.
+Foundry project for the launchpad contracts. V1 public interfaces, errors, events, storage
+layouts, and the fixed-supply launch token are covered by local and CI drift gates.
 
 ## Pinned toolchain
 
@@ -46,3 +45,6 @@ from `contracts/` with:
 ```
 
 `abi/v1/ILaunchEvents.json` is the authoritative V1 event artifact consumed by the backend.
+`storage-layout/v1/LaunchToken.json` captures the composed ERC-20 implementation layout.
+`LaunchFactoryStorageBase.json` is explicitly pre-composition until the factory implementation
+lands.

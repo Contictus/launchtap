@@ -127,21 +127,39 @@ try {
         Fail "deny must remain warnings"
     }
 
+    $curveStoragePath = Join-Path $contractsRoot "src/storage/BondingCurveV1Storage.sol"
+    $curveStorageSource = [System.IO.File]::ReadAllText($curveStoragePath)
+    if ($curveStorageSource -match "ReentrancyGuardTransient") {
+        Fail "BondingCurveV1Storage must not use transient reentrancy storage"
+    }
+    if ($curveStorageSource -notmatch "is\s+ReentrancyGuard") {
+        Fail "BondingCurveV1Storage must retain the storage-based ReentrancyGuard"
+    }
+
     $eventAbi = ConvertTo-StableJson (Invoke-ForgeJson @(
         "inspect", "ILaunchEvents", "abi", "--json"
     ))
     Compare-OrWrite (Join-Path $contractsRoot "abi/v1/ILaunchEvents.json") $eventAbi
 
     $storageContracts = @(
-        "BondingCurveV1Storage",
-        "LaunchFactoryStorage",
-        "LaunchTokenStorage"
+        [PSCustomObject]@{
+            Contract = "BondingCurveV1Storage"
+            Golden = "BondingCurveV1Storage"
+        },
+        [PSCustomObject]@{
+            Contract = "LaunchFactoryStorage"
+            Golden = "LaunchFactoryStorageBase"
+        },
+        [PSCustomObject]@{
+            Contract = "LaunchToken"
+            Golden = "LaunchToken"
+        }
     )
-    foreach ($contract in $storageContracts) {
-        $layout = Invoke-ForgeJson @("inspect", $contract, "storage-layout", "--json")
+    foreach ($entry in $storageContracts) {
+        $layout = Invoke-ForgeJson @("inspect", $entry.Contract, "storage-layout", "--json")
         $normalized = Normalize-StorageLayout $layout
         $json = ConvertTo-StableJson $normalized
-        $path = Join-Path $contractsRoot "storage-layout/v1/$contract.json"
+        $path = Join-Path $contractsRoot "storage-layout/v1/$($entry.Golden).json"
         Compare-OrWrite $path $json
     }
 

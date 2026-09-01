@@ -28,9 +28,9 @@ interface ILaunchEvents {
     /// @param tokenAmount Tokens received on a buy or supplied on a sell.
     /// @param newEthReserve Post-trade virtual ETH reserve `x`.
     /// @param newTokenReserve Post-trade virtual token reserve `y`.
-    /// @dev Real curve ETH is `newEthReserve - initialVirtualEth`. Spot price derives from
-    /// `newEthReserve / newTokenReserve`. RefundCredited is emitted only when an immediate
-    /// refund transfer fails and creates a pull-payment balance.
+    /// @dev Consumers can read real curve ETH from `IBondingCurveV1.realCurveEth()`. Spot
+    /// price derives from `newEthReserve / newTokenReserve`. RefundCredited is emitted only
+    /// when an immediate refund transfer fails and creates a pull-payment balance.
     event Trade(
         address indexed token,
         address indexed trader,
