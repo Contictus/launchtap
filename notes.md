@@ -287,10 +287,16 @@ pons Dune kullanıyor; biz kendimiz yapacağız. Seçenekler:
 - Graduation LP: burn mü locker mı? Locker ise süre?
 - Forum auth + moderasyon detayı (alt-proje C'de netleşecek).
 
-## Spec dokümanları
+## Spec & plan dokümanları
 
 - `docs/specs/2026-09-01-backend-core-design.md` — Backend Core tasarımı
-  (indexer + read API + curve math). Durum: **inceleme bekliyor** (2026-09-01).
+  (indexer + read API + curve math). Durum: onaylandı (2026-09-01).
+- Backend, 3 ardışık plana bölündü (hepsi bu spec'i uygular):
+  1. `docs/plans/2026-09-01-backend-foundations.md` — scaffold + config/registry +
+     `curve/` math (differential test) + `store/` (şema + migration + sqlc + UoW).
+     **12 task, yazıldı, execution bekliyor.**
+  2. Indexer (chain infra + sync loop + feature ingestion + aggregation) — yazılacak.
+  3. API (apiserver + Privy auth + read endpoint'leri + SSE) — yazılacak.
 
 ## Alt-proje A — ekonomi & kontrat parametreleri (ÇALIŞMA HALİNDE)
 
