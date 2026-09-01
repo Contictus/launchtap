@@ -141,7 +141,7 @@ integration-test execution sentinel.
 - Tables exist for token launches, trades, graduations, creator/protocol/launch fee claims,
   refund credits/claims, transfers, and pair Mint/Burn/Swap/Sync.
 - Payload columns map one-to-one to the contract spec; `engine_version`, name, symbol, pair,
-  and LP liquidity burned are not omitted.
+  LP liquidity burned, and the `Trade` `eth_gross`/`eth_refund` pair are not omitted.
 - Every event table stores chain id, block number/hash/time, transaction index/hash, and log
   index, with unique `(chain_id, tx_hash, log_index)`.
 - `NUMERIC(78,0)` plus nonnegative checks cover uint256 values without signed overflow.
@@ -165,6 +165,8 @@ and `market_trades`.
   immediately before its `Swap` in the same transaction sequence.
 - `market_trades` exposes execution and spot price separately, deterministic chain cursor
   fields, nullable DEX trader, gross ETH/WETH volume, token volume, source, and finality.
+- Curve `gross_eth_volume` in `market_trades` is `trades.eth_gross`; `eth_refund` is stored
+  but never included in volume, candles, or 24h aggregates.
 - DEX token/WETH leg resolution works for both token orderings.
 - `candles`, `token_stats`, `protocol_daily`, and `protocol_stats` use ETH fields as required
   and USD fields as nullable.
@@ -213,7 +215,8 @@ and `market_trades`.
 **Acceptance criteria:**
 
 - The artifact records engine version, parameter snapshot, initial state, operation input,
-  exact output, next state, fees, refund, graduation flag, and expected revert where relevant.
+  exact output, next state, fees, the `ethGross`/`ethRefund` split whose sum equals the buy
+  input, graduation flag, and expected revert where relevant.
 - Cases include normal/final buy, one-wei boundaries, refund, normal/max sell, invalid
   oversell, fee split dust, and zero-output reverts.
 - The generator command is deterministic and CI proves regeneration has no diff.

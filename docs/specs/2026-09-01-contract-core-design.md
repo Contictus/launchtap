@@ -40,8 +40,12 @@ Responsibilities:
 - Exposes separate emergency pause flags for new launches and curve trading.
 
 Launch event ordering is fixed: token construction and its initial `Transfer(0, curve, S)`
-may occur first; after token/pair/curve initialization the factory emits `TokenLaunched`;
-only then may it execute the optional developer buy. Thus every `Trade` and `Graduated`
+may occur first; the factory then wires the canonical pair into the token
+(`initializePair`) and initializes the curve; only after all three are initialized does it
+emit `TokenLaunched`; only then may it execute the optional developer buy. Canonical pair
+initialization on the token therefore completes before `TokenLaunched`, before any developer
+buy, and before control returns to an external caller, so no token holder other than the
+curve can exist while the pair address is still unset. Thus every `Trade` and `Graduated`
 event has a preceding `TokenLaunched` in the same transaction, while the standard initial
 mint `Transfer` may precede it.
 
@@ -153,6 +157,9 @@ tokensOut   = y - newY
 Rounding therefore never sends more tokens than the invariant permits. A buy rejects zero
 output and enforces the caller's `minTokensOut` and `deadline`.
 
+A buy that does not cross the graduation boundary consumes the entire supplied value:
+`ethGross` equals `ethGrossUsed` and the reported `ethRefund` is `0`.
+
 ### 4.2 Final buy and refund
 
 A buy is not allowed to move below `yFinal = y0 - T_r`. If the submitted value would cross
@@ -167,8 +174,18 @@ the boundary, the contract:
 
    For `dxNeeded > 0` and `feeBps < 10_000`, this guarantees
    `ethGrossUsed - floor(ethGrossUsed * feeBps / 10_000) = dxNeeded`.
-3. Uses only that gross amount, refunds the remainder to the caller, sets `y = yFinal`,
-   and graduates in the same transaction.
+3. Uses only that gross amount, sets `ethGross = ethGrossUsed` and
+   `ethRefund = suppliedValue - ethGrossUsed`, sets `y = yFinal`, and graduates in the same
+   transaction.
+4. Returns `ethRefund` to the caller. When that immediate transfer succeeds, the excess is
+   recorded only by `Trade.ethRefund`. When it fails, `Trade.ethRefund` still carries the
+   same value and the amount is additionally recorded as a pull-based pending refund with a
+   `RefundCredited` event.
+
+For every buy, `ethGross + ethRefund` equals the ETH supplied to the curve for that trade —
+`msg.value` on a direct buy, and the curve-call value on a developer buy or an
+aggregator/smart-account buy. Executed market volume is `ethGross` only; `ethRefund` is
+never counted as volume.
 
 The gross-for-exact-net helper uses checked/full-precision multiplication and is tested over
 the full supported fee range; it must never silently overfill or change `G`.
@@ -189,6 +206,10 @@ The contract rejects `tokensIn = 0` and `tokensIn > tokensSold`; virtual invento
 never be redeemed for real ETH. It pulls the tokens, updates state and fee accruals, then
 sends ETH. The caller's `minEthOut` and `deadline` are enforced on-chain.
 
+A sell has no excess input, so its `Trade` event always reports `ethRefund = 0`, including
+when delivery of `ethOut` fails and becomes a pull-based pending refund with a
+`RefundCredited` event.
+
 ### 4.4 Accounting invariant
 
 At every successful external-call boundary during the curve phase:
@@ -203,6 +224,8 @@ address(this).balance
 
 The preferred path returns refunds immediately. If an ETH transfer fails, the amount is
 recorded as a pull-based pending refund; this applies to final-buy excess and sell proceeds.
+`Trade.ethRefund` records final-buy excess on both the immediate and the failed path (§4.2,
+§7).
 A failed recipient cannot block market state. Forced ETH above accounted balances is ignored
 by curve/fee/graduation math and remains permanently inaccessible because there is no rescue
 function.
@@ -281,6 +304,7 @@ event Trade(
     address indexed trader,
     bool isBuy,
     uint256 ethGross,
+    uint256 ethRefund,
     uint256 tokenAmount,
     uint256 protocolFee,
     uint256 creatorFee,
@@ -312,6 +336,18 @@ event FutureDefaultsConfigured(bytes32 indexed configHash);
 event FutureTreasuryConfigured(address indexed previousTreasury, address indexed newTreasury);
 ```
 
+`Trade.ethGross` is the ETH actually consumed by the trade; `Trade.ethRefund` is the excess
+returned to the buyer, placed directly after `ethGross`. By path:
+
+- Normal buy, no graduation boundary crossed: `ethRefund = 0`.
+- Final buy, immediate refund succeeds: `ethRefund` is the excess above `ethGrossUsed`.
+- Final buy, immediate refund fails: the same `ethRefund`, plus a `RefundCredited` event for
+  the pull-payment balance.
+- Any sell: `ethRefund = 0`, including when `ethOut` delivery fails and is credited.
+
+For every buy, the ETH supplied to the curve for that trade equals `ethGross + ethRefund`.
+Executed/gross market volume is `ethGross` only; `ethRefund` is never added to volume.
+
 Events contain no timestamp; block headers are authoritative. Standard ERC-20 `Transfer`
 and Uniswap v2 `Mint`, `Burn`, `Swap`, and `Sync` events are also indexed. Event consumers
 select the ABI by `(factory deployment, engineVersion)`. Governance events are required for
@@ -327,8 +363,11 @@ auditability but are not part of V1 market aggregation.
   rescue, arbitrary-call, token-sweep, reserve-withdrawal, or admin-graduation function.
 - Graduation is reached only through curve state. The administrator cannot force a launch
   to graduate or redirect its liquidity.
-- Ownership must be transferred from the deployer to the configured multisig/timelock
-  before a production factory is announced.
+- The factory takes its final `pauseAuthority` (multisig) and `timelock` addresses as
+  constructor arguments and stores them at construction. The deployer holds no pause,
+  timelock, upgrade, or ownership power at any point, and there is no post-deployment
+  authority-handover step. A production deployment is valid only if these addresses are the
+  reviewed multisig and timelock and the constructor rejects zero addresses.
 
 ## 9. Required verification before deployment
 

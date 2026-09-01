@@ -115,6 +115,15 @@ and slippage enforcement.
 - Sell rejects any input above `tokensSold`; a full valid sell returns state to `x0/y0`
   subject to the documented ceil rules and never pays virtual ETH.
 - Protocol and creator fees reconcile exactly to total fee and never enter `x`.
+- The `Trade` event carries `ethRefund` directly after `ethGross`. `ethGross + ethRefund`
+  equals the ETH supplied to the curve for every buy; sells always report `ethRefund = 0`.
+  `ethGross` is the only value that feeds executed/gross market volume.
+- Event-path tests cover: a normal buy (`ethRefund = 0`); a final-fill buy whose immediate
+  refund succeeds (`ethRefund` = excess, no `RefundCredited`); a final-fill buy whose refund
+  recipient reverts (same `ethRefund` on `Trade` plus a `RefundCredited` pull balance); a
+  developer buy routed by the factory with the creator as refund recipient; and a buy whose
+  caller is a contract/aggregator so the supplied value is the curve-call value rather than
+  `tx.value`.
 - Claims are pull-based, CEI-compliant, reentrancy-protected, and available while paused and
   after graduation.
 - Reverting ETH recipients receive pending refund credit for sell proceeds/final-buy excess;
@@ -154,8 +163,11 @@ engines/defaults, multisig pause hooks, and timelock-controlled configuration.
 
 **Acceptance criteria:**
 
-- Launch sequence matches the spec and emits TokenLaunched before optional Trade/Graduated;
-  the initial mint Transfer may precede TokenLaunched.
+- Launch sequence matches the spec: canonical pair initialization on the token completes
+  before `TokenLaunched`, before the optional developer buy, and before control returns to
+  an external caller; `TokenLaunched` is emitted before any `Trade`/`Graduated`; the initial
+  mint `Transfer` may precede `TokenLaunched`. A test proves no non-curve holder can exist
+  while the token's pair address is still unset.
 - Launch fee and developer-buy value are separated exactly; refund/trader/recipient for the
   launch buy is the creator, not factory.
 - Developer buy reverts if output exceeds 1% of total supply.
@@ -163,7 +175,9 @@ engines/defaults, multisig pause hooks, and timelock-controlled configuration.
   factory defaults/engine registry change.
 - Immediate multisig pause blocks the specified launch/trade paths only; claims remain open.
 - Timelock controls only future defaults, engine enablement, and future treasury selection.
-- No deployer retains production authority after ownership-transfer verification.
+- The factory constructor takes the final multisig `pauseAuthority` and `timelock`
+  addresses, stores them, and rejects zero addresses; the deployer holds no pause, timelock,
+  upgrade, or ownership power at any point and there is no authority-handover step.
 - Every governance change emits an explicit event.
 
 ## Task 8 — Authoritative Solidity vectors · Risk: high
@@ -213,7 +227,8 @@ generation.
 - Anvil deploys an isolated test WETH/Uniswap v2 stack.
 - Robinhood testnet refuses mainnet addresses and remains disabled until its own dependencies
   are deployed/verified.
-- Production dry-run proves deployer-to-multisig/timelock authority transfer.
+- Production dry-run proves the factory is constructed with the final multisig/timelock
+  authority addresses and the deployer holds no residual authority.
 - Secrets/private keys never enter manifests, command output committed to Git, or test logs.
 
 ## Task 11 — Robinhood mainnet fork compatibility · Risk: high

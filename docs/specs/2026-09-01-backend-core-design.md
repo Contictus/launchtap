@@ -198,6 +198,11 @@ Uniqueness is `(chain_id, tx_hash, log_index)`. Reprocessing is idempotent. Logs
 using the ABI selected by factory deployment and `engine_version`; an unknown version is a
 fatal indexing error, not a best-effort decode.
 
+The V1 `Trade` decoder reads `ethGross` and `ethRefund` as adjacent fields (refund directly
+after gross) and persists both. `ethGross + ethRefund` is the ETH supplied to the curve for
+a buy and must reconcile from logs alone without transaction traces; `ethRefund` is `0` for
+every sell. Executed-volume and candle inputs use `ethGross` only and never add `ethRefund`.
+
 ## 5. Data model
 
 ### 5.1 Control and canonical event ledger
@@ -207,7 +212,7 @@ fatal indexing error, not a best-effort decode.
 | `sync_state` | one row per chain/deployment; observed, safe, finalized watermarks and hashes |
 | `indexed_blocks` | hash-linked processed block history and finality status |
 | `token_launches` | exact `TokenLaunched` payload, including engine version and pair |
-| `trades` | exact curve `Trade` payload |
+| `trades` | exact curve `Trade` payload, including `eth_gross` and the adjacent `eth_refund` |
 | `graduations` | exact `Graduated` payload |
 | `creator_fee_claims` | exact creator claim events |
 | `protocol_fee_claims` | curve protocol-fee claim events |
@@ -239,7 +244,8 @@ Do not overload one `price_wad` with different meanings:
   history use this value.
 - `spot_price_wad`: post-trade curve `x/y`, or post-update pair WETH/token reserves from
   `Sync`.
-- `gross_eth_volume`: user gross ETH for a curve trade; WETH leg for a DEX swap.
+- `gross_eth_volume`: executed gross ETH for a curve trade — the `Trade.ethGross` value,
+  which already excludes `Trade.ethRefund`; WETH leg for a DEX swap.
 - `token_volume`: absolute token leg.
 
 For DEX rows, `sender` and `to` are routing participants, not proven end-user identities;
@@ -400,6 +406,8 @@ phase counts. Structured logs include chain, deployment, block/hash, tx hash, an
 - A pair `Sync`, not a swap amount, is the authority for reserves and spot price.
 - The backend never supplies the final executable quote without an on-chain `eth_call` and
   transaction-level slippage/deadline protection.
+- Curve buy input reconciles from logs alone: `Trade.ethGross + Trade.ethRefund` is the ETH
+  supplied to the curve, and `ethRefund` is never part of executed volume.
 
 ## 15. Primary references checked for design closure
 
