@@ -51,7 +51,7 @@ if ($LASTEXITCODE -ne 0) {
     Fail "forge --version exited with $LASTEXITCODE"
 }
 $expectedVersion = $pins["FOUNDRY_VERSION"].TrimStart("v")
-if ($forgeVersion -notmatch "Version:\s+$([regex]::Escape($expectedVersion))(\s|$)") {
+if ($forgeVersion -notmatch "Version:\s+$([regex]::Escape($expectedVersion))(?:[-+][^\s]+)?(\s|$)") {
     Fail "expected Foundry $($pins['FOUNDRY_VERSION'])"
 }
 if ($forgeVersion -notmatch "Commit SHA:\s+$([regex]::Escape($pins['FOUNDRY_COMMIT']))(\s|$)") {
@@ -97,7 +97,7 @@ foreach ($dependency in $dependencies) {
     }
 }
 
-$foundryLock = Get-Content -Raw -LiteralPath $foundryLockPath | ConvertFrom-Json -AsHashtable
+$foundryLock = Get-Content -Raw -LiteralPath $foundryLockPath | ConvertFrom-Json
 $foundryDependencies = @(
     @{
         Path = "lib/openzeppelin-contracts"
@@ -111,11 +111,12 @@ $foundryDependencies = @(
     }
 )
 foreach ($dependency in $foundryDependencies) {
-    if (-not $foundryLock.ContainsKey($dependency.Path)) {
+    $entryProperty = $foundryLock.PSObject.Properties[$dependency.Path]
+    if ($null -eq $entryProperty) {
         Fail "foundry.lock is missing $($dependency.Path)"
     }
 
-    $entry = $foundryLock[$dependency.Path]
+    $entry = $entryProperty.Value
     if ($entry.tag.name -ne $dependency.Version -or $entry.tag.rev -ne $dependency.Commit) {
         Fail "foundry.lock drift for $($dependency.Path)"
     }

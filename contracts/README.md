@@ -17,7 +17,7 @@ submodules from the repository root:
 git submodule update --init --recursive
 ```
 
-Run the complete local gate from PowerShell:
+Run the complete local gate from Windows PowerShell 5.1 or PowerShell 7:
 
 ```powershell
 ./contracts/scripts/check.ps1 all

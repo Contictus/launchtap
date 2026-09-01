@@ -39,22 +39,6 @@ jobs:
           version: v1.8.1
           cache: true
 
-      - name: Verify dependency pins
+      - name: Run contract gate
         shell: pwsh
-        run: ./contracts/scripts/check-dependencies.ps1
-
-      - name: Check formatting
-        working-directory: contracts
-        run: forge fmt --check
-
-      - name: Build and report bytecode sizes
-        working-directory: contracts
-        run: forge build --sizes
-
-      - name: Run tests
-        working-directory: contracts
-        run: forge test
-
-      - name: Run static analysis
-        working-directory: contracts
-        run: forge lint --severity high med low info -D warnings
+        run: ./contracts/scripts/check.ps1 all
