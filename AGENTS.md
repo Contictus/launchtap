@@ -55,6 +55,71 @@
   the user warns you, or signs such as the context starting to be summarized.
   If the user states a percentage, act on it.
 
+## Multi-agent workflow
+
+Two AI agents may work this repo, in different roles, not simultaneously. This is a
+default rhythm, not a rigid gate — scale it to the task.
+
+- **Codex — builder.** Owns the whole implementation lifecycle for a task: the
+  implementation plan, the code, migrations/tests/config, running test/lint/build, and
+  the commits. Codex owns the repository history for implementation.
+- **Claude — independent reviewer / architect / auditor.** Does not take over
+  implementation and does not touch implementation history. Value is being a second,
+  independent model that catches different bug classes — architecture, security, data
+  consistency, concurrency, contract economics, indexer/reorg behaviour, transaction
+  lifecycle, test gaps. Claude commits only its own artefacts: `docs/specs/`,
+  `docs/plans/`, `notes.md`, `AGENTS.md`, `backlog.md`.
+- **Human — product owner and final technical authority.**
+
+Claude is not a manager; Codex is not a reviewer. Codex produces the solution; Claude
+independently questions it.
+
+### Per-task rhythm
+
+1. **Claude — pre-flight review** (high-risk tasks). Critiques the task spec; does not
+   write code or an implementation plan. Output:
+   ```
+   BLOCKERS                    - missing/contradictory requirements, decisions needed first
+   RISKS                       - security, data-consistency, architecture-boundary concerns
+   ACCEPTANCE CRITERIA CHANGES
+   ```
+   No blockers → Codex starts.
+2. **Codex — implementation plan.** Short: affected files/modules, main changes, tests
+   needed, migration/contract impact.
+3. **Codex — implement.**
+4. **Codex — verify.** Run unit/integration tests, lint/typecheck/build; check acceptance
+   criteria; review `git diff` for stray changes.
+5. **Codex — commit.** Output:
+   ```
+   Commit: <hash>
+   Implemented: ...
+   Verified: ...
+   Known limitations: ...
+   ```
+6. **Claude — independent commit review.** Real engineering problems only, not style:
+   incorrect behaviour, violated acceptance criteria, architecture-boundary violations,
+   security, transaction/data-consistency, concurrency/race, blockchain/reorg/indexing
+   edge cases, missing failure handling, insufficient tests. Severity `BLOCKER` /
+   `IMPORTANT` / `MINOR`, with exact file/line where possible.
+7. **Codex — triage findings.** Each: valid → fix; invalid → reject with rationale. Not
+   blind obedience.
+8. **Codex — re-verify + follow-up commit.**
+
+### When Claude is in the loop
+
+Optional for small, low-risk work (typo, rename, small DTO change) — Codex proceeds solo.
+
+Near-mandatory on both ends for: smart contract changes, bonding-curve / fee math,
+graduation logic, auth / wallet verification, database schema, indexer / reorg handling,
+transaction lifecycle, concurrency, security-sensitive code, public API contract, large
+refactors, critical infrastructure.
+
+### Claude outside the task lifecycle
+
+Milestone architecture review, threat modeling, contract/economic review, test-gap
+analysis, dependency/API research, spec-consistency review, milestone acceptance review,
+pre-large-refactor design review, documentation/spec update review.
+
 ## Sync rule
 
 - `AGENTS.md` = the only file that holds content.
