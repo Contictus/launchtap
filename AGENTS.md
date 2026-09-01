@@ -150,7 +150,7 @@ pre-large-refactor design review, documentation/spec update review.
 
 ### GitHub
 
-- Private repo — origin of record + off-machine backup + CI.
+- Public repo — origin of record + off-machine backup + CI.
 - CI (`.github/workflows/backend.yml`) runs on every push to `dev` and on the milestone PR.
 - `main` is branch-protected: the `backend` check must pass and the branch must be up to
   date before merge. No required human reviewer.
