@@ -8,7 +8,8 @@
 
 - **Name:** launchpad
 - **Purpose:** a pons (`pons.family`)-style fixed-supply token launchpad. Bonding
-  curve → graduation → locked liquidity. EVM chain (Robinhood Chain).
+  curve → graduation → Uniswap v2 pool with the initial LP position burned.
+  EVM chain (Robinhood Chain).
   Sections: Explore (Graduated + Explore lists), coin detail + trade + chart,
   Forum (Memestock), Analytics (own indexer), Docs. Non-custodial.
 - **Detailed feature analysis:** `notes.md`

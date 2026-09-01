@@ -15,7 +15,41 @@
 
 ## Active
 
-_(none yet)_
+### Robinhood testnet deployment manifest
+- **Date:** 2026-09-01
+- **Reason:** external deployment prerequisite
+- **Where it stopped:** Mainnet WETH/Uniswap addresses are verified. Live checks showed the
+  same addresses have no code on testnet, so they cannot be reused.
+- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`,
+  `docs/specs/2026-09-01-backend-core-design.md`
+- **Resume (next step):** Before testnet graduation integration, identify a verified
+  official testnet deployment or deploy a project-owned WETH + Uniswap v2 test stack, then
+  produce and review the chain-46630 deployment manifest.
+- **Pitfalls / notes:** Testnet startup must remain graduation-disabled until the manifest
+  is complete; never substitute mainnet addresses.
+
+### ETH/USD enrichment source
+- **Date:** 2026-09-01
+- **Reason:** non-blocking product enrichment
+- **Where it stopped:** No verified Robinhood Chain ETH/USD feed was selected. ETH-native
+  values are canonical; USD columns are nullable by design.
+- **Related files:** `docs/specs/2026-09-01-backend-core-design.md`
+- **Resume (next step):** Before USD UI work, verify an on-chain feed deployment or select
+  one cached external adapter with freshness and outage semantics.
+- **Pitfalls / notes:** USD availability must not affect indexing, list correctness, quotes,
+  or transaction construction.
+
+### Production governance and audit inputs
+- **Date:** 2026-09-01
+- **Reason:** production-only external coordination
+- **Where it stopped:** Contract roles and permitted actions are designed, but signer set,
+  timelock delay, legal/geo policy, monitoring provider, and audit vendor are not selected.
+- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`
+- **Resume (next step):** Resolve these inputs before a production deployment checklist is
+  approved; transfer deployer authority and complete an external audit before accepting
+  mainnet funds.
+- **Pitfalls / notes:** These do not authorize changing existing launch economics or adding
+  a reserve rescue path.
 
 <!-- Template:
 ### <short title>

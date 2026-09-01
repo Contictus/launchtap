@@ -6,8 +6,9 @@ Non-custodial: every state change is submitted by the user's own wallet.
 
 ## Status
 
-Design complete, implementation starting. There is **no application code yet** — the repo
-currently holds the specification, the plans, and the working notes.
+Contract and backend design closure is complete. There is **no application code yet** — the
+next gate is the normal independent pre-flight review, followed by explicit user approval
+to start implementation.
 
 ## Repository layout
 
@@ -18,9 +19,9 @@ README.md          This file.
 notes.md           Project brain: reference-product analysis, every decision
                    (chain, economics, curve simulation, auth), open questions.
 backlog.md         Unfinished-work log.
-docs/specs/        Design specs. Current: backend core (indexer + API + curve math).
-docs/plans/        Implementation plans (task lists with acceptance criteria).
-backend/           Go module — created in Plan 1. Modular monolith:
+docs/specs/        Normative contract core and backend core design specs.
+docs/plans/        Contract and backend implementation task lists with acceptance criteria.
+backend/           Go module — created by Backend Foundations. Modular monolith:
   internal/curve/      pure bonding-curve math (big.Int), zero deps
   internal/config/     env + compiled-in chain registry
   internal/store/      Postgres: pgx + sqlc + goose + Unit of Work
@@ -29,7 +30,7 @@ backend/           Go module — created in Plan 1. Modular monolith:
   internal/<feature>/  launch / trading / token / holder / candle / stats / metadata
   internal/apiserver/  huma REST + SSE                            (Plan 3)
   cmd/api  cmd/indexer  cmd/migrate
-contracts/         Solidity + Foundry (separate spec, later).
+contracts/         Solidity + Foundry — created by Contract Foundations.
 web/               Next.js frontend (later).
 ```
 
@@ -37,18 +38,27 @@ web/               Next.js frontend (later).
 
 1. `AGENTS.md` — roles, multi-agent workflow, git workflow.
 2. `notes.md` — the decisions and the reasoning behind them.
-3. `docs/specs/2026-09-01-backend-core-design.md` — the backend design.
-4. `docs/plans/2026-09-01-backend-foundations.md` — the first plan to implement.
+3. `docs/specs/2026-09-01-contract-core-design.md` — authoritative economics,
+   contract state machine, graduation, security, and events.
+4. `docs/specs/2026-09-01-backend-core-design.md` — indexer, finality, storage,
+   market semantics, auth, and API boundaries.
+5. `docs/plans/2026-09-01-contract-foundations.md` — first implementation task list;
+   produces the authoritative contracts and curve vectors.
+6. `docs/plans/2026-09-01-backend-foundations.md` — backend foundation task list;
+   its Go curve tasks consume those vectors.
 
 ## Key facts
 
 - **Chain:** Robinhood Chain (testnet chainId 46630, mainnet 4663), an EVM-equivalent
   Arbitrum Orbit L2. Contracts are written EVM-agnostic. Dev on Anvil.
-- **Backend:** Go. Modular monolith, two processes (`api` + `indexer`) over one Postgres.
+- **Backend:** Go 1.26. Modular monolith, two processes (`api` + `indexer`) over one Postgres.
   REST/JSON via `huma`. Custom Go indexer (`go-ethereum` + `abigen`), not Ponder.
-- **Wallet / auth:** Privy — the backend verifies the Privy JWT; no custom auth.
+- **Wallet / auth:** Privy — access token proves the session; identity token proves linked
+  wallets. No custom auth/session system.
 - **Curve:** virtual-reserve constant-product. Solidity is authoritative; the Go `curve`
   package is a mirror verified by differential vectors.
+- **Finality:** latest data is provisional; the indexer separately tracks Robinhood RPC
+  `safe` and `finalized` heads and rolls provisional data back on reorg.
 - **Budget:** zero-cost — free tiers only; dev Postgres via Docker / testcontainers.
 - **Working model:** Codex builds and commits implementation; Claude is the independent
   reviewer / architect and commits only docs. Branches: `main` (verified) / `dev` (active).
