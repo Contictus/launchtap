@@ -1,7 +1,8 @@
 # Contracts
 
-Foundry scaffold for the launchpad contracts. Task 1 intentionally contains only a compile
-probe; production interfaces and contracts begin in Task 2.
+Foundry project for the launchpad contracts. V1 public interfaces, errors, events, and
+storage declarations are frozen by the Task 2 golden artifacts; executable market logic
+starts in later tasks.
 
 ## Pinned toolchain
 
@@ -28,6 +29,7 @@ Individual commands, run from `contracts/`, are:
 ```bash
 forge fmt --check
 forge build
+./scripts/check-goldens.ps1
 forge test
 forge lint --severity high med low info -D warnings
 forge build --sizes
@@ -35,4 +37,12 @@ forge build --sizes
 
 The compiler configuration in `foundry.toml` is authoritative for local and CI builds.
 `scripts/check-dependencies.ps1` rejects a different Foundry binary, dependency commit, or CI
-toolchain pin.
+toolchain pin. `scripts/check-goldens.ps1` rejects event ABI, storage layout, or compiler
+pipeline drift. After an intentional reviewed ABI or layout change, regenerate the artifacts
+from `contracts/` with:
+
+```powershell
+./scripts/check-goldens.ps1 -Write
+```
+
+`abi/v1/ILaunchEvents.json` is the authoritative V1 event artifact consumed by the backend.

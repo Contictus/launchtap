@@ -1,0 +1,2 @@
+contracts/abi/**/*.json text eol=lf
+contracts/storage-layout/**/*.json text eol=lf

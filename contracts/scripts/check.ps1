@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "pins", "fmt", "build", "test", "lint", "size")]
+    [ValidateSet("all", "pins", "fmt", "build", "goldens", "test", "lint", "size")]
     [string] $Target = "all"
 )
 
@@ -24,6 +24,9 @@ try {
     }
     if ($Target -in @("all", "build")) {
         Invoke-Checked { forge build }
+    }
+    if ($Target -in @("all", "goldens")) {
+        Invoke-Checked { & "$PSScriptRoot/check-goldens.ps1" }
     }
     if ($Target -in @("all", "test")) {
         Invoke-Checked { forge test }
