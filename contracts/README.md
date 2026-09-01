@@ -45,6 +45,8 @@ from `contracts/` with:
 ```
 
 `abi/v1/ILaunchEvents.json` is the authoritative V1 event artifact consumed by the backend.
+`abi/v1/LaunchToken.json` freezes the concrete inherited ERC-20 callable surface. The gate
+uses an exact allowlist so accidental additions such as mint, burn, fallback, or receive fail.
 `storage-layout/v1/LaunchToken.json` captures the composed ERC-20 implementation layout.
 `LaunchFactoryStorageBase.json` is explicitly pre-composition until the factory implementation
 lands.

@@ -141,6 +141,40 @@ try {
     ))
     Compare-OrWrite (Join-Path $contractsRoot "abi/v1/ILaunchEvents.json") $eventAbi
 
+    $tokenAbiObject = Invoke-ForgeJson @("inspect", "LaunchToken", "abi", "--json")
+    $tokenCallables = @(
+        foreach ($entry in $tokenAbiObject) {
+            if ($entry.type -eq "function") {
+                $inputTypes = @($entry.inputs | ForEach-Object { [string] $_.type })
+                "$($entry.name)($($inputTypes -join ','))"
+            }
+            elseif ($entry.type -in @("fallback", "receive")) {
+                [string] $entry.type
+            }
+        }
+    ) | Sort-Object
+    $expectedTokenCallables = @(
+        "allowance(address,address)",
+        "approve(address,uint256)",
+        "balanceOf(address)",
+        "curve()",
+        "decimals()",
+        "graduated()",
+        "initializePair(address)",
+        "lpPair()",
+        "markGraduated()",
+        "name()",
+        "symbol()",
+        "totalSupply()",
+        "transfer(address,uint256)",
+        "transferFrom(address,address,uint256)"
+    ) | Sort-Object
+    if (($tokenCallables -join "`n") -ne ($expectedTokenCallables -join "`n")) {
+        Fail "LaunchToken callable ABI must remain fixed and must not expose mint or burn paths"
+    }
+    $tokenAbi = ConvertTo-StableJson $tokenAbiObject
+    Compare-OrWrite (Join-Path $contractsRoot "abi/v1/LaunchToken.json") $tokenAbi
+
     $storageContracts = @(
         [PSCustomObject]@{
             Contract = "BondingCurveV1Storage"
