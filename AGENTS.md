@@ -120,6 +120,43 @@ Milestone architecture review, threat modeling, contract/economic review, test-g
 analysis, dependency/API research, spec-consistency review, milestone acceptance review,
 pre-large-refactor design review, documentation/spec update review.
 
+## Git workflow
+
+- **One repo, one working tree, sequential.** The two agents never run at the same time —
+  no per-agent branches, no worktrees.
+- **Branches:**
+  - `main` — stable, verified state. Only milestone merges land here.
+  - `dev` — active development. All task work (Claude docs + Codex implementation +
+    review fixes) happens here as linear history.
+  - `task/<slug>` — short-lived, **only** for a `high`-risk task whose change is large or
+    uncertain; branched from `dev`, merged back to `dev` once its review passes. Not the
+    normal path.
+- **Handoff rule (the important one).** Every agent handoff happens at a commit boundary:
+  1. finish work → commit → `git push`
+  2. `git status` must read `nothing to commit, working tree clean`
+  3. the next agent starts its turn with `git pull`
+
+  Never hand off with uncommitted changes.
+- **Review by hash.** Claude reviews a named commit or range — `review commit d4e5f6` or
+  `review commits a1b2c3..e1f2g3` — and states which hash/range it reviewed.
+- **Who commits what.** Codex commits implementation (code, tests, migrations, config) on
+  `dev`. Claude commits `docs/`, `notes.md`, `AGENTS.md`, `backlog.md` on `dev`. Whoever
+  commits, pushes.
+- **Milestones.** Do not merge `dev` → `main` per task. At a milestone: open one PR
+  `dev` → `main`, let CI pass, eyeball the diff, merge, optionally `git tag vX.Y.Z`.
+- **Commit messages.** Conventional prefix (`feat: fix: test: chore: docs: refactor:`),
+  imperative, one logical change; reference the plan task where relevant (`Plan 1 Task 6`).
+
+### GitHub
+
+- Private repo — origin of record + off-machine backup + CI.
+- CI (`.github/workflows/backend.yml`) runs on every push to `dev` and on the milestone PR.
+- `main` is branch-protected: the `backend` check must pass and the branch must be up to
+  date before merge. No required human reviewer.
+- PRs are used **only** for the `dev` → `main` milestone merge. The Claude↔Codex loop
+  happens in `dev` via hash review, not PRs.
+- No GitHub issues / project board — the plan docs are the task list.
+
 ## Sync rule
 
 - `AGENTS.md` = the only file that holds content.
