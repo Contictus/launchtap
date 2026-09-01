@@ -1,391 +1,387 @@
 # Notes — launchpad
 
-> Proje hakkında serbest notlar: fikirler, kararlar, açık sorular, araştırma
-> çıktıları. Yarım işler `backlog.md`'ye; kalıcı ajan talimatları `AGENTS.md`'ye.
+> Free-form project notes: ideas, decisions, open questions, research output.
+> Unfinished work goes to `backlog.md`; durable agent instructions to `AGENTS.md`.
 
 ---
 
-## Referans ürün
+## Reference product
 
 - **pons** (Pons Labs, LLC) — `pons.family` / `@ponsdotfamily`
-- Fixed-supply token launchpad, **Robinhood Chain** üzerinde (EVM L2).
-- Model: bonding curve → belirli eşikte "graduation" → likidite kilitli havuz.
+- Fixed-supply token launchpad on **Robinhood Chain** (EVM L2).
+- Model: bonding curve → "graduation" at a threshold → liquidity-locked pool.
 - Non-custodial: "Your wallet submits every transaction. pons does not custody assets."
-- Public analytics'i **Dune** verisiyle besliyor ("Data is supplied by Dune").
-- Wallet UX'i **Reown** ile ("UX by reown").
-- Biz pons-benzeri bir ürün kuracağız; aşağıdaki ekranlar referans alınacak.
+- Feeds public analytics from **Dune** data ("Data is supplied by Dune").
+- Wallet UX via **Reown** ("UX by reown").
+- We are building a pons-like product; the screens below are the reference.
 
 ---
 
-## Özellik analizi (ekran ekran)
+## Feature analysis (screen by screen)
 
 ### 1. Navbar (Image #4)
-- Sol: logo (P işareti).
-- Orta: segment kontrol — **Explore / Forum / Analytics**.
-- Sağ: tema toggle (güneş ikonu, light/dark), **Connect** butonu (lime yeşil pill).
-- Koyu tema varsayılan.
+- Left: logo (P mark).
+- Center: segmented control — **Explore / Forum / Analytics**.
+- Right: theme toggle (sun icon, light/dark), **Connect** button (lime-green pill).
+- Dark theme is the default.
 
-### 2. Wallet bağlama (Image #5)
-- "Connect Wallet" modalı. Liste: WalletConnect (QR CODE etiketi), Trust Wallet,
-  MetaMask, Binance Wallet, SafePal, en altta "Search Wallet — 540+".
-- pons burada **Reown** (eski WalletConnect / Web3Modal) kullanıyor.
-- **Bizim seçeneklerimiz** → aşağıdaki "Teknik kararlar / Wallet connect".
+### 2. Wallet connect (Image #5)
+- "Connect Wallet" modal. List: WalletConnect (QR CODE tag), Trust Wallet,
+  MetaMask, Binance Wallet, SafePal, and at the bottom "Search Wallet — 540+".
+- pons uses **Reown** here (formerly WalletConnect / Web3Modal).
+- **Our options** → see "Technical decisions / Wallet connect" below.
 
 ### 3. Token launch (Image #6)
-- Üst sağda **v2 / v1** toggle (iki farklı launch motoru/kontratı).
-- Sol form alanları:
+- Top right: **v2 / v1** toggle (two different launch engines/contracts).
+- Left form fields:
   - Name, Ticker
-  - Description (kısa metin)
-  - Token image (yükleme)
+  - Description (short text)
+  - Token image (upload)
   - X profile (`x.com/handle`), Telegram (`t.me/community`)
   - **Paired asset** dropdown (ETH) — "Graduates once the curve raises 4.2 ETH."
-  - **Developer buy** — launch anında geliştiricinin alacağı miktar (ETH), bakiye kontrolü
-  - **Advanced** (açılır) — ek ayarlar
-  - Alt: "ETH pair, ETH 0.0005 due" + **Connect wallet** CTA
-- Sağ **canlı önizleme kartı** ("Your token"):
+  - **Developer buy** — amount (ETH) the developer buys at launch, with balance check
+  - **Advanced** (collapsible) — extra settings
+  - Bottom: "ETH pair, ETH 0.0005 due" + **Connect wallet** CTA
+- Right-side **live preview card** ("Your token"):
   - Launch fee **0.0005 ETH**
   - Paired with **ETH**
   - Trade fee **1.00%**
-  - Launch window **99% snipe tax, 3s** (ilk 3 sn agresif anti-snipe vergisi)
+  - Launch window **99% snipe tax, 3s** (aggressive anti-snipe tax for the first 3s)
   - Graduation **4.2 ETH**
   - Liquidity **Locked**
-- Not: bu parametreler (fee, snipe tax süresi, graduation eşiği) muhtemelen
-  v1 ve v2 arasında farklı; config'ten gelmeli.
+- Note: these parameters (fee, snipe-tax duration, graduation threshold) probably
+  differ between v1 and v2; should come from config.
 
-### 4. Arama & filtre modalı — "Stocks" (Image #7)
-- Arama input: name / ticker / address.
+### 4. Search & filter modal — "Stocks" (Image #7)
+- Search input: name / ticker / address.
 - **Sort by:** Relevance, Market cap, Volume, Newest, Oldest.
 - **Age:** All / 24h / 7d.
-- **Pair** filtresi: All / **Stocks** / tek tek hisse ticker chip'leri
+- **Pair** filter: All / **Stocks** / individual stock ticker chips
   (AAPL, AMD, AMZN, BB, COIN, COST, CRCL, DJT, GLD, GME, GOOGL, HIMS, META,
   MSFT, MSTR, MU, NVDA, PLTR, QQQ, RDDT, SNDK, SPCX, SPY, TSLA, TTWO).
-  → "Stocks" butonu = token'ın eşleştiği (paired) varlık bir hisse token'ı.
-- Sonuç satırı: ikon, isim, $TICKER · $MC · yaş.
-- Sayfalama: "1 to 24 of 17,302 · 1 / 721 · Previous / Next".
+  → the "Stocks" button = the token's paired asset is a stock token.
+- Result row: icon, name, $TICKER · $MC · age.
+- Pagination: "1 to 24 of 17,302 · 1 / 721 · Previous / Next".
 
-### 5. Listeler — Graduated & Explore (Image #8)
-- **Graduated** (rozet + sayı, ör. 510): "Tokens that cleared the graduation threshold."
-  - 5'li kart grid. Kart: görsel, "Graduated" rozeti (+ bazılarında "V2" rozeti),
-    isim, $TICKER, **MC / FDV**, kısa kontrat adresi, yaş ("49d ago").
-  - Sayfalama 1..51.
-- **Explore** (ör. 410,337 launched): "Tokens still climbing toward graduation on Robinhood Chain."
-  - Filtreler: Recent buys / Newest / Oldest / Market cap / Volume · All/24h/7d · **Both / v1 / v2**.
-  - Aynı kart yapısı.
+### 5. Lists — Graduated & Explore (Image #8)
+- **Graduated** (badge + count, e.g. 510): "Tokens that cleared the graduation threshold."
+  - 5-up card grid. Card: image, "Graduated" badge (+ "V2" badge on some),
+    name, $TICKER, **MC / FDV**, short contract address, age ("49d ago").
+  - Pagination 1..51.
+- **Explore** (e.g. 410,337 launched): "Tokens still climbing toward graduation on Robinhood Chain."
+  - Filters: Recent buys / Newest / Oldest / Market cap / Volume · All/24h/7d · **Both / v1 / v2**.
+  - Same card structure.
 
-### 6. Coin detay + grafik (Image #9)
-- **About** kutusu: kısa açıklama; "Burned 0 DELTA · $0 · 0% of supply".
-  Linkler: X, **Dexscreener**, **GeckoTerminal**, **Contract**, **Pool**.
-- **Sol trade paneli:**
-  - Token başlığı + tabs **Market / Limit / Orders**
-  - **Sell** input (varlık dropdown, ör. ETH) ↕ **Buy** input (token)
-  - Hızlı oran butonları: 25% / 50% / 75% / 100%
+### 6. Coin detail + chart (Image #9)
+- **About** box: short description; "Burned 0 DELTA · $0 · 0% of supply".
+  Links: X, **Dexscreener**, **GeckoTerminal**, **Contract**, **Pool**.
+- **Left trade panel:**
+  - Token title + tabs **Market / Limit / Orders**
+  - **Sell** input (asset dropdown, e.g. ETH) ↕ **Buy** input (token)
+  - Quick-ratio buttons: 25% / 50% / 75% / 100%
   - **Slippage** 1% + Adjust
   - **Connect wallet** CTA
-- **Sağ üst istatistik şeridi:** Market cap, Liquidity, 24h volume, ATH.
-- **Fiyat başlığı:** büyük değer + değişim % + zaman dilimi (1H).
-- **Grafik:** area chart; **Heatmap** toggle; zaman dilimleri **5M / 1H / 6H / 1D / ALL**;
-  X ekseni saat etiketleri.
+- **Top-right stat strip:** Market cap, Liquidity, 24h volume, ATH.
+- **Price header:** large value + change % + timeframe (1H).
+- **Chart:** area chart; **Heatmap** toggle; timeframes **5M / 1H / 6H / 1D / ALL**;
+  hour labels on the X axis.
 
 ### 7. Recent trades & Holders (Image #10)
-- Tabs: **Recent trades / Holders**. Sağda adet ("50").
-- Trade satırı: yön oku (yeşil ↗ buy / kırmızı ↙ sell), miktar + TICKER,
-  kısa cüzdan adresi, fiyat (ETH) + $ karşılığı, "Xm" (kaç dk önce).
-- Sayfalama 1..5.
-- Holders tab: (muhtemelen) adres, bakiye, % supply, ilk alım tarihi.
+- Tabs: **Recent trades / Holders**. Count on the right ("50").
+- Trade row: direction arrow (green ↗ buy / red ↙ sell), amount + TICKER,
+  short wallet address, price (ETH) + $ equivalent, "Xm" (minutes ago).
+- Pagination 1..5.
+- Holders tab: (probably) address, balance, % supply, first-buy date.
 
 ### 8. Forum — "Memestock" (Image #13)
-- **Üstte kayan şerit (ticker tape):** genel piyasa verileri — hisse fiyatları
-  (SPCX, GOOGL, TSLA, GME, AAPL, SPY, SNDK...) + günlük değişim %. Sürekli sağdan
-  sola akıyor.
-- Başlık: "Memestock — Every launch with a community, ranked by what is moving."
+- **Scrolling ticker tape at the top:** general market data — stock prices
+  (SPCX, GOOGL, TSLA, GME, AAPL, SPY, SNDK...) + daily change %. Continuously
+  scrolls right to left.
+- Title: "Memestock — Every launch with a community, ranked by what is moving."
 - Tabs: **Hot / New / Top**.
-- Gönderi akışı (reddit tarzı): `s/TICKER` community, upvote/downvote,
-  kullanıcı adı + kısa adres + zaman, başlık, gövde metni/görsel,
-  yorum sayısı, **Buy** butonu (satır içi).
-- Sağ sidebar: **"Biggest launches"** — arama + 1–10 sıralı liste (`s/PONS $444M` ...)
-  + "Browse the launchpad" linki.
-- Bizde: şerit = genel piyasa verisi; akış = **sadece kendi coinlerimizle ilgili** mesajlar.
+- Post feed (reddit-style): `s/TICKER` community, upvote/downvote,
+  username + short address + time, title, body text/image,
+  comment count, **Buy** button (inline).
+- Right sidebar: **"Biggest launches"** — search + ranked list 1–10 (`s/PONS $444M` ...)
+  + "Browse the launchpad" link.
+- For us: the tape = general market data; the feed = messages **about our own coins only**.
 
 ### 9. Analytics — "Protocol analytics" (Image #12)
 - "Independent onchain reporting for pons markets on Robinhood Chain."
-- Toggle **24h / All time**. "View on Dune" butonu. "Dune updated HH:MM, latest complete day ... UTC".
+- Toggle **24h / All time**. "View on Dune" button. "Dune updated HH:MM, latest complete day ... UTC".
 - Stat tiles: **24h volume** ($457.13M, ±% prior day), **24h launches** (17.9K, ±%),
   **24h trades** (0, "No prior-day baseline").
-- Grafikler: **Trading volume** (günlük bar), **Token launches** (günlük bar);
-  son tamamlanmış gün vurgulu.
-- pons bunu Dune'dan çekiyor. **Biz kendimiz indexleyeceğiz** → "Teknik kararlar / Analytics".
+- Charts: **Trading volume** (daily bars), **Token launches** (daily bars);
+  latest completed day highlighted.
+- pons pulls this from Dune. **We will index it ourselves** → "Technical decisions / Analytics".
 
-### 10. Docs (Image #11'de footer linki)
-- Kapsamlı hazırlanacak. Muhtemel bölümler: Nasıl çalışır (bonding curve,
-  graduation, fees, snipe tax), v1 vs v2 farkları, token launch rehberi,
-  trading (slippage, limit orders), likidite & kilit, kontrat adresleri &
-  ABI'ler, API/indexer dokümanı, güvenlik/risk, SSS.
+### 10. Docs (footer link in Image #11)
+- To be built comprehensively. Likely sections: how it works (bonding curve,
+  graduation, fees, snipe tax), v1 vs v2 differences, token launch guide,
+  trading (slippage, limit orders), liquidity & lock, contract addresses &
+  ABIs, API/indexer docs, security/risk, FAQ.
 
 ### 11. Footer (Image #11)
-- Logo + tanım: "Launch and explore fixed-supply tokens on Robinhood Chain.
+- Logo + tagline: "Launch and explore fixed-supply tokens on Robinhood Chain.
   Your wallet submits every transaction. [brand] does not custody assets."
-- Kolonlar: **Product** (Explore, Analytics, Create, Profile, Docs) ·
-  **Legal** (Privacy Policy, Terms of Use) · **Risk notice** (işlemler geri
-  alınamaz, tokenlar değer kaybedebilir, custody/garanti/finansal tavsiye yok).
-- Alt: © yıl + şirket; X linki.
+- Columns: **Product** (Explore, Analytics, Create, Profile, Docs) ·
+  **Legal** (Privacy Policy, Terms of Use) · **Risk notice** (transactions are
+  irreversible, tokens can lose value, no custody/warranty/financial advice).
+- Bottom: © year + company; X link.
 
 ---
 
-## Teknik kararlar
+## Technical decisions
 
-### Wallet connect — seçenekler
-pons "UX by reown" kullanıyor. EVM zinciri olduğu için bizim alternatiflerimiz:
+### Wallet connect — options
+pons uses "UX by reown". Since it is an EVM chain, our alternatives:
 
-| Kütüphane | Ne | Maliyet | Not |
-|-----------|-----|---------|-----|
-| **Reown AppKit** (eski Web3Modal/WalletConnect) | 540+ cüzdan, mobil QR, en geniş kapsama | Ücretsiz; `cloud.reown.com`'dan project ID | pons ile birebir aynı deneyim |
-| **RainbowKit** (+ wagmi + viem) | Temiz UX, dev-dostu, çok yaygın | Tamamen ücretsiz, açık kaynak | EVM launchpad için sağlam varsayılan |
-| **ConnectKit** (family) | RainbowKit'e benzer, sade | Ücretsiz | Alternatif |
-| **Dynamic / Privy** | Embedded wallet + email/Google/sosyal login | Ücretsiz tier + ücretli | Kripto-yerlisi olmayan onboarding istersen |
-| **thirdweb Connect** | Modal + embedded + hesap soyutlama | Ücretsiz tier | thirdweb ekosistemine bağlar |
-| **Web3-Onboard** (Blocknative) | Framework-agnostik | Ücretsiz | React dışı stack için |
+| Library | What | Cost | Note |
+|---------|------|------|------|
+| **Reown AppKit** (formerly Web3Modal/WalletConnect) | 540+ wallets, mobile QR, widest coverage | Free; project ID from `cloud.reown.com` | exact same experience as pons |
+| **RainbowKit** (+ wagmi + viem) | Clean UX, dev-friendly, very common | Fully free, open source | solid default for an EVM launchpad |
+| **ConnectKit** (family) | Similar to RainbowKit, minimal | Free | alternative |
+| **Dynamic / Privy** | Embedded wallet + email/Google/social login | Free tier + paid | if you want onboarding for non-crypto-natives |
+| **thirdweb Connect** | Modal + embedded + account abstraction | Free tier | ties you to the thirdweb ecosystem |
+| **Web3-Onboard** (Blocknative) | Framework-agnostic | Free | for a non-React stack |
 
-- **Öneri:** temel altyapı **wagmi + viem**. Modal için ya **RainbowKit** (ücretsiz,
-  devasa benimseme) ya da pons'u birebir istiyorsak **Reown AppKit** (en geniş
-  cüzdan listesi hazır gelir). Sonradan email/sosyal onboarding gerekirse
-  **Privy** veya **Dynamic** eklenir.
-- Karar bekliyor: bkz. Açık sorular.
+- **Recommendation:** base layer **wagmi + viem**. For the modal, either **RainbowKit**
+  (free, huge adoption) or, if we want to match pons exactly, **Reown AppKit** (widest
+  wallet list out of the box). Add **Privy** or **Dynamic** later if email/social
+  onboarding is needed.
+- Decision made: **Privy** (see Decisions).
 
-### Analytics — kendi indexer'ımız
-pons Dune kullanıyor; biz kendimiz yapacağız. Seçenekler:
+### Analytics — our own indexer
+pons uses Dune; we will do it ourselves. Options:
 
-| Yaklaşım | Ne | Maliyet | Not |
-|----------|-----|---------|-----|
-| **Ponder** (`ponder.sh`) | TypeScript indexer, self-host, Postgres'e yazar, GraphQL/SQL API | Ucuz: 1 küçük VPS + RPC planı | DX subgraph'tan çok daha basit; tek ekip uygulaması için ideal |
-| **The Graph subgraph** (decentralized) | Standart, kompozalanabilir | Query fee (GRT) + signal; hacimde pahalılaşır | Hosted service kapandı |
-| **Self-host Graph Node** | Subgraph'ı kendi sunucunda | Query fee yok ama infra sen (Postgres + IPFS + archive node) | Ağır operasyon |
-| **Envio HyperIndex** | Çok hızlı, multi-chain, hosted/self-host | Cömert ücretsiz tier | Hızlı backfill |
-| **Subsquid / SQD** | Yüksek throughput | Orta | Ağır tarihsel veri |
-| **Goldsky** | Managed subgraph + mirror pipeline | Ücretli, düşük operasyon | Kolaycı yol |
-| **Custom** (viem `watchEvent`/log polling + Postgres + cron aggregation) | Tam kontrol | En ucuz altyapı, en çok emek | |
-| **Dune API** | pons'un yaptığı; SQL + embed | Ücretsiz-orta | Sadece harici çapraz-kontrol olarak |
+| Approach | What | Cost | Note |
+|----------|------|------|------|
+| **Ponder** (`ponder.sh`) | TypeScript indexer, self-host, writes to Postgres, GraphQL/SQL API | Cheap: 1 small VPS + RPC plan | far simpler DX than a subgraph; ideal for a single-team app |
+| **The Graph subgraph** (decentralized) | Standard, composable | Query fee (GRT) + signal; gets expensive at volume | hosted service shut down |
+| **Self-host Graph Node** | Run the subgraph on your own server | No query fee but you run the infra (Postgres + IPFS + archive node) | heavy ops |
+| **Envio HyperIndex** | Very fast, multi-chain, hosted/self-host | Generous free tier | fast backfill |
+| **Subsquid / SQD** | High throughput | Medium | heavy historical data |
+| **Goldsky** | Managed subgraph + mirror pipeline | Paid, low ops | the easy path |
+| **Custom** (viem `watchEvent`/log polling + Postgres + cron aggregation) | Full control | Cheapest infra, most effort | |
+| **Dune API** | what pons does; SQL + embed | Free-to-medium | only as an external cross-check |
 
-- **Öneri:** **Ponder** self-host. Kontrat event'lerini (launch, buy, sell,
-  graduate) indexle → Postgres → materialized view / cron ile günlük agregasyon
-  (volume, launches, trades) → kendi API'mizden frontend grafiklerine besle.
-- Kabaca maliyet: ~$20–40/ay VPS + RPC (Alchemy/QuickNode ücretsiz–~$50/ay,
-  hacme göre) + Postgres ($0 self-host – ~$25/ay managed). Graph query fee'lerinden
-  ölçekte çok daha ucuz.
-- Subgraph sadece "decentralized / 3. parti entegrasyonu bize subgraph üzerinden
-  bağlansın" senaryosu gerekirse.
-- Fiyat grafikleri için ayrıca OHLC candle tablosu üretmek gerekecek (trade
-  event'lerinden zaman kovalarına toplama).
+- **Superseded:** Ponder was the early recommendation; the backend is now **Go**, so the
+  indexer is our own Go service (see Decisions).
+- Note: for price charts we also need to produce an OHLC candle table (bucketing trade
+  events into time buckets).
 
 ---
 
-## Fikirler
+## Ideas
 
 -
 
-## Kararlar
+## Decisions
 
-- **2026-09-01 — Wallet: Privy.** Embedded wallet + email/sosyal login + harici
-  cüzdan bağlama; altta wagmi/viem. Sebep: kripto-yerlisi olmayan onboarding.
-  RainbowKit / Reown AppKit elendi.
-- **2026-09-01 — Chart: TradingView Lightweight Charts** (ücretsiz). Charting
-  Library (lisanslı, ağır) ve Advanced widget (yalnız borsa-listeli tokenlarda
-  çalışır) elendi. Datafeed'i kendi indexer'ımız besler; area+gradient görünüm
-  zaten kütüphanenin doğal stili.
-- **2026-09-01 — Analytics: Dune bağımlılığı yok.** Kendi indexer'ımızdan günlük
-  aggregate üretilir (gerçek zamanlı + dış servise bağımsız).
-- **2026-09-01 — Backend dili: Go (kesin).** tRPC YOK. Ponder YOK (TS olduğu için).
-  Indexer = kendi Go servisimiz (`go-ethereum` ethclient + `abigen` binding +
-  Postgres). Monorepo. DB = Docker Postgres (dev). Hosting şimdilik konu dışı.
-- **2026-09-01 — Backend mimarisi: modüler monolit.** Tek Go modülü. İki process:
-  `cmd/api` (stateless, yatay ölçeklenir) + `cmd/indexer` (tekil; agregasyon =
-  içinde goroutine). Birbirine ağ çağrısı YOK — iletişim Postgres üzerinden
-  (+ `LISTEN/NOTIFY`). Aynı kutuda, birlikte deploy. gRPC YOK, mikroservis YOK.
-- **2026-09-01 — API = REST/JSON.** Go `huma` (Go tiplerinden bedava OpenAPI +
-  validation) → OpenAPI'den frontend'e tipli TS client (tek yönlü codegen).
-  Canlı veri = SSE. Sistemdeki tek "RPC" = zincir node'una JSON-RPC (`ethclient`).
-- **2026-09-01 — Backend mimarisi (detay, spec girdisi):**
-  - Hexagonal + feature-oriented modüller: `launch, trading, token, holder, candle,
-    stats, metadata`. Interface tüketen yerde tanımlı; `store/postgres` implement eder.
-  - DIP çizgisi: domain'de pgx/sqlc/ethclient **YASAK**; `common.Address/Hash`,
-    `*big.Int` value type **SERBEST** (ürün EVM-native).
-  - `chain/` yalnız infra (RPC/logs/blocks/decode). Reorg + sync loop + routing = `indexer/`.
-    Faz geçişi (curve→graduated) = `launch` service, chain'in işi değil.
-  - `candle`/`stats` (aggregate) indexer'dan kavramsal ayrı: canonical trades →
-    aggregator → derived. Artımlı güncelleme + periyodik reconcile sweep. v1'de
-    `cmd/indexer` goroutine.
-  - **UnitOfWork:** 1 blok chunk = 1 DB tx, çok modüllü. `WithinTx(ctx, fn(Repositories))`;
-    pgx.Tx domain'e sızmaz (sqlc `DBTX`).
-  - **Event sıralaması:** işlemeden önce kesin sırala `(block_number, tx_index, log_index)`.
-  - **Unified market trades:** canonical split kalır (`trades` curve / `pool_swaps` DEX);
-    candle/volume/ATH/feed/history ortak `market_trades` VIEW'inden. DEX fiyatı için
-    graduation'da `token_is_token0` saklanır. Perf gerekirse materialize.
-  - **store/ layout:** tek paket `internal/store/postgres`, feature başına dosya +
+- **2026-09-01 — Wallet: Privy.** Embedded wallet + email/social login + external
+  wallet connection; wagmi/viem underneath. Reason: onboarding for non-crypto-natives.
+  RainbowKit / Reown AppKit ruled out.
+- **2026-09-01 — Chart: TradingView Lightweight Charts** (free). Charting Library
+  (licensed, heavy) and the Advanced widget (only works for exchange-listed tokens)
+  ruled out. Our own indexer feeds the datafeed; the area+gradient look is the
+  library's native style.
+- **2026-09-01 — Analytics: no Dune dependency.** Daily aggregates produced from our
+  own indexer (real-time + independent of any external service).
+- **2026-09-01 — Backend language: Go (firm).** NO tRPC. NO Ponder (it's TS). The
+  indexer = our own Go service (`go-ethereum` ethclient + `abigen` bindings + Postgres).
+  Monorepo. DB = Docker Postgres (dev). Hosting is out of scope for now.
+- **2026-09-01 — Backend architecture: modular monolith.** One Go module. Two processes:
+  `cmd/api` (stateless, scales horizontally) + `cmd/indexer` (singleton; aggregation =
+  a goroutine inside it). NO network calls between them — they communicate via Postgres
+  (+ `LISTEN/NOTIFY`). Same box, deployed together. NO gRPC, NO microservices.
+- **2026-09-01 — API = REST/JSON.** Go `huma` (free OpenAPI + validation from Go types)
+  → typed TS client for the frontend from the OpenAPI (one-way codegen). Live data = SSE.
+  The only "RPC" in the system is JSON-RPC to the chain node (`ethclient`).
+- **2026-09-01 — Backend architecture (detail, spec input):**
+  - Hexagonal + feature-oriented modules: `launch, trading, token, holder, candle,
+    stats, metadata`. Interfaces defined where consumed; `store/postgres` implements them.
+  - DIP line: pgx/sqlc/ethclient **forbidden** in the domain; `common.Address/Hash`,
+    `*big.Int` value types **allowed** (product is EVM-native).
+  - `chain/` is infra only (RPC/logs/blocks/decode). Reorg + sync loop + routing = `indexer/`.
+    Phase transition (curve→graduated) = `launch` service, not chain's job.
+  - `candle`/`stats` (aggregation) conceptually separate from the indexer: canonical
+    trades → aggregator → derived. Incremental update + periodic reconcile sweep. For v1,
+    a `cmd/indexer` goroutine.
+  - **UnitOfWork:** 1 block chunk = 1 DB tx, multi-module. `WithinTx(ctx, fn(Repositories))`;
+    pgx.Tx does not leak into the domain (sqlc `DBTX`).
+  - **Event ordering:** sort deterministically before processing by
+    `(block_number, tx_index, log_index)`.
+  - **Unified market trades:** canonical split stays (`trades` curve / `pool_swaps` DEX);
+    candle/volume/ATH/feed/history read from a common `market_trades` VIEW. For DEX price,
+    `token_is_token0` is stored at graduation. Materialize if perf demands.
+  - **store/ layout:** one package `internal/store/postgres`, one file per feature +
     `uow.go` + `db.go`.
-- **2026-09-01 — Auth: Privy tek model (custom SIWE İPTAL).** Backend Privy JWT'sini
-  JWKS cache middleware ile doğrular → verified wallet(lar). Metadata yazımı:
-  `tokens.creator ∈ user.wallets`. `/auth/siwe/*` + session tablosu yok.
-- **2026-09-01 — SSE reliability = best-effort.** Postgres = source of truth; SSE =
-  canlı bildirim. Commit sonrası publish'ten önce process ölürse event kaçabilir =
-  veri kaybı DEĞİL. Reconnect eden client önce REST snapshot, sonra SSE delta.
-- **2026-09-01 — Onay bekleyen bloğundan onaylananlar:** (2) Limit/Orders v1 dışı,
-  (3) constant-product curve, (4) Uniswap v2 pair + LP burn, (5) v1'de sadece ETH
-  pair. **(1) parçalama ve (6) forum/ticker erteleme — "biraz daha bakılacak", parked.**
-- **2026-09-01 — Indexer bölünmesi:** trades → ana indexer (event stream'e ideal);
-  holders listesi → ayrı tablo/indexer ya da graduation sonrası snapshot
-  (her transfer'de balance+sıralama subgraph'i şişirir, gecikir).
-- **2026-09-01 — Fiyat/MC/FDV/ATH:** kaynak kendi indexer'ımız. Curve öncesi
-  fiyat curve'den, sonrası havuz Swap event'lerinden. MC/FDV = fiyat × arz,
-  ATH = kendi geçmişimizin max'ı. Dexscreener/GeckoTerminal yalnız dışa link.
-- **2026-09-01 — v1/v2 UI toggle YOK.** Tek launch motoruyla başlıyoruz.
-  Kontratlar versiyonlanır (yeni deploy + registry), kullanıcıya tek akış.
-- **2026-09-01 — Bütçe: SIFIR MALİYET.** Her servis ücretsiz tier'da. Cepten
-  para yok. Geliştirme testnet'te (gas faucet'ten bedava). Ücretli/mainnet
-  konuları (dış audit, Vercel Pro, kalıcı DB, özel domain, mainnet deploy gas'i,
-  RPC hacmi) "sonra bakarız". Protokol ücretleri v1'de config'te, testnet'te
-  0/nominal, treasury = kendi cüzdan.
-- **2026-09-01 — Chart mimarisi:** Lightweight Charts sadece **çizici**. OHLC/
-  fiyat serisini **indexer üretir** (Trade event fiyatları → zaman kovaları →
-  open/high/low/close/volume) ve API döner. Image #9 grafiği area chart =
-  "zamana göre fiyat" serisi yeter; mum modu için OHLC tablosu.
-- **2026-09-01 — Zincir & dev ortamı: EVM-agnostik core contracts, hedef = Robinhood Chain.**
-  Stack = Solidity + Foundry. Zincire özel adres/servis/varsayım contract'a
-  gömülmez; `zincir → {RPC, DEX router, explorer, chainId, WETH}` config eşlemesi.
-  - Local: Anvil (gerekince RH testnet fork)
-  - Birincil testnet: **Robinhood Chain Testnet — chainId 46630**,
+- **2026-09-01 — Auth: Privy is the single model (custom SIWE CANCELLED).** The backend
+  verifies the Privy JWT via a JWKS-cache middleware → verified wallet(s). Metadata
+  writes: `tokens.creator ∈ user.wallets`. No `/auth/siwe/*` and no session table.
+- **2026-09-01 — SSE reliability = best-effort.** Postgres = source of truth; SSE = a
+  live hint. If a process dies after commit but before publish, an event can be missed =
+  NOT data loss. A reconnecting client first fetches the REST snapshot, then applies SSE
+  deltas.
+- **2026-09-01 — Approved from the "pending approval" block:** (2) Limit/Orders out of v1,
+  (3) constant-product curve, (4) Uniswap v2 pair + LP burn, (5) ETH-only pair in v1.
+  **(1) decomposition and (6) forum/ticker deferral — "look at it more", parked.**
+- **2026-09-01 — Indexer split:** trades → main indexer (ideal for an event stream);
+  holders list → a separate table/indexer or a post-graduation snapshot (updating
+  balances + sorting on every transfer bloats a subgraph and lags).
+- **2026-09-01 — Price/MC/FDV/ATH:** source is our own indexer. Pre-curve, price from
+  the curve; post-graduation, from pool Swap events. MC/FDV = price × supply,
+  ATH = max of our own history. Dexscreener/GeckoTerminal are external links only.
+- **2026-09-01 — NO v1/v2 UI toggle.** We start with a single launch engine. Contracts
+  are versioned (new deploy + registry), single flow for the user.
+- **2026-09-01 — Budget: ZERO COST.** Every service on a free tier. No money out of
+  pocket. Development on testnet (gas free from the faucet). Paid/mainnet concerns
+  (external audit, Vercel Pro, persistent DB, custom domain, mainnet deploy gas, RPC
+  volume) are "look at it later". Protocol fees in v1 are in config, 0/nominal on
+  testnet, treasury = own wallet.
+- **2026-09-01 — Chart architecture:** Lightweight Charts is only the **renderer**. The
+  OHLC/price series is **produced by the indexer** (Trade event prices → time buckets →
+  open/high/low/close/volume) and returned by the API. The Image #9 chart is an area
+  chart = a "price over time" series is enough; OHLC table for candlestick mode.
+- **2026-09-01 — Chain & dev environment: EVM-agnostic core contracts, target = Robinhood Chain.**
+  Stack = Solidity + Foundry. No chain-specific address/service/assumption is baked into
+  the contract; `chain → {RPC, DEX router, explorer, chainId, WETH}` config mapping.
+  - Local: Anvil (fork RH testnet when needed)
+  - Primary testnet: **Robinhood Chain Testnet — chainId 46630**,
     RPC `rpc.testnet.chain.robinhood.com`, explorer `explorer.testnet.chain.robinhood.com`,
     Alchemy `robinhood-testnet.g.alchemy.com`
-  - Base Sepolia: isteğe bağlı taşınabilirlik kontrolü, zorunlu değil
+  - Base Sepolia: optional portability check, not required
   - Mainnet: **Robinhood Chain — chainId 4663**, RPC `rpc.mainnet.chain.robinhood.com`,
     explorer `robinhoodchain.blockscout.com`, Alchemy `robinhood-mainnet.g.alchemy.com`
-  - RH Chain = EVM-equivalent, Arbitrum Nitro/Orbit, blob DA, gas ETH; standart
-    tooling değişiklik gerektirmeden çalışıyor. Testnet Şub 2026, mainnet Tem 2026.
-  - **Graduation DEX = Uniswap v2 (RH Chain'de 1. günden canlı: v2/v3/v4/UniswapX)**
+  - RH Chain = EVM-equivalent, Arbitrum Nitro/Orbit, blob DA, gas in ETH; standard
+    tooling works without modification. Testnet Feb 2026, mainnet Jul 2026.
+  - **Graduation DEX = Uniswap v2 (live on RH Chain from day one: v2/v3/v4/UniswapX)**
     - `UniswapV2Factory` = `0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f`
     - `UniswapV2Router02` = `0x89e5db8b5aa49aa85ac63f691524311aeb649eba`
-    - WETH adresi: RH Chain contracts dokümanından teyit edilecek
-  - **Faucet yok** — testnet ETH canonical Arbitrum bridge ile Sepolia'dan köprüleniyor
-    (veya Alchemy testnet kredisi). Kurulum adımı.
-  - **Rakip/referans:** pons + **Uniswap'in kendi RH Chain launchpad'i** (analiz edilecek).
-  - Proje **Solana/Anchor değil** — baştan beri EVM (referans, wallet, DEX hepsi EVM).
+    - WETH address: to be confirmed from the RH Chain contracts docs
+  - **No faucet** — testnet ETH is bridged from Sepolia via the canonical Arbitrum
+    bridge (or Alchemy testnet credit). A setup step.
+  - **Competitor/reference:** pons + **Uniswap's own RH Chain launchpad** (to analyze).
+  - The project is **NOT Solana/Anchor** — EVM from the start (reference, wallet, DEX all EVM).
 
-### Parked — "biraz daha bakılacak" (2026-09-01)
+### Parked — "look at it more" (2026-09-01)
 
-- **Proje parçalama:** A Core launchpad → B Indexer+Analytics → C Forum → D Docs.
-  (Karar verilmedi.)
-- **Forum + ticker tape:** alt-proje C'ye erteleme önerisi. (Karar verilmedi.)
-  Ticker verisi opsiyonu: Finnhub / Twelve Data ücretsiz tier, 15dk gecikmeli, cache.
+- **Project decomposition:** A Core launchpad → B Indexer+Analytics → C Forum → D Docs.
+  (Not decided.)
+- **Forum + ticker tape:** proposal to defer to sub-project C. (Not decided.)
+  Ticker data option: Finnhub / Twelve Data free tier, 15-min delayed, cached.
 
-## Açık sorular
+## Open questions
 
-- **[KRİTİK] Hedef zincir + geliştirme ortamı.** Robinhood Chain mainnet durumu /
-  chainId / RPC / explorer / faucet belirsiz; "tokenize hisse" özelliği o zincire
-  özel. Kontrat + indexer + RPC + wallet config'inin tamamını bu belirliyor.
-  Öneri: EVM-agnostik yaz, dev = lokal Anvil + Base Sepolia, mainnet hedefi sonra.
-- Bonding curve tam parametreleri: toplam arz, curve/LP oranı, launch fee,
-  trade fee, snipe-tax süresi/oranı, graduation eşiği (referans: 0.0005 fee,
-  %1 trade, 99% snipe 3s, 4.2 ETH graduation).
-- Graduation LP: burn mü locker mı? Locker ise süre?
-- Forum auth + moderasyon detayı (alt-proje C'de netleşecek).
+- Bonding curve exact parameters were finalized 2026-09-01 (see "Sub-project A —
+  economy" below). Remaining:
+  - ETH/USD source: is there a Chainlink ETH/USD feed on RH Chain — if so read
+    on-chain; otherwise a cached API (Coingecko). To verify.
+  - Confirmations depth for RH Chain: L2 sequencer reorg behavior — default 5,
+    to verify.
+  - Graduation LP: burn vs locker confirmed as **burn** (v1); revisit only if DEX
+    integration forces it.
+- Forum auth + moderation detail (to be clarified in sub-project C).
 
-## Spec & plan dokümanları
+## Spec & plan documents
 
-- `docs/specs/2026-09-01-backend-core-design.md` — Backend Core tasarımı
-  (indexer + read API + curve math). Durum: onaylandı (2026-09-01).
-- Backend, 3 ardışık plana bölündü (hepsi bu spec'i uygular):
+- `docs/specs/2026-09-01-backend-core-design.md` — Backend Core design
+  (indexer + read API + curve math). Status: approved (2026-09-01).
+- The backend is split into 3 sequential plans (all implement this spec):
   1. `docs/plans/2026-09-01-backend-foundations.md` — scaffold + config/registry +
-     `curve/` math (differential test) + `store/` (şema + migration + sqlc + UoW).
-     **12 task, yazıldı, execution bekliyor.**
-  2. Indexer (chain infra + sync loop + feature ingestion + aggregation) — yazılacak.
-  3. API (apiserver + Privy auth + read endpoint'leri + SSE) — yazılacak.
+     `curve/` math (differential test) + `store/` (schema + migration + sqlc + UoW).
+     **12 tasks, written, awaiting execution.**
+  2. Indexer (chain infra + sync loop + feature ingestion + aggregation) — to write.
+  3. API (apiserver + Privy auth + read endpoints + SSE) — to write.
 
-## Alt-proje A — ekonomi & kontrat parametreleri (ÇALIŞMA HALİNDE)
+## Sub-project A — economy & contract parameters (WORKING)
 
-> Bunlar "tek doğru" değil; ekonomiyi + trust modelini belirleyen parametreler.
-> Başlangıç değerleri, curve simülasyonu sonrası ayarlanabilir.
-> Durum: önerilen, onay bekliyor (bkz. mesajlaşma 2026-09-01).
+> These are not "the one true answer"; they are the parameters that set the economy
+> + trust model. Starting values, tunable after the curve simulation.
+> Status: decided 2026-09-01 (see below).
 
 ### Token
-- Toplam arz **1,000,000,000** (sabit, mint yok), **18 decimals**
-- Dağılım: **800M** bonding curve (`T_r`) · **200M** graduation likidite (`L`)
-  — 80/20 curve simülasyonuyla tutarlı bulundu (aşağı bak), yine de değişebilir
+- Total supply **1,000,000,000** (fixed, no mint), **18 decimals**
+- Split: **800M** bonding curve (`T_r`) · **200M** graduation liquidity (`L`)
+  — found consistent by the curve simulation (below); still tunable
 
 ### Bonding curve — virtual-reserve constant-product
-State: `x` = ETH rezervi, `y` = token rezervi, sabit `x·y = k`
+State: `x` = ETH reserve, `y` = token reserve, invariant `x·y = k`
 - Init: `x=x0`, `y=y0`, `k=x0·y0`
-- Alım (`dxEff` = trade fee düşülmüş ETH): `dy = y − k/(x+dxEff)`; `x += dxEff`; `y −= dy`
-- Satım (`dy` token): `dxOut = x − k/(y+dy)`; `y += dy`; `x −= dxOut`; trade fee `dxOut`'tan alınır
-- Spot fiyat `P = x/y`
-- Satılan token `= y0 − y`; graduation koşulu: `y ≤ y0 − T_r` (eşdeğer: toplanan gerçek ETH `≥ G`)
-- Trade fee curve DIŞINDA skim edilir (k'ya girmez) → `G` temiz curve ETH'i
+- Buy (`dxEff` = ETH after trade fee removed): `dy = y − k/(x+dxEff)`; `x += dxEff`; `y −= dy`
+- Sell (`dy` tokens): `dxOut = x − k/(y+dy)`; `y += dy`; `x −= dxOut`; trade fee taken from `dxOut`
+- Spot price `P = x/y`
+- Tokens sold `= y0 − y`; graduation condition: `y ≤ y0 − T_r` (equivalently real ETH collected `≥ G`)
+- Trade fee is skimmed OUTSIDE the curve (does not enter `k`) → `G` is clean curve ETH
 
-**Parametre türetimi** (kafadan seçilmez — "boşluksuz graduation" kısıtından:
-curve son fiyatı = Uniswap havuzu açılış fiyatı):
+**Parameter derivation** (not picked by hand — from the "no-gap graduation" constraint:
+curve final price = Uniswap pool opening price):
 ```
 y0 = T_r² / (T_r − L)
 x0 = G · L / (T_r − L)
-launch→graduation FDV çarpanı = (T_r / L)²        (G'den bağımsız)
-başlangıç FDV = G·L·S / T_r²
+launch→graduation FDV multiple = (T_r / L)²        (independent of G)
+initial FDV = G·L·S / T_r²
 graduation FDV = G·S / L
 ```
 
-**LP split senaryoları** (`G = 4.2 ETH`, `S = 1B`, ETH ~$4000 varsayımı):
+**LP split scenarios** (`G = 4.2 ETH`, `S = 1B`, assuming ETH ~$4000):
 
-| Split (T_r/L) | Çarpan | x0 | y0 | başl. FDV | grad. FDV | Karakter |
+| Split (T_r/L) | Multiple | x0 | y0 | init FDV | grad FDV | Character |
 |---|---|---|---|---|---|---|
-| 700M/300M | 5.4x | 3.15 ETH | 1.225B | ~2.6 ETH (~$10k) | 14 ETH (~$56k) | kalın likidite |
-| **800M/200M** | **16x** | 1.4 ETH | 1.0667B | ~1.31 ETH (~$5.2k) | 21 ETH (~$84k) | **öneri** |
-| 900M/100M | 81x | 0.525 ETH | 1.0125B | ~0.52 ETH (~$2k) | 42 ETH (~$168k) | ince likidite, degen |
+| 700M/300M | 5.4x | 3.15 ETH | 1.225B | ~2.6 ETH (~$10k) | 14 ETH (~$56k) | thick liquidity |
+| **800M/200M** | **16x** | 1.4 ETH | 1.0667B | ~1.31 ETH (~$5.2k) | 21 ETH (~$84k) | **recommended** |
+| 900M/100M | 81x | 0.525 ETH | 1.0125B | ~0.52 ETH (~$2k) | 42 ETH (~$168k) | thin liquidity, degen |
 
-`G` değişimi FDV'leri ölçekler, çarpanı değiştirmez.
+Changing `G` scales the FDVs, not the multiple.
 
-**Simülasyon sonucu (80/20, G=4.2, ETH~$4000) — 2026-09-01:**
-- Launch: spot 1.3125e-9 ETH/tok, FDV 1.3125 ETH (~$5.25k), dolaşan MC 0
-- Graduation: spot 2.1e-8 (16x), FDV 21 ETH (~$84k), dolaşan MC 16.8 ETH (~$67k)
-- Havuz açılış fiyatı = curve son fiyatı = 2.1e-8 (arb boşluğu yok) ✓
-- Konvekslik: ilk %50 token → %20 ETH; son %25 token → %57 ETH
-- Dev buy max %1 (10M tok) launch'ta ≈ 0.0133 ETH (~$54), başlangıç FDV'ye ~sıfır etki
-- **KRİTİK:** havuz ETH derinliği = G, split'ten bağımsız. "Daha derin havuz için
-  70/30" YANLIŞ — split yalnız çarpanı + fiyat seviyesini belirler. Derinlik kolu = G.
-- Taze havuz (4.2 ETH + 200M tok): 0.5 ETH alım → +%25 fiyat; 1 ETH → +%53. İnce ama
-  işlenebilir; pump.fun graduation havuzu profili.
-- pump.fun kıyası: başl. FDV $4-5k / grad FDV $60-70k / çarpan 10-15x → aynı lig.
-- **Karar 3 açık:** G = 4.2 ETH (pump.fun modeli, çok graduation + ince havuz) VS
-  6-8 ETH (kalite filtresi, az graduation + derin havuz).
+**Simulation result (80/20, G=4.2, ETH~$4000) — 2026-09-01:**
+- Launch: spot 1.3125e-9 ETH/tok, FDV 1.3125 ETH (~$5.25k), circulating MC 0
+- Graduation: spot 2.1e-8 (16x), FDV 21 ETH (~$84k), circulating MC 16.8 ETH (~$67k)
+- Pool opening price = curve final price = 2.1e-8 (no arb gap) ✓
+- Convexity: first 50% of tokens → 20% of ETH; last 25% of tokens → 57% of ETH
+- Dev buy max 1% (10M tok) at launch ≈ 0.0133 ETH (~$54), ~zero effect on initial FDV
+- **CRITICAL:** pool ETH depth = G, independent of the split. "70/30 for a deeper
+  pool" is WRONG — the split only sets the multiple + price level. Depth lever = G.
+- Fresh pool (4.2 ETH + 200M tok): a 0.5 ETH buy → +25% price; 1 ETH → +53%. Thin but
+  tradeable; pump.fun graduation-pool profile.
+- pump.fun comparison: init FDV $4-5k / grad FDV $60-70k / multiple 10-15x → same league.
+- **Decision 3 resolved:** G = 4.2 ETH default, configurable for future launches,
+  snapshotted at launch.
 
 ### Fee
-- Create: **0.0005 ETH** sabit → protocol
-- Her trade (**yalnız curve fazı**): **%1** = %0.5 protocol + %0.5 creator
-  - `creatorFees[token][creator]` birikir, creator çeker (`CreatorFeesClaimed`)
-- ⚠️ Graduation SONRASI vanilla Uniswap → protocol/creator kesintisi YOK.
-  Post-grad fee yakalama = gelecek (Uniswap V4 hook; V2/V4 kararını DEX'e bağlar).
-- Snipe tax: **v1'de YOK**
-- Developer buy: **izin var, launch anında max %1 supply**
-- Creator geliri: curve fazı trade fee payı (yukarıdaki %0.5)
+- Create: **0.0005 ETH** fixed → protocol
+- Every trade (**curve phase only**): **1%** = 0.5% protocol + 0.5% creator
+  - `creatorFees[token][creator]` accrues, creator claims (`CreatorFeesClaimed`)
+- ⚠️ AFTER graduation, vanilla Uniswap → NO protocol/creator cut.
+  Post-grad fee capture = future (Uniswap V4 hook; couples the V2/V4 decision to the DEX).
+- Snipe tax: **NONE in v1**
+- Developer buy: **allowed, max 1% supply at launch**
+- Creator income: curve-phase trade fee share (the 0.5% above)
 
 ### Graduation
-Akış: curve → threshold → curve trading kapanır → toplanan ETH + `L` token → DEX havuzu → LP token → burn
-- ⚠️ "LP burn" V2-style likiditeye bağlar; V3/V4'te likidite ERC-20 LP token değil.
-  RH Chain'de Uniswap v2 canlı + adresler elde (bkz. zincir kararı) ama tasarımda
-  **soft requirement** tut, DEX entegrasyonu doğrulanınca kesinleştir.
-- Graduation fee (varsa) havuza giden ETH'i azaltır → küçük arb boşluğu; sonra karar.
+Flow: curve → threshold → curve trading closes → collected ETH + `L` tokens → DEX pool → LP token → burn
+- ⚠️ "LP burn" ties us to V2-style liquidity; in V3/V4 liquidity is not an ERC-20 LP token.
+  Uniswap v2 is live on RH Chain and addresses are in hand (see chain decision), but keep
+  it a **soft requirement** in the design, confirm once DEX integration is verified.
+- A graduation fee (if any) reduces ETH to the pool → a small arb gap; decide later.
 
 ### Factory & upgrade
-- **EIP-1167 minimal clone**, ortak implementation, token başına ayrı storage (ucuz)
-- **Non-upgradeable.** Upgrade gerekince `CurveImplementationV1 / V2`; factory yeni
-  launch'ları yeni impl'e yönlendirir, mevcut tokenlar dokunulmaz.
+- **EIP-1167 minimal clone**, shared implementation, separate storage per token (cheap)
+- **Non-upgradeable.** When an upgrade is needed: `CurveImplementationV1 / V2`; the
+  factory routes new launches to the new impl, existing tokens are untouched.
 
-### Admin / trust modeli
+### Admin / trust model
 - Emergency pause → **multisig**
-- Fee/config değişikliği → **multisig + timelock**
-- Mevcut token/curve mantığı → admin tarafından **DEĞİŞTİRİLEMEZ**
-  (admin "şu curve'ü değiştir / parayı başka yere gönder" yetkisine sahip olamaz)
+- Fee/config changes → **multisig + timelock**
+- Existing token/curve logic → **CANNOT** be changed by the admin
+  (the admin has no power to "change this curve / send the funds elsewhere")
 
-### Parametre yönetimi ilkesi (2026-09-01)
-Tüm launch parametreleri (`x0,y0,T_r,L,G`, fee'ler) launch anında clone'un
-**değişmez storage'ına snapshot'lanır**. Factory yalnız GELECEK launch'lar için
-değiştirilebilir default tutar. Başlamış launch'ın kuralları hiç değişmez.
+### Parameter management principle (2026-09-01)
+Every launch parameter (`x0,y0,T_r,L,G`, fees) is **snapshotted into the clone's
+immutable storage** at launch. The factory holds mutable defaults only for FUTURE
+launches. A started launch's rules never change.
 
-### Event şeması (backend'in bağlı olduğu arayüz) — 2026-09-01
+### Event schema (the interface the backend depends on) — 2026-09-01
 ```solidity
 // Factory
 event TokenLaunched(
@@ -396,18 +392,18 @@ event TokenLaunched(
     uint256 curveTokens,      // T_r
     uint256 lpTokens,         // L
     uint256 graduationEth,    // G
-    uint16  tradeFeeBps,      // 100 = %1
-    uint16  protocolShareBps  // 5000 = %50
+    uint16  tradeFeeBps,      // 100 = 1%
+    uint16  protocolShareBps  // 5000 = 50%
 );
-// Curve — her alım/satım (yalnız curve fazı)
+// Curve — every buy/sell (curve phase only)
 event Trade(
     address indexed token, address indexed trader, bool isBuy,
-    uint256 ethAmount,        // GROSS (fee öncesi)
+    uint256 ethAmount,        // GROSS (before fees)
     uint256 tokenAmount,
     uint256 protocolFee, uint256 creatorFee,   // ETH
-    uint256 newEthReserve, uint256 newTokenReserve  // x, y sonrası
+    uint256 newEthReserve, uint256 newTokenReserve  // x, y after
 );
-// Curve — bir kez
+// Curve — once
 event Graduated(
     address indexed token, uint256 ethToPool, uint256 tokensToPool,
     address lpPair, uint256 graduationFee
@@ -415,79 +411,83 @@ event Graduated(
 // Curve
 event CreatorFeesClaimed(address indexed token, address indexed creator, uint256 amount);
 ```
-- `ts` yok — log zaten blok/timestamp taşıyor.
-- Protocol fee **anında treasury'e** transfer (accrual yok, `protocolFee` Trade'de görünür).
-- Creator fee **birikir**, creator çeker (`CreatorFeesClaimed`).
+- No `ts` — the log already carries block/timestamp.
+- Protocol fee is transferred **immediately to the treasury** (no accrual, `protocolFee`
+  is visible in Trade).
+- Creator fee **accrues**, creator claims (`CreatorFeesClaimed`).
 
-### İndexleme modeli (backend, token başına)
-| Faz | Fiyat kaynağı | Holders kaynağı |
-|-----|---------------|-----------------|
-| Graduation öncesi | bizim `Trade` (P = x/y) | ERC-20 `Transfer` |
-| Graduation sonrası | Uniswap v2 pair `Swap` + `Sync` | ERC-20 `Transfer` |
-`Graduated` = faz anahtarı: o token için `Trade` dinlemeyi bırak, Uniswap pair'ini dinle.
+### Indexing model (backend, per token)
+| Phase | Price source | Holders source |
+|-------|--------------|----------------|
+| Pre-graduation | our `Trade` (P = x/y) | ERC-20 `Transfer` |
+| Post-graduation | Uniswap v2 pair `Swap` + `Sync` | ERC-20 `Transfer` |
+`Graduated` = phase switch: stop listening to `Trade` for that token, start listening to the Uniswap pair.
 
-### Karar durumu
-1. **Token ekonomisi** — ✅ 1B / 18dec · 800M curve / 200M LP (80/20 provisional)
-2. **Curve ekonomisi** — ✅ virtual-reserve constant-product; x0=1.4, y0=1.0667B, k türetildi;
-   simülasyon yapıldı (yukarı bak)
-3. **Fee ekonomisi** — ✅ create 0.0005 ETH → protocol; trade %1 = %0.5/%0.5, yalnız curve fazı
-4. **G (graduation)** — ✅ 4.2 ETH default, gelecek launch'lar için configurable, launch'ta snapshot
-5. **Event şeması** — ✅ KİLİTLİ (yukarıdaki)
-6. **Metadata** — ✅ tamamen off-chain (bizim Postgres). Creator SIWE ile kimliklenip
-   API'ye yazar/düzenler; API `creator` adresini `TokenLaunched`'dan doğrular.
-   description + görsel + X/Telegram. name/symbol zaten ERC-20'de. Event'te URI yok.
-   Dezavantaj kabul: metadata taşınabilir/kalıcı değil; sonradan ipfs:// ayna eklenebilir.
-7. **graduationFee** — ✅ v1'de 0 (tüm G havuza, arb boşluğu yok)
+### Decision status
+1. **Token economy** — ✅ 1B / 18dec · 800M curve / 200M LP (80/20 provisional)
+2. **Curve economy** — ✅ virtual-reserve constant-product; x0=1.4, y0=1.0667B, k derived;
+   simulation done (above)
+3. **Fee economy** — ✅ create 0.0005 ETH → protocol; trade 1% = 0.5%/0.5%, curve phase only
+4. **G (graduation)** — ✅ 4.2 ETH default, configurable for future launches, snapshotted at launch
+5. **Event schema** — ✅ LOCKED (above)
+6. **Metadata** — ✅ fully off-chain (our Postgres). The creator authenticates via **Privy**
+   and writes/edits it through the API; the API checks `tokens.creator ∈ user.wallets`
+   (verified via the on-chain `TokenLaunched`). description + image + X/Telegram.
+   name/symbol are already on the ERC-20. No URI in the event.
+   Accepted downside: metadata is not portable/permanent; an `ipfs://` mirror can be added later.
+7. **graduationFee** — ✅ 0 in v1 (all G to the pool, no arb gap)
 
-## Kodlamadan önce belirlenecekler (checklist)
+## To decide before coding (checklist)
 
-Durum: ✅ karar · 🔴 repo geneli, koddan önce · 🟡 alt-proje A'dan önce · ⚪ v1'de atla
+Status: ✅ decided · 🔴 repo-wide, before any code · 🟡 before sub-project A · ⚪ skip in v1
 
-### Repo geneli (🔴)
-- [x] **Hedef zincir + dev ortamı** — ✅ EVM-agnostik core; hedef Robinhood Chain (testnet 46630 / mainnet 4663); Uniswap v2 graduation için hazır
-- [x] **Kontrat stack** — ✅ Solidity + Foundry
-- [ ] Repo yapısı — monorepo (pnpm workspaces + Turborepo): `contracts/ web/ indexer/ docs/`
-- [ ] Frontend stack — Next.js (App Router) + TS + Tailwind + shadcn/ui
-- [ ] API katmanı — tRPC / REST / GraphQL?
-- [ ] DB — Postgres (+ Redis?)
-- [ ] Hosting — web: Vercel Hobby · indexer+DB: Railway/Render/Fly/Neon free
-- [ ] CI + test politikası — GitHub Actions; lint+typecheck+Foundry test zorunlu; TDD
+### Repo-wide (🔴)
+- [x] **Target chain + dev environment** — ✅ EVM-agnostic core; target Robinhood Chain (testnet 46630 / mainnet 4663); ready for Uniswap v2 graduation
+- [x] **Contract stack** — ✅ Solidity + Foundry
+- [x] **Backend language** — ✅ Go
+- [x] **Backend API layer** — ✅ REST/JSON via `huma` (no tRPC, no gRPC)
+- [x] **Backend architecture** — ✅ modular monolith, 2 processes, hexagonal + feature modules
+- [ ] Repo structure — monorepo: `contracts/ backend/ web/ docs/` (pnpm workspaces + Turbo for web)
+- [ ] Frontend stack — Next.js (App Router) + TS + Tailwind + shadcn/ui (proposed, not confirmed)
+- [ ] DB tooling — pgx + sqlc + goose (in the backend spec); TimescaleDB deferred
+- [ ] Hosting — web: Vercel Hobby · indexer+DB: Railway/Render/Fly/Neon free (deferred)
+- [ ] CI + test policy — GitHub Actions; lint+typecheck+Foundry test required; TDD (backend job in Plan 1)
 
-### Alt-proje A: ekonomi + kontrat tasarımı (🟡)
-- [ ] Token: düz ERC-20 sabit arz — toplam arz (1B?), decimals 18
-- [ ] Curve parametreleri: başlangıç sanal ETH rezervi, curve/LP token oranı (%80/20?), graduation eşiği (ref 4.2 ETH)
-- [ ] Ücretler: launch fee (0.0005), trade fee (%1) — kime, bölünüyor mu (protokol/yaratıcı/referans)
-- [ ] Snipe tax: oran (%99), süre (3s), toplanınca nereye
-- [ ] Developer buy: izin/max %
-- [ ] Yaratıcı geliri: sürekli fee + claim var mı
-- [ ] Graduation: DEX router (Uniswap v2 fork adresi), LP → burn mü locker mı
-- [ ] Factory deseni: EIP-1167 minimal proxy clone vs tam deploy
-- [ ] **Event şeması** — `TokenLaunched Trade Graduated FeesClaimed ...` (B buna bağlı, erken sabitle)
-- [ ] Admin/güvenlik: pause/upgrade/fee yetkisi — multisig + timelock?
-- [ ] Audit planı: Slither + iç review (v1); dış audit mainnet öncesi
-- [ ] Anti-abuse: max wallet %, cooldown — yoksa yok?
+### Sub-project A: economy + contract design (🟡)
+- [x] Token: plain ERC-20 fixed supply — 1B, 18 decimals
+- [x] Curve parameters: x0=1.4 ETH, y0=1.0667B, T_r=800M, L=200M, G=4.2 ETH
+- [x] Fees: launch 0.0005 ETH → protocol; trade 1% = 0.5% protocol / 0.5% creator
+- [x] Snipe tax: none in v1
+- [x] Developer buy: allowed, max 1% supply
+- [x] Creator income: curve-phase trade fee share + accrual/claim
+- [x] Graduation: Uniswap v2 router, LP burn (soft requirement until DEX integration verified)
+- [x] Factory pattern: EIP-1167 minimal clone, non-upgradeable + versioning
+- [x] **Event schema** — locked (see above)
+- [x] Admin/security: pause → multisig; fee/config → multisig + timelock; curve logic immutable
+- [ ] Audit plan: Slither + internal review (v1); external audit before mainnet
+- [ ] Anti-abuse: max wallet %, cooldown — or none? (leaning none, memecoin ethos)
 
-### Alt-proje A: minimal indexer A'ya dahil (🟡)
-Explore/Graduated'da "hacme/market cap'e göre sırala" var → day 1'den indexer şart.
-- [ ] Arama (name/ticker/address) — Postgres full-text
-- [ ] Sayfalama — cursor-based
-- [ ] Canlı güncelleme — websocket mi polling mi
-- [ ] OHLC/fiyat serisi üretimi
+### Sub-project A: minimal indexer is part of A (🟡)
+Explore/Graduated has "sort by volume/market cap" → an indexer is required from day 1.
+- [x] Search (name/ticker/address) — Postgres full-text (in the backend spec)
+- [x] Pagination — cursor-based (in the backend spec)
+- [x] Live updates — SSE, best-effort (in the backend spec)
+- [x] OHLC/price series production — indexer + `candles` table (in the backend spec)
 
-### v1'de ATLA (⚪)
-i18n, telemetri, referral, Limit/Orders, Stocks pairing, forum, mobil.
+### Skip in v1 (⚪)
+i18n, telemetry, referrals, Limit/Orders, Stocks pairing, forum, mobile.
 
-### Paralel / metin işi (🟢)
-Terms/Privacy/risk metni, geo-restriction politikası (US/OFAC blok?), domain/DNS,
-`AGENTS.md` komut+kod-stili bölümleri.
+### Parallel / text work (🟢)
+Terms/Privacy/risk copy, geo-restriction policy (US/OFAC block?), domain/DNS,
+`AGENTS.md` command + code-style sections.
 
-## Kaynaklar / linkler
+## Resources / links
 
-- Referans ürün: https://pons.family — X: @ponsdotfamily
+- Reference product: https://pons.family — X: @ponsdotfamily
 - Robinhood Chain dev docs: https://docs.robinhood.com/chain/connecting · contracts: https://docs.robinhood.com/chain/contracts
-- RH Chain rehberleri: https://www.quicknode.com/guides/robinhood/what-is-robinhood-chain · https://chainstack.com/what-is-robinhood-chain/
+- RH Chain guides: https://www.quicknode.com/guides/robinhood/what-is-robinhood-chain · https://chainstack.com/what-is-robinhood-chain/
 - Uniswap on RH Chain: https://blog.uniswap.org/robinhood-chain-is-live · v2 deployments: https://developers.uniswap.org/docs/protocols/v2/deployments
-- Uniswap RH Chain launchpad (rakip): https://crypto.news/uniswap-launches-first-robinhood-chain-launchpad/
+- Uniswap RH Chain launchpad (competitor): https://crypto.news/uniswap-launches-first-robinhood-chain-launchpad/
 - Reown AppKit: https://reown.com/appkit  ·  Cloud: https://cloud.reown.com
 - RainbowKit: https://rainbowkit.com  ·  wagmi: https://wagmi.sh  ·  viem: https://viem.sh
 - Ponder: https://ponder.sh

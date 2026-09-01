@@ -1,34 +1,34 @@
-# Backlog — Yarım Kalan İşler
+# Backlog — Unfinished Work
 
-> Bitmemiş işler buraya not edilir. Sebep: zaman yetmedi, kapsam kararı, veya
-> kullanım limiti tükenmek üzere. Amaç: sonradan **sıfırdan bağlam kurmadan**
-> kaldığımız yerden hızlıca devam edebilmek.
+> Unfinished work is noted here. Reason: ran out of time, scope decision, or
+> usage limit about to run out. Goal: later, resume quickly from where we
+> stopped **without rebuilding context from scratch**.
 
-## Nasıl kullanılır
+## How to use
 
-- Her yarım kalan iş "Aktif" altında bir madde olur.
-- **Devam için** alanı; dosya yolları, komutlar, son çalışan durum ve sıradaki
-  somut adımı içerecek kadar net yazılır.
-- İş bitince madde silinir veya "Tamamlananlar"a taşınır.
+- Every unfinished piece of work becomes an item under "Active".
+- The **Resume** field is written clearly enough to include file paths,
+  commands, last working state, and the next concrete step.
+- When work is done, delete the item or move it to "Done".
 
 ---
 
-## Aktif
+## Active
 
-_(henüz yok)_
+_(none yet)_
 
-<!-- Şablon:
-### <kısa başlık>
-- **Tarih:** YYYY-MM-DD
-- **Sebep:** zaman | limit (~%__) | kapsam kararı
-- **Nerede kaldı:** <yapılanlar ve tam duruş noktası>
-- **İlgili dosyalar:** <yollar>
-- **Devam için (sıradaki adım):** <somut ilk adım + komut>
-- **Tuzaklar / notlar:** <dikkat edilecekler>
+<!-- Template:
+### <short title>
+- **Date:** YYYY-MM-DD
+- **Reason:** time | limit (~__%) | scope decision
+- **Where it stopped:** <what was done and the exact stopping point>
+- **Related files:** <paths>
+- **Resume (next step):** <concrete first step + command>
+- **Pitfalls / notes:** <things to watch out for>
 -->
 
 ---
 
-## Tamamlananlar
+## Done
 
-_(henüz yok)_
+_(none yet)_

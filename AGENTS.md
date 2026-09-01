@@ -1,58 +1,62 @@
 # AGENTS.md
 
-> **Tek kaynak (single source of truth).** Tüm ajan talimatları bu dosyada tutulur.
-> `CLAUDE.md` bu dosyayı `@AGENTS.md` ile import eder; bu yüzden ikisi her zaman senkrondur.
-> Değişiklikleri **yalnızca bu dosyada** yap.
+> **Single source of truth.** All agent instructions live in this file.
+> `CLAUDE.md` imports this file via `@AGENTS.md`, so the two are always in sync.
+> Make changes **only in this file**.
 
-## Proje
+## Project
 
-- **Ad:** launchpad
-- **Amaç:** pons (`pons.family`) benzeri, fixed-supply token launchpad. Bonding
-  curve → graduation → kilitli likidite. EVM zinciri (Robinhood Chain, doğrulanacak).
-  Bölümler: Explore (Graduated + Explore listeleri), coin detay + trade + grafik,
-  Forum (Memestock), Analytics (kendi indexer), Docs. Non-custodial.
-- **Detaylı özellik analizi:** `notes.md`
-- **Dizin:** `C:\Users\mesut\Desktop\workspace\A-projects\launchpad`
+- **Name:** launchpad
+- **Purpose:** a pons (`pons.family`)-style fixed-supply token launchpad. Bonding
+  curve → graduation → locked liquidity. EVM chain (Robinhood Chain).
+  Sections: Explore (Graduated + Explore lists), coin detail + trade + chart,
+  Forum (Memestock), Analytics (own indexer), Docs. Non-custodial.
+- **Detailed feature analysis:** `notes.md`
+- **Directory:** `C:\Users\mesut\Desktop\workspace\A-projects\launchpad`
 
-## Kurulum
+## Language
+
+- **English everywhere:** code, comments, identifiers, docs, commit messages, PR text.
+
+## Setup
 
 ```bash
-# doldurulacak
+# to be filled in
 ```
 
-## Sık kullanılan komutlar
+## Common commands
 
-| Amaç | Komut |
-|------|-------|
-| Kur  | _(doldurulacak)_ |
-| Çalıştır | _(doldurulacak)_ |
-| Test | _(doldurulacak)_ |
-| Lint | _(doldurulacak)_ |
-| Build | _(doldurulacak)_ |
+| Purpose | Command |
+|---------|---------|
+| Setup   | _(to be filled in)_ |
+| Run     | _(to be filled in)_ |
+| Test    | _(to be filled in)_ |
+| Lint    | _(to be filled in)_ |
+| Build   | _(to be filled in)_ |
 
-## Kod standartları
+## Code standards
 
-- _(doldurulacak)_
+- _(to be filled in)_
 
-## Yapma / Dikkat
+## Don't / watch out
 
-- _(doldurulacak)_
+- _(to be filled in)_
 
-## Çalışma pratiği — Backlog & limit yönetimi
+## Working practice — backlog & limit management
 
-- Yarım kalan her iş `backlog.md` → "Aktif" bölümüne yazılır (sebep: zaman /
-  limit / kapsam kararı). Şablon dosyanın içinde.
-- **Kullanım limitleri ~%90-92'ye yaklaştığında:**
-  1. Yeni veya yarım işe limit yetersizliğiyle devam etme.
-  2. Mevcut durumu `backlog.md`'ye net yaz: dosyalar, tam duruş noktası,
-     sıradaki somut adım.
-  3. Kullanıcıya haber ver: "Limit ~%X, işi backlog'a aldım."
-- **Not:** Kullanım limiti yüzdesi otomatik ölçülemez. Tetikleyiciler:
-  kullanıcının uyarması, ya da bağlamın özetlenmeye başlaması gibi belirtiler.
-  Kullanıcı bir yüzde söylerse ona göre davran.
+- Every unfinished piece of work is written to `backlog.md` → "Active" section
+  (reason: time / limit / scope decision). Template is in the file.
+- **When usage limits get close to ~90-92%:**
+  1. Do not push a new or half-finished task forward under an insufficient limit.
+  2. Write the current state clearly to `backlog.md`: files, exact stopping point,
+     next concrete step.
+  3. Tell the user: "Limit ~X%, moved the work to the backlog."
+- **Note:** the usage-limit percentage cannot be read automatically. Triggers:
+  the user warns you, or signs such as the context starting to be summarized.
+  If the user states a percentage, act on it.
 
-## Senkronizasyon kuralı
+## Sync rule
 
-- `AGENTS.md` = içeriğin bulunduğu tek dosya.
-- `CLAUDE.md` yalnızca `@AGENTS.md` satırını içerir; kendi başına içerik barındırmaz.
-- Bir talimat eklemek/değiştirmek: **sadece `AGENTS.md`** düzenle. `CLAUDE.md`'ye dokunma.
+- `AGENTS.md` = the only file that holds content.
+- `CLAUDE.md` contains only the `@AGENTS.md` line; it holds no content of its own.
+- To add/change an instruction: edit **only `AGENTS.md`**. Do not touch `CLAUDE.md`.
