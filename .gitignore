@@ -20,6 +20,7 @@ pnpm-debug.log*
 /contracts/out/
 /contracts/cache/
 /contracts/broadcast/
+/contracts/vectors/.generated/
 
 # Editor / OS
 .DS_Store
