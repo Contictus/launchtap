@@ -16,7 +16,10 @@ optimizer_runs = 200
 via_ir = false
 evm_version = "cancun"
 deny = "warnings"
-fs_permissions = [{ access = "read-write", path = "./vectors" }]
+fs_permissions = [
+    { access = "read-write", path = "./vectors" },
+    { access = "read", path = "./deployments" },
+]
 
 [fmt]
 line_length = 100

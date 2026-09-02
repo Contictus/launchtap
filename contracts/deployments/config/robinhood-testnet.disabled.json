@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "target": "robinhood-testnet",
+  "chainId": 46630,
+  "enabled": false,
+  "reason": "No project-owned or separately verified Robinhood testnet WETH/Uniswap v2 deployment has been reviewed."
+}
