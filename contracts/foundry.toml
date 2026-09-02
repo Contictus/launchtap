@@ -25,3 +25,8 @@ bracket_spacing = true
 int_types = "long"
 quote_style = "double"
 number_underscore = "thousands"
+
+[invariant]
+runs = 256
+depth = 100
+fail_on_revert = true
