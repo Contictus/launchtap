@@ -1,499 +1,429 @@
 # Backend Core — Design Spec
 
 **Date:** 2026-09-01
-**Status:** Draft for review
-**Scope:** Sub-project A backend (Go): chain indexer + read API + curve math mirror.
-**Out of scope:** Solidity contracts (own spec), web frontend, forum, analytics beyond
-protocol tiles, Limit/Orders, v1/v2 UI, tokenized-stock pairing.
+**Status:** Design closed; implementation requires the normal high-risk pre-flight review
+**Scope:** Go chain indexer, canonical ledger and projections, market aggregates, read API,
+Privy authorization, and the Go curve mirror.
+**Contract dependency:** `docs/specs/2026-09-01-contract-core-design.md` is authoritative
+for economics, rounding, state transitions, and events.
 
----
+## 1. Context and constraints
 
-## 1. Context & constraints
+- Robinhood Chain mainnet `4663`, testnet `46630`; Anvil `31337` for local development.
+- One Go 1.26 module at `backend/`, module path
+  `github.com/Contictus/launchtap/backend`.
+- Modular monolith with `cmd/api`, `cmd/indexer`, and `cmd/migrate`. API and indexer do
+  not call each other; PostgreSQL is their shared source of truth.
+- The backend never signs or submits user market transactions. Metadata/forum writes are
+  authenticated off-chain; market state is read from chain.
+- Solidity execution is authoritative. Go curve math is an informational mirror and must
+  pass Solidity-generated differential vectors.
+- One database instance is bound to one active chain deployment. `chain_id` is still stored
+  in canonical keys so an accidental chain switch fails closed.
 
-- **Product:** pons-style fixed-supply token launchpad. Bonding curve → graduation →
-  Uniswap v2 pool with LP burned. Non-custodial: all state-changing actions are
-  submitted by the user's wallet; the backend is read-only except off-chain metadata.
-- **Chain:** EVM-agnostic contracts; target Robinhood Chain (testnet 46630 / mainnet
-  4663), an Arbitrum-Orbit EVM L2. Dev on Anvil; Base Sepolia optional portability check.
-- **Language:** Go. No tRPC, no Ponder. Custom Go indexer (`go-ethereum` + `abigen`).
-- **Budget:** zero-cost. Free tiers only; Docker Postgres for dev. Hosting deferred.
-- **Wallet/auth:** Privy (embedded + external wallets + email/social). Backend verifies
-  Privy JWTs; no custom auth system.
+## 2. Architecture
 
-## 2. Locked economic model (backend depends on these)
+### 2.1 Processes
 
-| Parameter | Value |
-|---|---|
-| Total supply `S` | 1,000,000,000 × 10¹⁸ (fixed, no mint) |
-| Curve allocation `T_r` | 800,000,000 (provisional 80/20) |
-| LP allocation `L` | 200,000,000 |
-| Curve type | virtual-reserve constant-product, `x·y = k` |
-| `x0` (initial virtual ETH) | `G·L/(T_r−L)` = 1.4 ETH at defaults |
-| `y0` (initial virtual token) | `T_r²/(T_r−L)` = 1,066,666,667 at defaults |
-| Graduation threshold `G` | 4.2 ETH default; configurable per future launch; snapshot at launch |
-| Launch fee | 0.0005 ETH → protocol treasury |
-| Trade fee | 1% (100 bps), split 50% protocol / 50% creator — **curve phase only** |
-| Snipe tax | none (v1) |
-| Developer buy | allowed, max 1% of supply at launch |
-| Graduation fee | 0 (all `G` to pool) |
-| Creator fees | accrue on-chain, creator claims |
-| Post-graduation fees | none (vanilla Uniswap); future via V4 hook |
+- `cmd/api`: stateless REST/OpenAPI and best-effort SSE; horizontally scalable.
+- `cmd/indexer`: singleton chain ingestion plus aggregation workers.
+- `cmd/migrate`: embedded goose migrations.
 
-**Parameter management principle:** every launch parameter (`x0, y0, T_r, L, G`, fees) is
-snapshotted into the clone's immutable storage at launch. The factory holds mutable
-defaults for *future* launches only. A started launch's rules never change.
+`cmd/indexer` holds a session-level PostgreSQL advisory lock scoped by chain id and
+deployment id on a dedicated connection. Failure to acquire or loss of that connection is
+fatal; a second indexer must never continue as another writer.
 
-**Derived quantities:**
-- launch→graduation FDV multiple = `(T_r/L)²` (16× at 80/20), independent of `G`
-- initial FDV = `G·L·S/T_r²` ; graduation FDV = `G·S/L`
-- pool ETH depth = `G`, independent of the split
+### 2.2 Package layout
 
-## 3. Contract interface (event schema)
-
-The backend consumes these events. Contract implementation is a separate spec; this is
-the agreed interface.
-
-```solidity
-// Factory
-event TokenLaunched(
-    address indexed token, address indexed curve, address indexed creator,
-    uint256 totalSupply,      // 1e27
-    uint256 virtualEth,       // x0 snapshot
-    uint256 virtualToken,     // y0 snapshot
-    uint256 curveTokens,      // T_r
-    uint256 lpTokens,         // L
-    uint256 graduationEth,    // G
-    uint16  tradeFeeBps,      // 100
-    uint16  protocolShareBps  // 5000
-);
-
-// Curve clone — every buy/sell, curve phase only
-event Trade(
-    address indexed token, address indexed trader, bool isBuy,
-    uint256 ethAmount,        // GROSS, before fees
-    uint256 tokenAmount,
-    uint256 protocolFee, uint256 creatorFee,           // ETH
-    uint256 newEthReserve, uint256 newTokenReserve     // x, y after
-);
-
-// Curve clone — once
-event Graduated(
-    address indexed token, uint256 ethToPool, uint256 tokensToPool,
-    address lpPair, uint256 graduationFee              // graduationFee = 0 in v1
-);
-
-// Curve clone
-event CreatorFeesClaimed(address indexed token, address indexed creator, uint256 amount);
-```
-
-The backend is **parametric**: it reads `x0, y0, T_r, L, G`, and fee bps from
-`TokenLaunched` and stores them per token. It hard-codes no economic value, so the
-provisional 80/20 split (or any later retune) does not affect backend code.
-
-Plus standard external events indexed per token:
-- ERC-20 `Transfer(from, to, value)` — for holder balances (all phases)
-- Uniswap v2 pair `Swap(...)` and `Sync(reserve0, reserve1)` — post-graduation price/volume
-
-Notes: no `ts` field (logs carry block/time). Protocol fee is transferred immediately to
-treasury (visible as `protocolFee` in `Trade`, no separate event). Creator fees accrue and
-are claimed (`CreatorFeesClaimed`).
-
-## 4. Architecture
-
-### 4.1 Shape
-
-Modular monolith, one Go module (`backend/`). Two runtime processes + a migration runner,
-all from the same codebase:
-
-- `cmd/api` — HTTP API. Stateless, horizontally scalable (N replicas).
-- `cmd/indexer` — chain ingestion loop + aggregation goroutine. **Singleton.**
-- `cmd/migrate` — runs embedded migrations.
-
-`api` and `indexer` never call each other over the network. They communicate through
-Postgres (+ `LISTEN/NOTIFY` for live hints). Deployed together on one box for v1.
-
-### 4.2 Package layout
-
-```
+```text
 backend/
-  cmd/{api, indexer, migrate}/main.go
+  cmd/{api,indexer,migrate}/
   internal/
-    # --- feature modules (vertical slices): entity + service + repo interface ---
-    launch/      TokenLaunched ingestion, param snapshot, graduation phase transition
-    trading/     Trade ingestion → canonical trades; quotes (consumes curve/)
-    token/       read model: explore/graduated lists, detail, search
-    holder/      Transfer ingestion → balances, holder lists
-    candle/      OHLC / price series builder (price aggregator)
-    stats/       protocol analytics: 24h + daily rollups
-    metadata/    off-chain token metadata + Privy-auth authorization
-    # --- shared technical ---
-    curve/       pure bonding-curve math (big.Int); zero dependencies
-    chain/       RPC client, log fetch, block headers, ABI decoding — infra ONLY
-    indexer/     sync loop, checkpoint, reorg rollback, event routing → module handlers
-    store/
-      postgres/  pgx pool, sqlc output, UoW impl; one file per feature + uow.go + db.go
-      migrations/ goose SQL files (embedded)
-    config/      env parsing + chain registry
-    privyauth/   Privy JWT verification middleware (JWKS cache)
-    apiserver/   huma app, SSE hub, mounts module routers, problem+json errors
-  openapi/       generated openapi.json → consumed by web for TS types
+    launch/       launch and graduation projections
+    trading/      canonical trades and informational quotes
+    token/        explore, graduated, detail, and search reads
+    holder/       transfer folding and holder definitions
+    candle/       execution-price OHLCV
+    stats/        token and protocol aggregates
+    metadata/     off-chain metadata authorization
+    curve/        pure big.Int mirror; stdlib only
+    chain/        RPC, block/log fetch, ABI decoding; infrastructure only
+    indexer/      watermarks, discovery, reorg, routing, and UoW ports
+    store/postgres/
+    config/
+    privyauth/
+    apiserver/
+  deployments/   reviewed embedded chain manifests
+  openapi/
 ```
 
-### 4.3 Dependency rules (enforced via `depguard` lint)
+### 2.3 Dependency rules
 
-| Package | May import | May NOT import |
+| Package | Allowed | Forbidden |
 |---|---|---|
-| `curve/` | stdlib, `math/big` | everything else |
-| feature modules | `curve/`, `config/`, stdlib, go-ethereum **value types** | `pgx`, `sqlc`, `ethclient`, `chain/`, `store/` |
-| `chain/` | `ethclient`, go-ethereum | feature modules, `store/`, `indexer/` |
-| `indexer/` | `chain/`, feature module handlers, `store/` | `apiserver/` |
-| `store/postgres` | `pgx`, sqlc, feature module **interfaces** | `chain/`, `apiserver/` |
-| `apiserver/` | `huma`, feature module services, `privyauth/` | `chain/`, `indexer/` |
+| `curve` | stdlib and `math/big` | all external packages |
+| feature modules | feature ports, config values, go-ethereum value types | pgx, sqlc output, ethclient, chain, apiserver |
+| `chain` | go-ethereum RPC/ABI packages | feature modules, store, indexer |
+| `indexer` | chain ports, feature handlers, transaction port | apiserver, concrete pgx/sqlc types |
+| `store/postgres` | pgx/v5, sqlc output, feature/indexer ports | chain, apiserver |
+| `apiserver` | Huma, feature services, privyauth | chain, indexer, pgx/sqlc |
 
-**DIP line:** domain/application code must not touch infra drivers/clients (`pgx`, `sqlc`,
-`ethclient`). It *may* use go-ethereum value types (`common.Address`, `common.Hash`,
-`*big.Int`) as domain primitives — the product is EVM-native and wrapping them buys no
-portability, only ceremony.
+`common.Address`, `common.Hash`, and `*big.Int` are accepted domain value types. Infra
+drivers and generated persistence types do not cross the application boundary.
 
-### 4.4 Ports & adapters
+### 2.4 Transaction boundary
 
-Each feature module defines the repository interface it consumes, next to the consumer,
-kept narrow (ISP). Example:
+One processed block chunk is one database transaction: block ledger rows, canonical event
+rows, chain projections, aggregation-dirty markers, and the observed watermark commit or
+roll back together.
+
+The foundation exposes a store-internal `WithinTx` primitive backed by `pgx.Tx` and sqlc's
+`DBTX`. The feature-level `IndexerUnitOfWork` and its narrow repository bundle are defined
+with Plan 2 feature ports; Plan 1 must not freeze repository interfaces before their
+consumers exist.
+
+## 3. Chain deployment registry
+
+Runtime selects a reviewed deployment manifest by chain id and deployment id. A manifest
+contains:
 
 ```go
-// internal/token/repository.go
-type Repository interface {
-    Get(ctx context.Context, addr common.Address) (Token, error)
-    List(ctx context.Context, q ListQuery) ([]Token, Cursor, error)
-    Search(ctx context.Context, term string, limit int) ([]Token, error)
+type Deployment struct {
+    ChainID             uint64
+    DeploymentID        string
+    Name                string
+    Factory             common.Address
+    StartBlock          uint64
+    EngineVersion       uint16
+    CurveImplementation common.Address
+    UniV2Factory        common.Address
+    WETH                common.Address
+    PairInitCodeHash    common.Hash
+    LPBurnAddress       common.Address
+    ExplorerBase        string
 }
 ```
 
-`internal/store/postgres` implements every module's `Repository` against sqlc queries.
+RPC URL is environment-provided; contract addresses are not. Startup validates chain id,
+nonzero required addresses, factory bytecode, and the manifest's deployment identity.
 
-### 4.5 Unit of Work
+Known Robinhood mainnet dependencies:
 
-One block chunk is processed in one DB transaction spanning multiple modules, without
-leaking `pgx.Tx` into the domain:
+- WETH: `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`
+- Uniswap v2 Factory: `0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f`
+- Router02: `0x89e5db8b5aa49aa85ac63f691524311aeb649eba`
 
-```go
-type Repositories struct {
-    Launch  launch.Repository
-    Trading trading.Repository
-    Holder  holder.Repository
-    Sync    SyncRepository
-    // ...
-}
-type UnitOfWork interface {
-    WithinTx(ctx context.Context, fn func(r Repositories) error) error
-}
+Router is recorded for frontend routing but contract graduation uses Factory/Pair/WETH.
+The mainnet addresses must not be copied to testnet. Testnet graduation remains disabled
+until a reviewed testnet manifest exists. Anvil manifests are generated by contract
+deployment scripts and are not committed as universal constants.
+
+## 4. Finality and ingestion
+
+### 4.1 Watermarks
+
+The indexer reads `latest`, `safe`, and `finalized` headers. It does not treat an arbitrary
+confirmation count as finality.
+
+- `observed_head`: newest fully processed canonical-chain block; provisional and rollbackable.
+- `safe_head`: newest node-reported safe block.
+- `finalized_head`: newest node-reported finalized block.
+
+Live UI reads observed projections and receives `finality=provisional|safe|finalized` plus
+`as_of_block`. Settlement-oriented exports may request safe/finalized data. If a provider
+does not support safe/finalized tags, startup fails unless the selected local-development
+manifest explicitly enables a confirmations fallback; production Robinhood deployments do
+not use that fallback.
+
+### 4.2 Block ledger and reorg
+
+`indexed_blocks` stores every processed block from `StartBlock`:
+
+```text
+(chain_id, block_number) PK
+block_hash UNIQUE per chain
+parent_hash, block_time, finality_status
 ```
 
-Implementation: `WithinTx` opens a `pgx.Tx`, constructs each repo bound to that tx (sqlc's
-`DBTX` interface is satisfied by both `*pgxpool.Pool` and `pgx.Tx`, so binding is trivial),
-calls `fn`, commits on `nil` / rolls back otherwise. Feature-module services are stateless
-and accept repos as parameters so they compose inside a UoW.
+Before extending the observed chain, the indexer verifies the new header's parent hash.
+On mismatch it walks stored block hashes and RPC headers backward to the common ancestor,
+then in one transaction:
 
-Indexer per-chunk flow:
+1. Deletes canonical event rows above the ancestor.
+2. Deletes block-ledger rows above the ancestor.
+3. Rebuilds affected chain projections and derived rows from surviving canonical events.
+4. Resets all affected watermarks.
 
-```
-uow.WithinTx(ctx, func(r Repositories) error {
-    for _, ev := range sortedEvents {   // see 5.3
-        route(ctx, ev, r)               // r.Launch.Record(...), r.Trading.Insert(...), ...
-    }
-    return r.Sync.SetCheckpoint(ctx, chunkEndBlock, chunkEndHash)
-})   // BEGIN … all events … checkpoint … COMMIT   (atomic)
-```
+Mutable `tokens.phase`, pair fields, holder balances, candles, and stats are projections;
+deleting only event rows is never a complete rollback.
 
-## 5. Chain ingestion
+Reorgs wholly above the stored safe head are handled automatically. A hash mismatch at or
+below the stored safe head stops ingestion and raises an operator-visible critical error;
+a finalized block is never automatically deleted. Safe/finalized promotion first verifies
+that the node-reported hashes match `indexed_blocks`. Watermarks exposed by the API are
+bounded by the indexer's observed head even when the node is further ahead.
 
-### 5.1 RPC & chain registry
+### 4.3 Staged address discovery
 
-- `go-ethereum/ethclient` over HTTP. WebSocket optional later.
-- Providers: Anvil (local), Alchemy Robinhood endpoints (testnet/mainnet).
-- `config.ChainConfig` keyed by chain id; one active via `CHAIN_ID` env:
+An `eth_getLogs` address filter is fixed for one request. Newly discovered addresses are
+therefore processed in stages for every chunk:
 
-```go
-type ChainConfig struct {
-    ChainID       uint64
-    Name          string
-    RPCURL        string  // env-injected secret
-    FactoryAddr   common.Address  // our launchpad factory (per deployment)
-    StartBlock    uint64          // factory deploy block; backfill origin
-    Confirmations uint64          // reorg safety depth (default 5; verify for RH Chain)
-    UniV2Factory  common.Address
-    UniV2Router   common.Address
-    WETH          common.Address
-    ExplorerBase  string
-}
-```
+1. Fetch factory logs and record `TokenLaunched` events.
+2. Add discovered token/curve/pair addresses and refetch the affected block/receipt ranges.
+3. Fetch known curve/token logs.
+4. Fetch known pair logs.
+5. Deduplicate and sort all logs by
+   `(block_number, transaction_index, log_index)` before routing.
 
-### 5.2 Watched sets
+Same-transaction developer buys and graduation logs must be captured by the staged refetch.
+Address lists are partitioned to provider limits. Adaptive chunk sizing handles range and
+response-size errors without changing event order.
 
-A single `eth_getLogs` per block range with a growing address set and a fixed topic set:
+Processing is two-pass inside the chunk transaction. The discovery pass inserts launch
+ledger rows and token identity/projection skeletons idempotently. The event pass then applies
+all standard and market logs in chain order. This supports the constructor's initial
+`Transfer(0, curve, S)` appearing before `TokenLaunched`; any other pre-launch token log is
+a fatal contract-invariant violation.
 
-- Static: `FactoryAddr` → `TokenLaunched`
-- Dynamic (added as `TokenLaunched` is seen): each `curve` clone → `Trade`, `Graduated`,
-  `CreatorFeesClaimed`; each `token` → ERC-20 `Transfer`
-- Dynamic (added as `Graduated` is seen): each `lpPair` → `Swap`, `Sync`
+### 4.4 Canonicality and idempotency
 
-`FilterQuery{FromBlock, ToBlock, Addresses: [...all known...], Topics: [[sig union]]}`.
-The known-address set is loaded from `tokens` + `graduations` on indexer boot.
+Every event row contains:
 
-### 5.3 Deterministic ordering
-
-Before processing a batch, sort logs by `(block_number, transaction_index, log_index)`.
-RPC return order is not guaranteed, especially across paginated calls or multi-address
-filters. Ordering matters: within one tx a final `Trade` must be recorded before the
-`Graduated` in the same tx flips the phase.
-
-### 5.4 Backfill + live (one code path)
-
-- **Backfill:** from `max(StartBlock, checkpoint+1)` to `head − Confirmations`, in chunks
-  (default 2000 blocks; halve on provider range/response-size error, restore gradually).
-  Each chunk = one UoW transaction (events + checkpoint).
-- **Live:** poll `eth_blockNumber` every ~1.5s; when `head − Confirmations > checkpoint`,
-  process the delta through the same chunked path.
-
-### 5.5 Checkpoint & idempotency
-
-- `sync_state(id, chain_id, last_block, last_block_hash, updated_at)` — single row.
-- Every canonical row carries `(block_number, tx_hash, log_index)` with a unique constraint
-  on `(tx_hash, log_index)`. Writes use `ON CONFLICT DO NOTHING`, so re-processing a range
-  is idempotent. A crash mid-run resumes from the last committed checkpoint; the API keeps
-  serving the last committed state.
-
-### 5.6 Reorg handling
-
-- Only blocks up to `head − Confirmations` are ever processed.
-- On each live poll, verify the parent-hash chain from `last_block_hash` forward. On
-  mismatch, find the fork point, delete all canonical rows with `block_number > fork` (every
-  table carries `block_number`), reset the checkpoint to the fork, and re-process. Derived
-  data (candles, rollups, balances) is rebuilt from canonical rows by the aggregators.
-
-### 5.7 Phase transition is a domain concern
-
-`chain/` decodes a `Graduated` log into a typed struct and nothing more. The indexer routes
-it to `launch.Service.RecordGraduation(...)`, which sets `tokens.phase = graduated`, stores
-`lp_pair`, records the `graduations` row, and computes/stores `token_is_token0` (WETH
-ordering in the pair, needed to derive DEX price). The indexer then adds `lp_pair` to the
-watched set. A stray `Trade` after graduation (contract should prevent it) is logged and
-ignored.
-
-## 6. Curve math (`internal/curve`)
-
-### 6.1 Purpose
-
-Off-chain mirror of the Solidity curve for: (a) pre-trade quotes in the UI, (b) any derived
-value not carried by events. Events carry post-trade reserves, so price/MC/FDV are direct;
-quotes need the full formula.
-
-### 6.2 Precision rules
-
-- All arithmetic in `*big.Int`, mirroring the contract's integer operations **exactly** —
-  same operation order, same rounding direction (round toward zero as Solidity does).
-- No `float64`, no `big.Float` for anything that must match chain state.
-- `shopspring/decimal` is allowed only at the API DTO layer for human-readable USD/percent.
-
-### 6.3 Surface
-
-```go
-type State struct{ X, Y, K *big.Int } // X = ETH reserve, Y = token reserve, K = X*Y
-
-func QuoteBuy(s State, ethGross *big.Int, feeBps, protoShareBps uint16)
-    (tokensOut, protocolFee, creatorFee *big.Int, next State)
-func QuoteSell(s State, tokensIn *big.Int, feeBps, protoShareBps uint16)
-    (ethOut, protocolFee, creatorFee *big.Int, next State)
-func SpotPriceWad(s State) *big.Int                    // X * 1e18 / Y
-func TokensSold(s State, y0 *big.Int) *big.Int         // y0 - Y
-func IsGraduated(s State, y0, curveTokens *big.Int) bool
+```text
+chain_id, block_number, block_hash, block_time,
+transaction_index, tx_hash, log_index
 ```
 
-### 6.4 Parity / differential testing
+Uniqueness is `(chain_id, tx_hash, log_index)`. Reprocessing is idempotent. Logs are decoded
+using the ABI selected by factory deployment and `engine_version`; an unknown version is a
+fatal indexing error, not a best-effort decode.
 
-Solidity is authoritative execution; Go is quote/simulation only. To guarantee they never
-drift:
+The V1 `Trade` decoder reads `ethGross` and `ethRefund` as adjacent fields (refund directly
+after gross) and persists both. `ethGross + ethRefund` is the ETH supplied to the curve for
+a buy and must reconcile from logs alone without transaction traces; `ethRefund` is `0` for
+every sell. Executed-volume and candle inputs use `ethGross` only and never add `ethRefund`.
 
-- Foundry emits a table of `(state, input) → output` vectors (via `forge script` / test
-  fixtures checked into the repo).
-- A Go test feeds the identical vectors through `internal/curve` and asserts **byte-identical**
-  `big.Int` results.
-- Fuzz layer: random states/inputs, cross-checked against a curve deployed on a local Anvil
-  via `cast call`.
-- All of the above runs in CI.
+## 5. Data model
 
-## 7. Data model
-
-### 7.1 Canonical (indexer writes; rebuildable target = never)
-
-| Table | Key columns |
-|---|---|
-| `sync_state` | single row |
-| `tokens` | `address` PK; `curve_address, creator, name, symbol, total_supply, x0, y0, k, curve_tokens, lp_tokens, graduation_eth, trade_fee_bps, protocol_share_bps, phase, lp_pair, token_is_token0, launched_at, launch_block, launch_tx` |
-| `trades` | `token_address, trader, is_buy, eth_amount, token_amount, protocol_fee, creator_fee, new_eth_reserve, new_token_reserve, price_wad, block_number, block_time, tx_hash, log_index` |
-| `graduations` | `token_address` PK; `eth_to_pool, tokens_to_pool, lp_pair, graduation_fee, block_*` |
-| `creator_fee_claims` | `token_address, creator, amount, block_*` |
-| `transfers` | `token_address, from_addr, to_addr, value, block_*` (high volume) |
-| `pool_swaps` | `token_address, pair, amount0_in, amount1_in, amount0_out, amount1_out, price_wad, block_*` (post-graduation) |
-
-`price_wad` on `trades` is computed at insert from the post-trade reserves. On `pool_swaps`
-it is computed from the swap amounts + `token_is_token0`.
-
-Unique `(tx_hash, log_index)` on every event-derived table.
-
-### 7.2 Unified market-trade projection
-
-Canonical storage stays split. Everything market-facing (candles, volume, ATH, realtime
-feed, trade history endpoint) reads a single normalized view:
-
-```sql
-CREATE VIEW market_trades AS
-  SELECT token_address, block_time AS ts, price_wad,
-         eth_amount AS eth_volume, token_amount AS token_volume,
-         is_buy AS side_buy, trader, tx_hash, log_index, 'curve' AS source
-  FROM trades
-  UNION ALL
-  SELECT token_address, block_time, price_wad,
-         (amount0_in + amount0_out) /* WETH leg, resolved via token_is_token0 */ AS eth_volume,
-         (amount1_in + amount1_out) AS token_volume,
-         (amount1_out > 0) AS side_buy, NULL, tx_hash, log_index, 'dex'
-  FROM pool_swaps;
-```
-
-(Exact WETH-leg resolution handled in the view via `token_is_token0`; simplified above.)
-Promote to a materialized view or a real `market_trades` table if read perf demands.
-
-### 7.3 Derived (aggregators write; fully rebuildable from canonical)
+### 5.1 Control and canonical event ledger
 
 | Table | Purpose |
 |---|---|
-| `holder_balances` | PK `(token_address, holder)`; `balance, first_acquired_block, updated_block` — folded from `transfers` |
-| `candles` | PK `(token_address, interval, bucket_start)`; `open, high, low, close, volume_eth, volume_token, trade_count`. Intervals stored: `1m, 5m, 1h, 1d`. `6h` / `all` derived on read. |
-| `token_stats` | `token_address` PK; hot denormalized row: `price_wad, price_usd, fdv_usd, circ_mc_usd, liquidity_usd, ath_price_wad, vol_24h_usd, price_change_24h, holder_count, updated_at`. Lists and detail read from here. |
-| `protocol_daily` | `day` PK; `volume_eth, volume_usd, launches, trades, graduations` — analytics bars |
-| `protocol_stats` | single hot row: `vol_24h_usd, launches_24h, trades_24h, updated_at` |
+| `sync_state` | one row per chain/deployment; observed, safe, finalized watermarks and hashes |
+| `indexed_blocks` | hash-linked processed block history and finality status |
+| `token_launches` | exact `TokenLaunched` payload, including engine version and pair |
+| `trades` | exact curve `Trade` payload, including `eth_gross` and the adjacent `eth_refund` |
+| `graduations` | exact `Graduated` payload |
+| `creator_fee_claims` | exact creator claim events |
+| `protocol_fee_claims` | curve protocol-fee claim events |
+| `launch_fee_claims` | factory launch-fee claim events |
+| `refund_credits`, `refund_claims` | pull-refund lifecycle |
+| `transfers` | ERC-20 Transfer logs |
+| `pool_mints`, `pool_burns`, `pool_swaps`, `pool_syncs` | canonical Uniswap pair events |
 
-### 7.4 Tooling
+`pool_syncs` is the authoritative reserve history. `pool_swaps` alone cannot reconstruct
+liquidity changes, direct syncs, or the opening reserves.
 
-- `pgx/v5` pool; `sqlc` for typed queries (`internal/store/postgres/queries/*.sql`);
-  `goose` migrations embedded and run by `cmd/migrate` (or `cmd/api` on boot behind a flag).
-- Search: `tsvector` GIN index on `tokens(name, symbol)` + exact-match on `address`.
-- TimescaleDB deferred; plain Postgres + `candles` table is sufficient for v1.
+### 5.2 Chain projections
 
-## 8. Aggregation
+| Table | Purpose |
+|---|---|
+| `tokens` | latest launch identity, parameter snapshot, phase, pair ordering, and launch coordinates |
+| `token_reserves` | latest curve reserves or pair reserves with source block/log |
+| `holder_balances` | folded Transfer balances and first acquisition |
+| `aggregation_dirty` | transactional rebuild queue keyed by chain/token |
 
-Conceptually separate from ingestion. Indexer answers "what happened on chain?" and writes
-canonical rows. Aggregators answer "what market data can I derive?" and write derived rows.
+These tables are updated transactionally for reads but are rebuildable from the canonical
+ledger. Off-chain metadata and images are not chain projections and survive a chain replay.
 
-- Packages: `candle/`, `stats/`, and holder-balance folding (in `holder/`).
-- Trigger: after each indexer chunk commits, it emits a Postgres `NOTIFY market_dirty` with
-  the affected token set. Aggregators (running as goroutines in `cmd/indexer` for v1)
-  `LISTEN` and incrementally update: the current candle bucket, `token_stats`,
-  `protocol_stats`.
-- Periodic reconcile sweep (e.g. every 60s) re-derives recent buckets / rollups from
-  canonical rows — covers reorg rollbacks and missed notifications.
-- Aggregators never read the chain and never run inside the sync loop. They can later move
-  to `cmd/aggregator` unchanged.
+### 5.3 Market semantics
 
-## 9. API (`internal/apiserver` + module services)
+Do not overload one `price_wad` with different meanings:
 
-### 9.1 Shape
+- `execution_price_wad`: trade reserve delta divided by token amount; candles and trade
+  history use this value.
+- `spot_price_wad`: post-trade curve `x/y`, or post-update pair WETH/token reserves from
+  `Sync`.
+- `gross_eth_volume`: executed gross ETH for a curve trade — the `Trade.ethGross` value,
+  which already excludes `Trade.ethRefund`; WETH leg for a DEX swap.
+- `token_volume`: absolute token leg.
 
-- `huma` over `net/http`; REST/JSON; base path `/v1`; OpenAPI generated to `openapi/openapi.json`,
-  consumed by `web` to generate a typed TS client (one-way codegen, no runtime coupling).
-- Cursor-based pagination everywhere lists are returned.
-- Errors as `application/problem+json`; domain errors mapped (`NotFound`, `Validation`,
-  `Conflict`).
+For DEX rows, `sender` and `to` are routing participants, not proven end-user identities;
+the normalized `trader` is nullable.
 
-### 9.2 Auth (Privy only)
+`market_trades` is a SQL view over curve trades and DEX swaps with:
 
-- `privyauth` middleware: extract Privy JWT from `Authorization: Bearer`, verify signature
-  against Privy's JWKS (cached, refreshed on `kid` miss), yield
-  `AuthedUser{PrivyDID string, Wallets []common.Address}` (verified linked wallets).
-- No nonce endpoint, no session table, no SIWE library. Privy owns the challenge/response.
-- Only metadata writes require auth. Authorization for
-  `PUT /v1/tokens/{addr}/metadata`: `tokens.creator ∈ AuthedUser.Wallets`.
+```text
+chain_id, token_address, block_number, block_time, transaction_index,
+tx_hash, log_index, source, side_buy, trader,
+execution_price_wad, spot_price_wad, gross_eth_volume, token_volume,
+finality
+```
 
-### 9.3 Endpoints
+DEX `execution_price_wad` is derived from the Swap legs. Its `spot_price_wad` is resolved
+from the pair's corresponding post-state `Sync`, which Uniswap v2 emits immediately before
+the `Swap` event in the same pair/transaction sequence.
 
-**Read (public):**
+### 5.4 Supply and holder definitions
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/v1/tokens` | Explore list. `filter=recent_buys\|newest\|oldest\|market_cap\|volume`, `window=all\|24h\|7d`, `cursor`, `limit`. Reads `token_stats ⨝ tokens` where `phase='curve'`. |
-| GET | `/v1/tokens/graduated` | Graduated list. `sort`, `cursor`, `limit`. |
-| GET | `/v1/tokens/search` | `q` = name / ticker / address. |
-| GET | `/v1/tokens/{addr}` | Detail: params, phase, `token_stats`, socials, contract/pool links. |
-| GET | `/v1/tokens/{addr}/candles` | `interval=5m\|1h\|6h\|1d\|all`, `from`, `to`. Feeds Lightweight Charts. Reads `candles` (or aggregates on read for `6h`/`all`). |
-| GET | `/v1/tokens/{addr}/trades` | Merged curve + DEX via `market_trades`, newest first, cursor. |
-| GET | `/v1/tokens/{addr}/holders` | `balance` desc; each: address, balance, `%supply`, `first_acquired`. |
-| POST | `/v1/tokens/{addr}/quote` | Body `{side, amountIn, slippageBps}` → `{amountOut, priceImpactBps, protocolFee, creatorFee, minReceived}`. Pure `curve/` math vs current reserves. Post-graduation → returns a "route via Uniswap" hint. |
-| GET | `/v1/stats/protocol` | `window=24h\|all` → analytics tiles. |
-| GET | `/v1/stats/protocol/daily` | `metric=volume\|launches\|trades`, `from`, `to` → chart bars. |
-| GET | `/v1/health` | `last_block`, `lag_seconds`, phase counts, RPC ok. |
+- `circulating_supply = total_supply - balance(curve) - balance(zero) - balance(dead)`.
+- The canonical Uniswap pair balance counts as circulating supply.
+- `market_cap = spot_price * circulating_supply`; `fdv = spot_price * total_supply`.
+- Immediately before graduation circulating supply is `T_r`; after the reserved `L` enters
+  the pair it becomes `S`, absent burns or forced transfers.
+- Holder lists and `holder_count` exclude zero, dead, curve, and canonical pair addresses,
+  while the pair balance still participates in circulating supply.
+- `first_acquired` is the first block in the holder's current nonzero-balance period; it
+  resets after the balance reaches zero.
 
-**Metadata (auth):**
+ETH-denominated fields are canonical derivations. USD fields are nullable enrichment and
+never determine list correctness or transaction behavior.
 
-| Method | Path | Notes |
-|---|---|---|
-| PUT | `/v1/tokens/{addr}/metadata` | `tokens.creator ∈ user.Wallets`. Body: `description, x_handle, telegram`, image ref. |
-| POST | `/v1/uploads/image` | auth'd; returns URL. v1 storage: `bytea` in a small `images` table, served by `GET /v1/images/{id}`. Escape hatch: swap for object storage if it grows. |
+### 5.5 Derived market tables
 
-### 9.4 SSE (best-effort)
+| Table | Purpose |
+|---|---|
+| `candles` | execution-price OHLCV at `1m`, `5m`, `1h`, `1d`; `6h` and `all` aggregate on read |
+| `token_stats` | ETH spot, market cap, FDV, liquidity, ATH, 24h volume/change, holder count, optional USD values |
+| `protocol_daily` | daily ETH/USD volume, launches, trades, graduations |
+| `protocol_stats` | current 24h/all-time protocol summary |
 
-- `GET /v1/tokens/{addr}/stream` — event types `trade`, `price`, `graduated`.
-- `GET /v1/stream/launches` — new `TokenLaunched` for a live Explore feed.
-- Backed by an in-process hub in `cmd/api`, fed by Postgres `LISTEN market_dirty` (the API
-  process then reads the fresh row and pushes). Since `api` and `indexer` are separate
-  processes, the bridge is Postgres NOTIFY, not an in-memory channel.
-- **Reliability contract:** Postgres is the source of truth; SSE is a live hint. If a
-  process dies after commit but before publish, the event is missed — this is **not** data
-  loss. A reconnecting client MUST first re-fetch canonical state via REST, then apply SSE
-  deltas as refresh hints / appends. `Last-Event-ID` and replay are future work.
+## 6. Aggregation and notifications
+
+Canonical ingestion writes/upserts `aggregation_dirty` in the same transaction as events.
+After commit it sends a small `NOTIFY market_dirty` wake-up containing only chain/deployment
+and generation/checkpoint identifiers, never an affected-token list.
+
+Worker startup order is: commit `LISTEN`, read the dirty snapshot, then enter the
+notification loop. Notifications are hints; the dirty table is the durable work source.
+A periodic reconciliation sweep rebuilds recent buckets and any projection affected by a
+reorg. Aggregators never read chain RPC.
+
+## 7. Curve mirror and quotes
+
+`internal/curve` reproduces the contract's operation order and integer rounding exactly.
+It returns domain errors for invalid public inputs; malformed static fixtures may panic only
+inside tests. In particular, sells reject `tokensIn > tokensSold`, not `tokensIn >= Y`.
+
+The package includes the exact-gross-for-net helper used by the final buy. Foundry generates
+versioned JSON vectors from deployed Solidity behavior; Go consumes those files unchanged.
+Hand-calculated or model-supplied values are not authoritative fixtures.
+
+The backend quote endpoint is informational because its indexed reserves can be stale. It
+returns `asOfBlock`, `finality`, `informational=true`, and no transaction-ready guarantee.
+The frontend must call the curve contract's view quote against current RPC state before
+building a transaction, and the transaction must enforce `minOut` and `deadline` on-chain.
+
+## 8. Privy authentication and authorization
+
+Privy session authentication and linked-wallet proof are separate:
+
+- `Authorization: Bearer <access-token>` proves the Privy session.
+- `X-Privy-Identity-Token: <identity-token>` supplies verified linked accounts.
+- The verifier validates signature, issuer, audience/app id, expiry/not-before, and subject
+  for both tokens, then requires matching subjects.
+- Only linked wallet accounts from the verified identity token populate
+  `AuthedUser.LinkedWallets`; merely connected client wallets are not accepted.
+
+```go
+type AuthedUser struct {
+    PrivyDID      string
+    LinkedWallets []common.Address
+}
+```
+
+No custom SIWE endpoint or backend session table is added. Metadata authorization requires
+the indexed launch creator to be in `LinkedWallets`. Token verification is behind a narrow
+`Verifier` interface; its crypto/key-loading adapter follows the exact current Privy
+verification-key format and is covered by valid, expired, wrong-audience, wrong-subject,
+and unlinked-wallet tests. The design does not assume a generic JWKS URL.
+
+## 9. API and realtime contract
+
+- Huma over `net/http`, REST/JSON under `/v1`, generated OpenAPI committed and diffed in CI.
+- Cursor pagination includes deterministic chain coordinates so equal timestamps cannot
+  duplicate or skip rows.
+- Errors use `application/problem+json`.
+- Every market response includes `chainId`, `asOfBlock`, and `finality` at the response or
+  collection level.
+- SSE is best-effort. Clients fetch a REST snapshot first and treat SSE messages as refresh
+  hints. PostgreSQL remains the source of truth; no replay/`Last-Event-ID` guarantee in v1.
+
+Core endpoints remain Explore, Graduated, token detail/search, candles, trades, holders,
+informational quote, protocol stats, metadata/image writes, health, and launch/token SSE.
+Endpoint DTOs are finalized in the API plan after the underlying projections exist.
 
 ## 10. Configuration
 
-Env vars: `CHAIN_ID`, `RPC_URL`, `DATABASE_URL`, `PRIVY_APP_ID`, `PRIVY_JWKS_URL`,
-`TREASURY_ADDR` (display only), `ETH_USD_SOURCE`, `LOG_LEVEL`, `API_ADDR`,
-`INDEXER_CONFIRMATIONS` (override), `INDEXER_CHUNK_SIZE` (override).
-Chain registry (factory address, start block, Uniswap addresses, WETH, explorer) is
-compiled-in per chain id, secrets injected via env.
+Environment values:
 
-## 11. Testing strategy
+```text
+CHAIN_ID, DEPLOYMENT_ID, RPC_URL, DATABASE_URL,
+PRIVY_APP_ID, PRIVY_VERIFICATION_KEY,
+LOG_LEVEL, API_ADDR, INDEXER_CHUNK_SIZE, ETH_USD_SOURCE
+```
 
-| Layer | Approach |
+`INDEXER_CONFIRMATIONS` exists only for manifests explicitly marked local-development
+fallback. Contract addresses, start block, WETH, burn address, and engine version come from
+the reviewed deployment manifest. Unknown or incomplete production manifests fail startup.
+
+## 11. Testing and delivery gates
+
+| Layer | Required verification |
 |---|---|
-| `curve/` | Foundry differential vectors (byte-identical) + fuzz vs Anvil `cast call` |
-| `store/postgres` | Real Postgres via testcontainers (or CI service container). No SQL mocks. |
-| feature services | Fake in-memory repos for logic-level tests |
-| `indexer/` | Against Anvil: deploy contracts, drive events, assert canonical + derived rows; reorg simulation (snapshot/revert) |
-| `apiserver/` | `httptest` contract tests; golden `openapi.json` diff in CI |
-| CI | GitHub Actions, path-filtered: `contracts` (forge fmt/build/test), `backend` (golangci-lint, `go test -race`, Postgres service, `sqlc diff`, build all `cmd/`), `web` (lint/typecheck/build) |
+| Curve | Solidity-generated vectors, Go fuzz/property tests, Anvil differential calls |
+| Store | real PostgreSQL; migrations up/down/up; constraints, rollback, and replay tests |
+| Indexer | staged discovery, duplicate logs, provider partitioning, same-tx events, shallow/deep reorg, mutable projection rollback, finality promotion |
+| Auth | valid/expired/wrong-app/wrong-subject tokens and connected-but-unlinked wallet rejection |
+| API | httptest contracts, cursor stability, finality fields, OpenAPI golden diff |
+| CI | Go build/test-race/lint/sqlc diff, PostgreSQL service, Foundry gates, web gates when present |
+
+Local integration tests may skip when Docker is unavailable. The CI integration job must
+fail, not skip, if PostgreSQL is unavailable or no integration test ran.
 
 ## 12. Observability
 
-- `GET /v1/health`: `last_block`, `lag_seconds` (wall clock − last block time), counts by
-  phase, RPC reachability.
-- Structured logs (slog) with `chain_id`, `block`, `tx_hash` fields.
-- Metrics (Prometheus) deferred; health endpoint is enough for v1.
+Health reports deployment id; observed/safe/finalized blocks and timestamps; per-watermark
+lag; advisory-lock ownership; last reorg depth/time; RPC status; dirty-work count; and token
+phase counts. Structured logs include chain, deployment, block/hash, tx hash, and reorg id.
 
-## 13. Open questions (do not block backend start)
+## 13. Deliberately deferred, non-blocking items
 
-1. **ETH/USD source** — on-chain Chainlink `ETH/USD` if deployed on Robinhood Chain; else a
-   cached external API (Coingecko) refreshed every ~60s. Affects only USD display columns.
-2. **Confirmations depth for Robinhood Chain** — L2 sequencer reorg behavior; default 5,
-   verify against docs/observation.
-3. **Image storage** — v1 `bytea` in Postgres; revisit if metadata volume grows.
-4. **`market_trades`** — start as a SQL view; materialize or table-ize if read perf demands.
-5. **Post-graduation fee capture** — out of scope for v1; would require a Uniswap V4 hook
-   and couples graduation to V4.
+- ETH/USD provider: nullable enrichment adapter; ETH remains authoritative.
+- Image storage migration from PostgreSQL to object storage.
+- Materializing `market_trades` if measured query performance requires it.
+- Post-graduation protocol fee capture; V1 remains vanilla Uniswap v2.
+- Forum/moderation and market ticker data.
 
-## 14. Strongest design decisions (keep these invariant)
+## 14. Invariants
 
-- `curve/` has zero dependencies and is verified against Solidity by differential tests.
-  Solidity is authoritative; Go is a mirror.
-- Canonical data (chain projection) is strictly separated from derived data (market
-  aggregates); derived data is always rebuildable from canonical.
-- `chain/` is pure infrastructure; domain state transitions live in feature modules.
-- `api` and `indexer` are separate processes over one database — modular monolith, no
-  microservices, no gRPC.
+- Contract events and block headers are the only source for market state.
+- Solidity is the only authority for curve execution; Go never invents expected vectors.
+- Observed data is explicitly provisional until safe/finalized; fixed confirmation counts
+  are not called finality.
+- Canonical events are append/idempotent for the current chain and rollback on reorg;
+  projections and aggregates are always rebuildable.
+- A pair `Sync`, not a swap amount, is the authority for reserves and spot price.
+- The backend never supplies the final executable quote without an on-chain `eth_call` and
+  transaction-level slippage/deadline protection.
+- Curve buy input reconciles from logs alone: `Trade.ethGross + Trade.ethRefund` is the ETH
+  supplied to the curve, and `ethRefund` is never part of executed volume.
+
+## 15. Primary references checked for design closure
+
+- Robinhood RPC and Nitro node model: https://docs.robinhood.com/chain/connecting/ and
+  https://docs.robinhood.com/chain/run-a-full-node/
+- Ethereum JSON-RPC block tags and log filtering:
+  https://ethereum.org/en/developers/docs/apis/json-rpc/
+- Privy access/identity tokens and linked wallets:
+  https://docs.privy.io/authentication/user-authentication/tokens,
+  https://docs.privy.io/user-management/users/identity-tokens, and
+  https://docs.privy.io/wallets/wallets/get-a-wallet/get-connected-wallet
+- PostgreSQL LISTEN/NOTIFY and advisory locks:
+  https://www.postgresql.org/docs/17/sql-listen.html,
+  https://www.postgresql.org/docs/17/sql-notify.html, and
+  https://www.postgresql.org/docs/current/functions-admin.html
+- Current Huma, sqlc, and golangci-lint configuration baselines:
+  https://huma.rocks/tutorial/installation/,
+  https://docs.sqlc.dev/en/latest/reference/config.html, and
+  https://golangci-lint.run/docs/configuration/file/

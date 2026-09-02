@@ -1,287 +1,268 @@
 # Backend Foundations — Task List
 
-> **Workflow:** see `AGENTS.md` → "Multi-agent workflow". Codex owns each task's
-> implementation lifecycle (implementation plan, code, tests, verification, commit).
-> Claude does pre-flight review on high-risk tasks and independent review of each commit.
-> This document is the task breakdown + acceptance criteria — **not** an implementation
-> guide. No code or test bodies here by design.
+> **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
+> and independent review. This is an implementation task list, not implementation code.
 
-**Goal:** the substrate every later backend plan depends on — a tested pure-Go
-bonding-curve math library, a migrated Postgres schema with typed access and a
-Unit-of-Work, and config loading with a compiled-in chain registry.
+**Status:** Design closed; do not start until the user authorizes implementation and the
+high-risk pre-flight finds no blocker.
 
-**Scope:** shared packages `internal/curve`, `internal/config`, `internal/store/postgres`,
-plus repo scaffolding. No `cmd/api` / `cmd/indexer` process is wired up here — Plans 2-3.
+**Goal:** Build the backend substrate without prematurely implementing indexer feature
+routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
+canonical schemas, sqlc access, a store transaction primitive, and a Solidity-authoritative
+curve mirror.
 
-**Tech Stack:** Go 1.23, `jackc/pgx/v5`, `sqlc`, `pressly/goose/v3`, `shopspring/decimal`,
-`ethereum/go-ethereum` (common value types only in this plan),
-`testcontainers/testcontainers-go`, `golangci-lint`.
+**Specs:**
 
-**Spec:** `docs/specs/2026-09-01-backend-core-design.md` (section refs below are into this doc)
+- `docs/specs/2026-09-01-contract-core-design.md`
+- `docs/specs/2026-09-01-backend-core-design.md`
 
-## Global Constraints
+**Scope:** `backend/` scaffold, `internal/config`, `internal/store/postgres`, and
+`internal/curve`. No API or indexer runtime is wired in this plan.
 
-- **Runtime:** Go 1.23. One module `backend/`, path `github.com/pons/launchpad/backend`
-  (adjust the org segment once, everywhere, if it differs).
-- **Zero-cost:** no paid services; dev Postgres via Docker / testcontainers only.
-- **Precision:** all curve arithmetic in `*big.Int`. No `float64` / `big.Float` where a
-  value must match on-chain state. `shopspring/decimal` only in API DTO code (not this plan).
-- **DIP line:** application/domain code must not import `pgx`, sqlc-generated packages, or
-  `ethclient`. It may use go-ethereum value types (`common.Address`, `common.Hash`,
-  `*big.Int`).
-- **Dependency rule (depguard):** `internal/curve` → stdlib + `math/big` only.
-  `internal/config` → stdlib + `go-ethereum/common` only. Only `internal/store/**` may
-  import `pgx` / sqlc output.
-- **Canonical vs derived:** canonical tables are the chain projection, never recomputed
-  from derived data; derived tables are always rebuildable from canonical.
-- **Idempotency:** every event-derived table carries `block_number BIGINT`,
-  `tx_hash BYTEA`, `log_index INT`, with UNIQUE `(tx_hash, log_index)`.
-- **Curve rounding:** divisions that determine an amount *leaving the pool* round **up**
-  (ceil), favouring the pool; fee splits round **down**. The differential test against the
-  contract is the final authority; Go yields if they differ.
+**Toolchain:** Go 1.26.x, Huma-compatible module baseline, pgx/v5, sqlc, goose/v3,
+go-ethereum value types, testcontainers-go, golangci-lint v2. `shopspring/decimal` is not
+added until an API DTO actually needs it.
+
+## Global constraints
+
+- Module path: `github.com/Contictus/launchtap/backend`.
+- All exact on-chain amounts use `*big.Int` or database `NUMERIC(78,0)`. No float type is
+  used for contract-equivalent values.
+- `curve` imports only the standard library. Domain/application packages do not import
+  pgx, sqlc output, or ethclient.
+- Canonical event keys include `(chain_id, tx_hash, log_index)` and every event row stores
+  block hash plus transaction index.
+- Addresses in production deployments come only from reviewed embedded manifests. Unknown,
+  incomplete, or cross-chain manifests fail closed.
+- Local integration tests may skip without Docker. CI must fail if PostgreSQL is unavailable
+  or no integration test executes.
+- Solidity-generated vectors are the only expected-value authority for the Go curve mirror.
+  Tasks 10-12 cannot complete before the contract vector artifact exists.
 
 ## Risk classes
 
-- **low** — Codex proceeds solo; Claude review optional.
-- **high** — Claude pre-flight before start + independent review of the commit
-  (per `AGENTS.md`).
+- **low:** independent review optional.
+- **high:** pre-flight and independent commit review required under `AGENTS.md`.
 
----
+## Task 1 — Repository and Go module scaffold · Risk: low
 
-### Task 1 — Repo & Go module scaffold · Risk: low
-
-**Delivers:** a buildable `backend/` Go module with linter (incl. depguard dependency
-rules), a task runner, `.env.example`, and a path-filtered CI job.
+**Delivers:** buildable Go 1.26 module, task runner, golangci-lint v2 config with depguard,
+environment example, and path-filtered backend CI.
 
 **Files:** `.gitattributes`, `backend/go.mod`, `backend/.golangci.yml`,
 `backend/Taskfile.yml`, `backend/.env.example`, `.github/workflows/backend.yml`
 
-**Depends on:** —
-**Spec:** §4.2 (package layout), §4.3 (dependency rules), §11 (CI)
-
 **Acceptance criteria:**
-- `cd backend && go build ./...` exits 0.
-- `golangci-lint run` exits 0 and its depguard config enforces the Global Constraint
-  dependency rule (verified by a deliberate probe import in a scratch branch, then removed).
-- `task build`, `task test`, `task lint`, `task migrate`, `task sqlc` are defined.
-- CI runs on `backend/**` changes: `go build ./...`, `go test ./... -race`, `golangci-lint`.
-- `.gitattributes` enforces LF for `*.go` / `*.sql` / `*.md`.
 
----
+- `go.mod` declares the exact module path and supported Go version.
+- `go build ./...`, `go test ./... -race`, and `golangci-lint run` pass.
+- Linter config uses v2 schema and a temporary probe proves depguard rejects pgx from a
+  domain package and all external imports from `curve`; the probe is removed before commit.
+- Task commands exist for build, unit test, integration test, lint, migration, sqlc, and
+  verification.
+- CI provides PostgreSQL for integration tests and fails if the integration suite skips.
+- `*.go`, `*.sql`, and `*.md` use LF in Git.
 
-### Task 2 — Config: `Config` + `Load()` · Risk: low
+## Task 2 — Pure environment configuration · Risk: low
 
-**Delivers:** env-driven config loading, pure and unit-testable.
+**Delivers:** pure config parsing independent of direct `os` calls.
 
-**Files:** `backend/internal/config/config.go` (+ test)
 **Depends on:** Task 1
-**Spec:** §10
 
 **Acceptance criteria:**
-- `Load(getenv func(string) string) (Config, error)` — pure; no direct `os` access.
-- Errors when `CHAIN_ID`, `RPC_URL`, or `DATABASE_URL` is missing/empty.
-- Errors when `CHAIN_ID` does not parse as `uint64`.
-- `LOG_LEVEL` defaults to `info` when unset.
 
----
+- `Load(getenv func(string) string) (Config, error)` is deterministic and unit tested.
+- Missing/invalid `CHAIN_ID`, `DEPLOYMENT_ID`, `RPC_URL`, or `DATABASE_URL` fails.
+- `LOG_LEVEL`, API address, and bounded chunk-size defaults are explicit.
+- `INDEXER_CONFIRMATIONS` is rejected for a production manifest.
+- Privy and USD settings may be absent for migration/indexer-only commands but API startup
+  performs its own required-field validation.
 
-### Task 3 — Config: chain registry · Risk: low
+## Task 3 — Reviewed deployment manifests · Risk: high
 
-**Delivers:** compiled-in chain registry wired into `Load`.
+**Delivers:** embedded manifest schema, lookup, validation, and initial reviewed records.
 
-**Files:** `backend/internal/config/chains.go` (+ modify `config.go`, tests)
 **Depends on:** Task 2
-**Spec:** §5.1; chain decision in `notes.md`
 
 **Acceptance criteria:**
-- `ChainByID(id uint64) (ChainConfig, bool)`.
-- Registry has `31337` (anvil), `46630` (robinhood-testnet), `4663` (robinhood-mainnet)
-  with `Name`, `Confirmations`, and — for the RH chains — the Uniswap v2 Factory/Router
-  addresses from the spec, **verified against `notes.md`**.
-- `Load` populates `Config.Chain` from the registry and errors on an unknown `CHAIN_ID`.
-- `WETH` may be left zero (unverified in spec) — do not block on it.
 
----
+- Lookup key is `(chain_id, deployment_id)`, not chain id alone.
+- Robinhood mainnet dependency addresses match the backend spec exactly.
+- Testnet does not reuse mainnet addresses and is explicitly marked graduation-disabled
+  until its own deployment manifest is available.
+- Anvil manifests can be loaded from generated contract deployment output without becoming
+  production defaults.
+- Validation rejects zero required addresses, wrong burn address, duplicate deployment id,
+  unknown engine version, and chain mismatch. Deployment generation separately proves
+  `StartBlock` equals the factory deployment receipt block.
+- Unit tests prove a testnet configuration cannot silently select mainnet DEX contracts.
 
-### Task 4 — curve: `State` + integer math helpers · Risk: high
+## Task 4 — Migration runner and PostgreSQL test support · Risk: high
 
-**Delivers:** `internal/curve` foundations — `State{X,Y,K}`, `NewState`, `Clone`,
-`Invariant`, and `ceilDiv` / `mulDiv`.
+**Delivers:** embedded goose migrations, `cmd/migrate`, testcontainers helper, and an
+integration-test execution sentinel.
 
-**Files:** `backend/internal/curve/curve.go`, `backend/internal/curve/mathutil.go` (+ tests)
 **Depends on:** Task 1
-**Spec:** §6.2 (precision), §6.3 (surface); Global Constraint on rounding
 
 **Acceptance criteria:**
-- All arithmetic `*big.Int`; no `float64` / `big.Float`.
-- `NewState(x0,y0)` sets `K = x0·y0` and does not alias caller inputs.
-- `ceilDiv(a,b)` = ⌈a/b⌉ for non-negative `a`, positive `b`; panics on `b ≤ 0`.
-- `mulDiv(a,b,denom)` = ⌊a·b/denom⌋; panics on `denom ≤ 0`.
-- Package imports only stdlib + `math/big` (depguard passes).
 
----
+- Migrations run from `embed.FS` and support up/down/up verification in tests.
+- Test helper creates a throwaway database and returns cleanup owned by the test.
+- Local absence of Docker reports a clear skip reason.
+- CI sets an explicit integration-required flag; under it, Docker/PostgreSQL failure or zero
+  executed integration tests fails the job.
+- No production process runs migrations implicitly unless a later plan adds an explicit
+  operator flag.
 
-### Task 5 — curve: price, tokens-sold, graduation check · Risk: high
+## Task 5 — Chain control and block-ledger schema · Risk: high
 
-**Delivers:** `SpotPriceWad`, `TokensSold`, `IsGraduated`.
+**Delivers:** migration for `sync_state` and `indexed_blocks`.
 
-**Files:** `backend/internal/curve/price.go` (+ tests)
 **Depends on:** Task 4
-**Spec:** §6.3; economy section in `notes.md`
 
 **Acceptance criteria:**
-- `SpotPriceWad(s)` = ⌊X·1e18/Y⌋ (wad fixed point, round down).
-- `TokensSold(s, y0)` = `y0 − Y`.
-- `IsGraduated(s, y0, curveTokens)` true iff tokens sold ≥ `curveTokens`.
-- Tests use the spec's launch values (`x0 = 1.4e18`, `y0 = 1,066,666,667e18`) and assert
-  exact expected outputs computed by hand under the documented rounding.
 
----
+- `sync_state` is keyed by `(chain_id, deployment_id)` and stores observed, safe, and
+  finalized numbers/hashes plus timestamps.
+- `indexed_blocks` is keyed by `(chain_id, block_number)` and stores block hash, parent hash,
+  block time, and constrained finality status.
+- Constraints forbid safe/finalized watermarks ahead of observed and finalized ahead of safe.
+- Duplicate block number with a different hash cannot be silently upserted.
+- Integration tests prove block-chain linkage queries can locate a common ancestor.
 
-### Task 6 — curve: `QuoteBuy` · Risk: high
+## Task 6 — Canonical event-ledger schema · Risk: high
 
-**Delivers:** buy quote with fee split and pool-favouring rounding.
+**Delivers:** exact event tables for V1 contract and Uniswap events.
 
-**Files:** `backend/internal/curve/quote.go` (+ tests)
 **Depends on:** Task 5
-**Spec:** §2 (fee model), §6.3; Global Constraint on rounding
 
 **Acceptance criteria:**
-- Returns: amount out, protocol fee, creator fee, next `State`.
-- `totalFee = ⌊ethGross·feeBps/10000⌋`; `protocolFee = ⌊totalFee·protoShareBps/10000⌋`;
-  `creatorFee = totalFee − protocolFee`.
-- `dxEff = ethGross − totalFee`; `newX = X + dxEff`; `newY = ⌈K/newX⌉`;
-  `amountOut = Y − newY`.
-- Panics on `ethGross ≤ 0`.
-- Tests assert: exact fee split at 100 bps / 5000 bps; reserves move along the curve;
-  spot price strictly increases after a buy.
 
----
+- Tables exist for token launches, trades, graduations, creator/protocol/launch fee claims,
+  refund credits/claims, transfers, and pair Mint/Burn/Swap/Sync.
+- Payload columns map one-to-one to the contract spec; `engine_version`, name, symbol, pair,
+  LP liquidity burned, and the `Trade` `eth_gross`/`eth_refund` pair are not omitted.
+- Every event table stores chain id, block number/hash/time, transaction index/hash, and log
+  index, with unique `(chain_id, tx_hash, log_index)`.
+- `NUMERIC(78,0)` plus nonnegative checks cover uint256 values without signed overflow.
+- Foreign keys are deferrable/replay-safe: the token constructor's initial `Transfer` may
+  precede `TokenLaunched` in the same transaction, while optional developer-buy events follow
+  it. Rollback deletes dependent events before the launch.
+- Duplicate-event, unknown-engine, negative-value, and rollback tests pass.
 
-### Task 7 — curve: `QuoteSell` · Risk: high
+## Task 7 — Chain projections, aggregates, and market view · Risk: high
 
-**Delivers:** sell quote with proceeds-side fees.
+**Delivers:** migrations for projections, durable dirty work, market aggregates, metadata,
+and `market_trades`.
 
-**Files:** `backend/internal/curve/quote.go` (+ tests)
 **Depends on:** Task 6
-**Spec:** §2, §6.3
 
 **Acceptance criteria:**
-- `newY = Y + tokensIn`; `newX = ⌈K/newY⌉`; `ethGross = X − newX`; fees taken from
-  `ethGross`; `amountOut = ethGross − totalFee`.
-- Panics on `tokensIn ≤ 0` or `tokensIn ≥ Y`.
-- Tests assert: a buy-then-sell round trip loses value (fees + rounding); gross proceeds
-  reconcile to the reserve delta.
 
----
+- `tokens`, `token_reserves`, `holder_balances`, and `aggregation_dirty` are clearly marked
+  rebuildable projections; metadata/images are separate off-chain state.
+- `pool_syncs` supports exact post-state reserve lookup using the pair `Sync` emitted
+  immediately before its `Swap` in the same transaction sequence.
+- `market_trades` exposes execution and spot price separately, deterministic chain cursor
+  fields, nullable DEX trader, gross ETH/WETH volume, token volume, source, and finality.
+- Curve `gross_eth_volume` in `market_trades` is `trades.eth_gross`; `eth_refund` is stored
+  but never included in volume, candles, or 24h aggregates.
+- DEX token/WETH leg resolution works for both token orderings.
+- `candles`, `token_stats`, `protocol_daily`, and `protocol_stats` use ETH fields as required
+  and USD fields as nullable.
+- Circulating supply, holder exclusions, and first-acquired reset behavior match the spec.
+- Tests cover both pair orderings, Mint/Sync without Swap, equal timestamps, graduation
+  circulation transition, and excluded system addresses.
 
-### Task 8 — curve: differential vector table + fuzz · Risk: high
+## Task 8 — sqlc queries and persistence adapters · Risk: high
 
-**Delivers:** a JSON vector-table test freezing exact `(state, input) → output` values,
-plus a monotonicity fuzz test.
+**Delivers:** sqlc v2 configuration, generated package, and foundation query adapters.
 
-**Files:** `backend/internal/curve/vectors_test.go`,
-`backend/internal/curve/testdata/curve_vectors.json`
 **Depends on:** Task 7
-**Spec:** §6.4
 
 **Acceptance criteria:**
-- `curve_vectors.json` has a versioned schema and ≥ 1 buy and ≥ 1 sell vector.
-- **Vector expected values are the authority for the contract's behaviour.** For now they
-  are Claude-supplied (from the documented math); the Solidity contract's generator
-  replaces/extends the file later. No placeholder (`FILL_EXACT` etc.) survives in the
-  committed file — the test fails if one does.
-- The test asserts byte-identical `*big.Int` outputs.
-- A fuzz test asserts `amountOut ≥ 0` and non-decreasing spot price after a buy, for
-  random ETH inputs.
 
----
+- `sqlc generate` and `sqlc diff` are reproducible and leave no diff in CI.
+- Generated `DBTX` accepts pgx pool and transaction implementations.
+- Queries cover block insertion/link lookup, watermarks, idempotent event insertion,
+  projection rebuild primitives, and dirty-work claim/complete.
+- No generated type escapes `internal/store/postgres`.
+- Byte/address and uint256 numeric conversion helpers reject wrong lengths, negative values,
+  and values above 256 bits.
 
-### Task 9 — store: migrations tooling + `sync_state` / `tokens` · Risk: high
+## Task 9 — Store transaction primitive · Risk: high
 
-**Delivers:** embedded goose tooling, `cmd/migrate`, a testcontainers Postgres helper, and
-migration 00001.
+**Delivers:** store-internal `WithinTx` using sqlc bound to pgx transactions.
 
-**Files:** `backend/internal/store/postgres/db.go`,
-`backend/internal/store/postgres/migrations/00001_*.sql`,
-`backend/internal/store/postgres/migrations/embed.go`,
-`backend/internal/store/postgres/testsupport.go`,
-`backend/cmd/migrate/main.go` (+ tests)
-**Depends on:** Task 1
-**Spec:** §7.1, §7.4
+**Depends on:** Task 8
 
 **Acceptance criteria:**
-- `RunMigrations(ctx, dsn)` applies all up migrations from an `embed.FS`.
-- `StartTestPostgres(t)` starts a throwaway Postgres, runs migrations, returns a DSN;
-  **SKIPs (not fails)** when Docker is unavailable.
-- After 00001: `sync_state` (single row, `id = 1` CHECK) and `tokens` exist with the
-  columns and the `tsvector` GIN index on `(name, symbol)` from the spec.
 
----
+- Success commits; returned error rolls back; panic rolls back and re-panics.
+- Context cancellation does not report success and leaves no partial event/checkpoint writes.
+- A test commits block, event, projection, dirty marker, and watermark atomically.
+- A failure at each stage proves all five categories roll back.
+- pgx and generated query types appear in no public domain/application signature.
+- The feature-level repository bundle is explicitly deferred to Plan 2, where consumer
+  interfaces exist.
 
-### Task 10 — store: canonical event tables · Risk: high
+## Task 10 — Solidity curve-vector artifact gate · Risk: high
 
-**Delivers:** migration 00002 — `trades`, `graduations`, `creator_fee_claims`,
-`transfers`, `pool_swaps`.
+**Delivers:** versioned vector schema and checked-in V1 vectors produced by Foundry.
 
-**Files:** `backend/internal/store/postgres/migrations/00002_*.sql` (+ test)
-**Depends on:** Task 9
-**Spec:** §7.1; Global Constraint on idempotency
+**Depends on:** reviewed contract implementation and its vector generator; Task 1
 
 **Acceptance criteria:**
-- Every table has `block_number`, `block_time`, `tx_hash`, `log_index` and UNIQUE
-  `(tx_hash, log_index)`.
-- `graduations` PK is `token_address`; the others use an identity PK.
-- FK to `tokens(address)` on all.
-- A test proves a duplicate `(tx_hash, log_index)` insert is rejected.
 
----
+- The artifact records engine version, parameter snapshot, initial state, operation input,
+  exact output, next state, fees, the `ethGross`/`ethRefund` split whose sum equals the buy
+  input, graduation flag, and expected revert where relevant.
+- Cases include normal/final buy, one-wei boundaries, refund, normal/max sell, invalid
+  oversell, fee split dust, and zero-output reverts.
+- The generator command is deterministic and CI proves regeneration has no diff.
+- No human-, Claude-, or Codex-authored expected amount is accepted as an authoritative
+  contract fixture.
 
-### Task 11 — store: derived tables, `market_trades` view, sqlc · Risk: high
+## Task 11 — Pure Go curve mirror · Risk: high
 
-**Delivers:** migration 00003 (derived tables + `market_trades` view), `sqlc.yaml`, first
-query files, generated code, `DBTX` alias.
+**Delivers:** state, checked arithmetic helpers, buy/sell/final-buy quotes, prices, supply,
+and domain errors.
 
-**Files:** `backend/internal/store/postgres/migrations/00003_*.sql`,
-`backend/internal/store/postgres/queries/*.sql`,
-`backend/internal/store/postgres/gen/*`, `backend/sqlc.yaml` (+ test)
-**Depends on:** Task 10
-**Spec:** §7.2, §7.3, §7.4
+**Depends on:** Tasks 1 and 10
 
 **Acceptance criteria:**
-- Derived tables: `holder_balances`, `candles` (interval CHECK on `1m/5m/1h/1d`),
-  `token_stats`, `protocol_daily`, `protocol_stats`.
-- `market_trades` view unions `trades` and `pool_swaps` into
-  `token_address, ts, price_wad, eth_volume, token_volume, side_buy, trader, tx_hash,
-  log_index, source`; DEX rows resolve the WETH leg via `tokens.token_is_token0`.
-- `sqlc generate` produces a `gen` package with typed queries for `sync_state`
-  (get/upsert checkpoint) and `tokens` (upsert / get / set-graduated).
-- `postgres.DBTX` aliases the sqlc `DBTX` interface.
-- A test asserts the view's column set.
 
----
+- Package uses `*big.Int`, does not alias caller values, and imports only stdlib.
+- Operation order and rounding match the contract spec and every Foundry vector byte-for-byte.
+- Sell validation uses `tokensIn <= tokensSold`; it never exposes virtual ETH.
+- Final buy consumes the exact gross amount, reports refund, lands on `yFinal`, and does not
+  silently cross `G`.
+- The exact-gross helper implements the contract spec's closed formula and proves the
+  resulting net amount equals the requested net amount over the supported fee range.
+- Invalid public input returns a typed error rather than panicking.
+- Property tests cover monotonic price, `x*y >= K`, bounded inventory, fee conservation,
+  round-trip loss, and graduation at most once.
 
-### Task 12 — store: Unit of Work · Risk: high
+## Task 12 — Foundation verification gate · Risk: high
 
-**Delivers:** `UnitOfWork` / `WithinTx` over a pgx transaction, with a `Repositories`
-bundle.
+**Delivers:** one reproducible verification command and a clean foundation handoff.
 
-**Files:** `backend/internal/store/postgres/uow.go` (+ test)
-**Depends on:** Task 11
-**Spec:** §4.5
+**Depends on:** Tasks 1-11
 
 **Acceptance criteria:**
-- `WithinTx(ctx, fn func(Repositories) error) error` — opens a `pgx.Tx`, builds tx-bound
-  repos, commits on nil, rolls back on error, rolls back + re-panics on panic.
-- `pgx.Tx` appears in no signature outside `store/`.
-- Tests prove: writes inside `WithinTx` commit on success; roll back fully on a returned
-  error.
 
----
+- Runs formatting, build, unit/race tests, required PostgreSQL integration tests, lint,
+  migrations up/down/up, sqlc generation/diff, and Solidity-vector regeneration/diff.
+- Runs on Windows developer setup with a workspace-local `GOCACHE` when the global cache is
+  inaccessible, without weakening CI.
+- Reviews `git diff` for generated noise, placeholder addresses, skipped integration gates,
+  float use, stale module path, and unreviewed dependency additions.
+- Records exact tool versions and commands in `AGENTS.md` only after they work.
 
-## Claude self-check (before handing to Codex)
+## Plan boundary
 
-- Spec coverage for foundations: §4.2/4.3 → T1 · §4.5 → T12 · §6 → T4-8 · §7 → T9-11 ·
-  §10 → T2-3 · §11 → T1.
-- Deferred to later plans (not gaps): `chain/`, `indexer/`, `apiserver/`, feature
-  modules, aggregation, Privy auth, SSE, `ETH_USD` source, WETH address confirmation.
+Plan 2 owns RPC clients, safe/finalized polling, advisory-lock lifecycle, staged log
+discovery, event decoding/routing, feature repository ports, reorg replay, and aggregators.
+Plan 3 owns Huma endpoints, Privy access+identity verification, informational quote DTOs,
+OpenAPI generation, and SSE. This plan supplies their tested storage and math substrate but
+does not invent their interfaces early.

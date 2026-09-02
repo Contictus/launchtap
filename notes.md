@@ -212,13 +212,15 @@ pons uses Dune; we will do it ourselves. Options:
   - **Event ordering:** sort deterministically before processing by
     `(block_number, tx_index, log_index)`.
   - **Unified market trades:** canonical split stays (`trades` curve / `pool_swaps` DEX);
-    candle/volume/ATH/feed/history read from a common `market_trades` VIEW. For DEX price,
-    `token_is_token0` is stored at graduation. Materialize if perf demands.
+    candle/volume/ATH/feed/history read from a common `market_trades` VIEW. Execution price
+    comes from trade legs; spot price comes from post-event curve reserves or pair `Sync`.
+    `token_is_token0` is stored at launch. Materialize only if measured performance demands.
   - **store/ layout:** one package `internal/store/postgres`, one file per feature +
     `uow.go` + `db.go`.
 - **2026-09-01 — Auth: Privy is the single model (custom SIWE CANCELLED).** The backend
-  verifies the Privy JWT via a JWKS-cache middleware → verified wallet(s). Metadata
-  writes: `tokens.creator ∈ user.wallets`. No `/auth/siwe/*` and no session table.
+  verifies the access token for the session and a separate identity token for linked
+  wallets, requires matching subjects, and authorizes only linked wallets. Metadata writes:
+  `tokens.creator ∈ user.linkedWallets`. No `/auth/siwe/*` and no session table.
 - **2026-09-01 — SSE reliability = best-effort.** Postgres = source of truth; SSE = a
   live hint. If a process dies after commit but before publish, an event can be missed =
   NOT data loss. A reconnecting client first fetches the REST snapshot, then applies SSE
@@ -229,9 +231,11 @@ pons uses Dune; we will do it ourselves. Options:
 - **2026-09-01 — Indexer split:** trades → main indexer (ideal for an event stream);
   holders list → a separate table/indexer or a post-graduation snapshot (updating
   balances + sorting on every transfer bloats a subgraph and lags).
-- **2026-09-01 — Price/MC/FDV/ATH:** source is our own indexer. Pre-curve, price from
-  the curve; post-graduation, from pool Swap events. MC/FDV = price × supply,
-  ATH = max of our own history. Dexscreener/GeckoTerminal are external links only.
+- **2026-09-01 — Price/MC/FDV/ATH:** source is our own indexer. Curve spot comes from
+  post-trade reserves; post-graduation spot comes from pair `Sync`; execution prices come
+  from trade legs. `FDV = spot × total supply`; `MC = spot × circulating supply` under the
+  backend spec's system-address exclusions. ATH uses execution-price history.
+  Dexscreener/GeckoTerminal are external links only.
 - **2026-09-01 — NO v1/v2 UI toggle.** We start with a single launch engine. Contracts
   are versioned (new deploy + registry), single flow for the user.
 - **2026-09-01 — Budget: ZERO COST.** Every service on a free tier. No money out of
@@ -258,11 +262,38 @@ pons uses Dune; we will do it ourselves. Options:
   - **Graduation DEX = Uniswap v2 (live on RH Chain from day one: v2/v3/v4/UniswapX)**
     - `UniswapV2Factory` = `0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f`
     - `UniswapV2Router02` = `0x89e5db8b5aa49aa85ac63f691524311aeb649eba`
-    - WETH address: to be confirmed from the RH Chain contracts docs
+    - WETH = `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` (mainnet only)
+    - Mainnet dependency addresses were verified against official docs and live bytecode.
+      They MUST NOT be reused for testnet; testnet graduation is fail-closed until its own
+      reviewed deployment manifest exists.
   - **No faucet** — testnet ETH is bridged from Sepolia via the canonical Arbitrum
     bridge (or Alchemy testnet credit). A setup step.
   - **Competitor/reference:** pons + **Uniswap's own RH Chain launchpad** (to analyze).
   - The project is **NOT Solana/Anchor** — EVM from the start (reference, wallet, DEX all EVM).
+
+- **2026-09-01 — Design closure:**
+  - Contract behavior is normative in
+    `docs/specs/2026-09-01-contract-core-design.md`; backend mirrors it.
+  - EIP-1167 clone parameters are write-once initialized storage, not per-clone Solidity
+    `immutable` values. Clone creation and initialization are atomic.
+  - Final buy is partial-fill with exact gross consumption and refund; it lands exactly on
+    `T_r` sold / `G` real curve ETH and graduates in the same transaction.
+  - Sell input is bounded by `tokensSold`; virtual reserves are never redeemable.
+  - Launch, creator, and protocol fees use pull-based claims. Failed ETH recipients do not
+    block market operations.
+  - Canonical Uniswap pair is fixed at launch. Pre-graduation token transfers to the curve
+    or pair are curve-only. Graduation uses direct Pair mint to the burn address, not
+    Router02's ratio-selecting liquidity path.
+  - A pre-existing WETH-only donation to an empty pair is accepted as extra liquidity;
+    pair `Sync` is the authoritative opening reserve. Existing LP supply or token reserve
+    is an invariant failure.
+  - Indexer tracks observed/safe/finalized heads, persists a hash-linked block ledger, and
+    rolls back mutable projections as well as event rows. Fixed five-block confirmation is
+    cancelled as a production finality model.
+  - Canonical DEX events include Mint/Burn/Swap/Sync. Spot and execution prices are distinct.
+  - PostgreSQL `NOTIFY` is a wake-up only; durable dirty work lives in a table. Indexer
+    singleton ownership uses a session advisory lock.
+  - Backend runtime is Go 1.26, module `github.com/Contictus/launchtap/backend`.
 
 ### Parked — "look at it more" (2026-09-01)
 
@@ -273,28 +304,33 @@ pons uses Dune; we will do it ourselves. Options:
 
 ## Open questions
 
-- Bonding curve exact parameters were finalized 2026-09-01 (see "Sub-project A —
-  economy" below). Remaining:
-  - ETH/USD source: is there a Chainlink ETH/USD feed on RH Chain — if so read
-    on-chain; otherwise a cached API (Coingecko). To verify.
-  - Confirmations depth for RH Chain: L2 sequencer reorg behavior — default 5,
-    to verify.
-  - Graduation LP: burn vs locker confirmed as **burn** (v1); revisit only if DEX
-    integration forces it.
-- Forum auth + moderation detail (to be clarified in sub-project C).
+These do not change contract or backend correctness and are fail-closed or nullable:
+
+- ETH/USD source: on-chain feed if a verified deployment exists; otherwise a cached
+  external adapter. ETH remains canonical and USD stays nullable.
+- Robinhood testnet DEX/WETH deployment manifest: use a separately verified official
+  deployment or deploy a test-only stack. Mainnet addresses are never copied.
+- Forum auth and moderation detail (sub-project C).
+- Production organization: multisig signers, timelock delay, legal/geo policy, hosting,
+  RPC provider, monitoring, and external audit vendor.
 
 ## Spec & plan documents
 
-- `docs/specs/2026-09-01-backend-core-design.md` — Backend Core design
-  (indexer + read API + curve math). Status: approved (2026-09-01).
-- The backend is split into 3 sequential plans (all implement this spec):
+- `docs/specs/2026-09-01-contract-core-design.md` — authoritative contract state machine,
+  economics, fee custody, graduation, security invariants, and event schema. Design closed.
+- `docs/specs/2026-09-01-backend-core-design.md` — indexer, finality/reorg, canonical DB,
+  market semantics, auth, API boundaries, and curve mirror. Design closed.
+- `docs/plans/2026-09-01-contract-foundations.md` — first implementation plan; 12 tasks
+  covering Foundry setup, token/curve/factory, graduation, vectors, adversarial tests,
+  deployment manifests, fork compatibility, and release gate.
+- The backend is split into 3 sequential plans after/alongside the contract foundation:
   1. `docs/plans/2026-09-01-backend-foundations.md` — scaffold + config/registry +
      `curve/` math (differential test) + `store/` (schema + migration + sqlc + UoW).
-     **12 tasks, written, awaiting execution.**
+     **12 tasks, rewritten after design closure, awaiting authorization and pre-flight.**
   2. Indexer (chain infra + sync loop + feature ingestion + aggregation) — to write.
   3. API (apiserver + Privy auth + read endpoints + SSE) — to write.
 
-## Sub-project A — economy & contract parameters (WORKING)
+## Sub-project A — economy & contract parameters (DESIGN CLOSED)
 
 > These are not "the one true answer"; they are the parameters that set the economy
 > + trust model. Starting values, tunable after the curve simulation.
@@ -317,7 +353,7 @@ State: `x` = ETH reserve, `y` = token reserve, invariant `x·y = k`
 **Parameter derivation** (not picked by hand — from the "no-gap graduation" constraint:
 curve final price = Uniswap pool opening price):
 ```
-y0 = T_r² / (T_r − L)
+y0 = ceil(T_r² / (T_r − L))
 x0 = G · L / (T_r − L)
 launch→graduation FDV multiple = (T_r / L)²        (independent of G)
 initial FDV = G·L·S / T_r²
@@ -334,9 +370,14 @@ graduation FDV = G·S / L
 
 Changing `G` scales the FDVs, not the multiple.
 
+Exact V1 base-unit value: `y0 = 1066666666666666666666666667`. Using floor instead
+would put graduation one wei above `G`; initialization rejects that parameter set.
+
 **Simulation result (80/20, G=4.2, ETH~$4000) — 2026-09-01:**
 - Launch: spot 1.3125e-9 ETH/tok, FDV 1.3125 ETH (~$5.25k), circulating MC 0
-- Graduation: spot 2.1e-8 (16x), FDV 21 ETH (~$84k), circulating MC 16.8 ETH (~$67k)
+- Graduation before LP transfer: spot 2.1e-8 (16x), FDV 21 ETH (~$84k), circulating
+  MC 16.8 ETH (~$67k). After `L` enters the pair, circulating supply becomes 1B under
+  the backend definition, so MC equals FDV absent burns.
 - Pool opening price = curve final price = 2.1e-8 (no arb gap) ✓
 - Convexity: first 50% of tokens → 20% of ETH; last 25% of tokens → 57% of ETH
 - Dev buy max 1% (10M tok) at launch ≈ 0.0133 ETH (~$54), ~zero effect on initial FDV
@@ -349,9 +390,10 @@ Changing `G` scales the FDVs, not the multiple.
   snapshotted at launch.
 
 ### Fee
-- Create: **0.0005 ETH** fixed → protocol
+- Create: **0.0005 ETH** fixed → accrues in factory for protocol pull-claim
 - Every trade (**curve phase only**): **1%** = 0.5% protocol + 0.5% creator
-  - `creatorFees[token][creator]` accrues, creator claims (`CreatorFeesClaimed`)
+  - creator and protocol shares accrue separately in the curve; both use pull-claims
+  - failed recipients cannot block trading; claims stay available while paused
 - ⚠️ AFTER graduation, vanilla Uniswap → NO protocol/creator cut.
   Post-grad fee capture = future (Uniswap V4 hook; couples the V2/V4 decision to the DEX).
 - Snipe tax: **NONE in v1**
@@ -360,10 +402,14 @@ Changing `G` scales the FDVs, not the multiple.
 
 ### Graduation
 Flow: curve → threshold → curve trading closes → collected ETH + `L` tokens → DEX pool → LP token → burn
-- ⚠️ "LP burn" ties us to V2-style liquidity; in V3/V4 liquidity is not an ERC-20 LP token.
-  Uniswap v2 is live on RH Chain and addresses are in hand (see chain decision), but keep
-  it a **soft requirement** in the design, confirm once DEX integration is verified.
-- A graduation fee (if any) reduces ETH to the pool → a small arb gap; decide later.
+- V1 is explicitly tied to Uniswap v2-style ERC-20 LP tokens. Graduation calls the pair
+  directly and mints the initial launch LP position to the fixed dead address.
+- Pair creation is permissionless. The canonical pair is fixed at launch and token transfers
+  to it are curve-only until graduation. Existing LP supply/token reserve causes revert;
+  WETH-only donation is accepted as additional liquidity and surfaced by `Sync`.
+- Graduation fee = 0 in v1. Exactly `G` launch-owned ETH and `L` tokens are contributed.
+- “LP burned” applies to the initial launch position; later liquidity providers own their
+  independently minted LP.
 
 ### Factory & upgrade
 - **EIP-1167 minimal clone**, shared implementation, separate storage per token (cheap)
@@ -378,50 +424,24 @@ Flow: curve → threshold → curve trading closes → collected ETH + `L` token
 
 ### Parameter management principle (2026-09-01)
 Every launch parameter (`x0,y0,T_r,L,G`, fees) is **snapshotted into the clone's
-immutable storage** at launch. The factory holds mutable defaults only for FUTURE
-launches. A started launch's rules never change.
+write-once initialized storage** in the same transaction as clone creation. These are not
+Solidity `immutable` variables. The factory holds mutable defaults only for FUTURE launches.
+A started launch's rules never change.
 
 ### Event schema (the interface the backend depends on) — 2026-09-01
-```solidity
-// Factory
-event TokenLaunched(
-    address indexed token, address indexed curve, address indexed creator,
-    uint256 totalSupply,      // 1e27
-    uint256 virtualEth,       // x0 snapshot
-    uint256 virtualToken,     // y0 snapshot
-    uint256 curveTokens,      // T_r
-    uint256 lpTokens,         // L
-    uint256 graduationEth,    // G
-    uint16  tradeFeeBps,      // 100 = 1%
-    uint16  protocolShareBps  // 5000 = 50%
-);
-// Curve — every buy/sell (curve phase only)
-event Trade(
-    address indexed token, address indexed trader, bool isBuy,
-    uint256 ethAmount,        // GROSS (before fees)
-    uint256 tokenAmount,
-    uint256 protocolFee, uint256 creatorFee,   // ETH
-    uint256 newEthReserve, uint256 newTokenReserve  // x, y after
-);
-// Curve — once
-event Graduated(
-    address indexed token, uint256 ethToPool, uint256 tokensToPool,
-    address lpPair, uint256 graduationFee
-);
-// Curve
-event CreatorFeesClaimed(address indexed token, address indexed creator, uint256 amount);
-```
-- No `ts` — the log already carries block/timestamp.
-- Protocol fee is transferred **immediately to the treasury** (no accrual, `protocolFee`
-  is visible in Trade).
-- Creator fee **accrues**, creator claims (`CreatorFeesClaimed`).
+
+The normative ABI is in `docs/specs/2026-09-01-contract-core-design.md` §7. It includes
+engine version, pair, name/symbol, launch fee, LP liquidity burned, creator/protocol/launch
+fee claims, and refund lifecycle. Do not copy a second event definition into this file;
+the contract spec is the single source of truth.
 
 ### Indexing model (backend, per token)
 | Phase | Price source | Holders source |
 |-------|--------------|----------------|
-| Pre-graduation | our `Trade` (P = x/y) | ERC-20 `Transfer` |
-| Post-graduation | Uniswap v2 pair `Swap` + `Sync` | ERC-20 `Transfer` |
-`Graduated` = phase switch: stop listening to `Trade` for that token, start listening to the Uniswap pair.
+| Pre-graduation | `Trade`: execution from legs, spot from post-trade x/y | ERC-20 `Transfer` |
+| Post-graduation | `Swap`: execution; `Sync`: spot/reserves | ERC-20 `Transfer` |
+The pair is known from `TokenLaunched`; `Graduated` flips the market source. The indexer
+continues to reject impossible curve trades after graduation rather than silently accepting them.
 
 ### Decision status
 1. **Token economy** — ✅ 1B / 18dec · 800M curve / 200M LP (80/20 provisional)
@@ -429,13 +449,15 @@ event CreatorFeesClaimed(address indexed token, address indexed creator, uint256
    simulation done (above)
 3. **Fee economy** — ✅ create 0.0005 ETH → protocol; trade 1% = 0.5%/0.5%, curve phase only
 4. **G (graduation)** — ✅ 4.2 ETH default, configurable for future launches, snapshotted at launch
-5. **Event schema** — ✅ LOCKED (above)
+5. **Event schema** — ✅ LOCKED in the contract core spec; versioned by `engineVersion`
 6. **Metadata** — ✅ fully off-chain (our Postgres). The creator authenticates via **Privy**
-   and writes/edits it through the API; the API checks `tokens.creator ∈ user.wallets`
+   and writes/edits it through the API; the API checks
+   `tokens.creator ∈ user.linkedWallets`
    (verified via the on-chain `TokenLaunched`). description + image + X/Telegram.
    name/symbol are already on the ERC-20. No URI in the event.
    Accepted downside: metadata is not portable/permanent; an `ipfs://` mirror can be added later.
-7. **graduationFee** — ✅ 0 in v1 (all G to the pool, no arb gap)
+7. **Graduation fee** — ✅ 0 in v1 (all launch-owned G goes to the pool; no-gap holds
+   absent an accepted third-party WETH donation)
 
 ## To decide before coding (checklist)
 
@@ -447,25 +469,31 @@ Status: ✅ decided · 🔴 repo-wide, before any code · 🟡 before sub-projec
 - [x] **Backend language** — ✅ Go
 - [x] **Backend API layer** — ✅ REST/JSON via `huma` (no tRPC, no gRPC)
 - [x] **Backend architecture** — ✅ modular monolith, 2 processes, hexagonal + feature modules
-- [ ] Repo structure — monorepo: `contracts/ backend/ web/ docs/` (pnpm workspaces + Turbo for web)
+- [x] Repo structure — monorepo: `contracts/ backend/ web/ docs/`; web workspace tooling
+  is selected only when frontend implementation starts
 - [ ] Frontend stack — Next.js (App Router) + TS + Tailwind + shadcn/ui (proposed, not confirmed)
-- [ ] DB tooling — pgx + sqlc + goose (in the backend spec); TimescaleDB deferred
+- [x] DB tooling — pgx/v5 + sqlc + goose; TimescaleDB deferred
 - [ ] Hosting — web: Vercel Hobby · indexer+DB: Railway/Render/Fly/Neon free (deferred)
-- [ ] CI + test policy — GitHub Actions; lint+typecheck+Foundry test required; TDD (backend job in Plan 1)
+- [x] CI + test policy — GitHub Actions; Foundry, Go build/race/lint/sqlc/migration and
+  required Postgres integration gates; web lint/typecheck/build when web exists
 
 ### Sub-project A: economy + contract design (🟡)
-- [x] Token: plain ERC-20 fixed supply — 1B, 18 decimals
+- [x] Token: fixed-supply ERC-20 — 1B, 18 decimals; curve/pair transfer restrictions only
+  during the curve phase, ordinary ERC-20 behavior after graduation
 - [x] Curve parameters: x0=1.4 ETH, y0=1.0667B, T_r=800M, L=200M, G=4.2 ETH
 - [x] Fees: launch 0.0005 ETH → protocol; trade 1% = 0.5% protocol / 0.5% creator
 - [x] Snipe tax: none in v1
 - [x] Developer buy: allowed, max 1% supply
 - [x] Creator income: curve-phase trade fee share + accrual/claim
-- [x] Graduation: Uniswap v2 router, LP burn (soft requirement until DEX integration verified)
+- [x] Graduation: canonical Uniswap v2 Pair direct mint, initial LP to dead address;
+  Router02 is not used for graduation
 - [x] Factory pattern: EIP-1167 minimal clone, non-upgradeable + versioning
-- [x] **Event schema** — locked (see above)
-- [x] Admin/security: pause → multisig; fee/config → multisig + timelock; curve logic immutable
-- [ ] Audit plan: Slither + internal review (v1); external audit before mainnet
-- [ ] Anti-abuse: max wallet %, cooldown — or none? (leaning none, memecoin ethos)
+- [x] **Event schema** — locked in the contract core spec and engine-versioned
+- [x] Admin/security: launch/trading pause → multisig; future defaults/engine → timelock;
+  claims never pause; no rescue/admin graduation; existing curve logic and params fixed
+- [x] Audit plan: Slither + invariant/fuzz + independent review during development;
+  external audit required before mainnet funds
+- [x] Anti-abuse: no max-wallet or cooldown in v1; developer buy remains capped at 1%
 
 ### Sub-project A: minimal indexer is part of A (🟡)
 Explore/Graduated has "sort by volume/market cap" → an indexer is required from day 1.
