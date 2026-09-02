@@ -97,10 +97,9 @@ library CurveMath {
 
         if (candidateVirtualToken >= virtualToken) revert ILaunchErrors.ZeroOutput();
 
-        if (candidateVirtualEth >= finalVirtualEth) {
+        if (candidateVirtualEth > finalVirtualEth) {
             uint256 netNeeded = finalVirtualEth - virtualEth;
             quote.ethGrossUsed = exactGrossForNet(netNeeded, feeBps);
-            if (quote.ethGrossUsed > suppliedGross) revert ILaunchErrors.ArithmeticOverflow();
 
             (totalFee, protocolFee, creatorFee) =
                 splitFees(quote.ethGrossUsed, feeBps, protocolShareBps);

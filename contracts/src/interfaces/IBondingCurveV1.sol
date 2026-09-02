@@ -7,6 +7,8 @@ import { ILaunchEvents } from "./ILaunchEvents.sol";
 import { LaunchTypes } from "../types/LaunchTypes.sol";
 
 interface IBondingCurveV1 is ICurveClaims, ILaunchErrors, ILaunchEvents {
+    error NotInitialized();
+
     // forge-lint: disable-next-line(mixed-case-function)
     function ENGINE_VERSION() external view returns (uint16);
     function initialize(LaunchTypes.CurveInitialization calldata initialization) external;

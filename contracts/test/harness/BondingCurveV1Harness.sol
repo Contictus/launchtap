@@ -2,6 +2,7 @@
 pragma solidity 0.8.36;
 
 import { BondingCurveV1 } from "../../src/BondingCurveV1.sol";
+import { LaunchTypes } from "../../src/types/LaunchTypes.sol";
 
 contract BondingCurveV1Harness is BondingCurveV1 {
     function initialized() external view returns (bool) {
@@ -58,5 +59,13 @@ contract BondingCurveV1Harness is BondingCurveV1 {
 
     function protocolShareBpsSnapshot() external view returns (uint16) {
         return _protocolShareBps;
+    }
+
+    function totalPendingRefunds() external view returns (uint256) {
+        return _totalPendingRefunds;
+    }
+
+    function setPhase(LaunchTypes.Phase phase_) external {
+        _phase = phase_;
     }
 }

@@ -3,6 +3,7 @@ pragma solidity 0.8.36;
 
 import { Test } from "forge-std/Test.sol";
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
+import { IBondingCurveV1 } from "../src/interfaces/IBondingCurveV1.sol";
 import { ILaunchErrors } from "../src/interfaces/ILaunchErrors.sol";
 import { CurveMath } from "../src/libraries/CurveMath.sol";
 import { LaunchTypes } from "../src/types/LaunchTypes.sol";
@@ -97,6 +98,22 @@ contract BondingCurveV1Test is Test {
     function testImplementationInitializationIsDisabled() external {
         vm.expectRevert(ILaunchErrors.ImplementationInitializationDisabled.selector);
         implementation.initialize(_defaultInitialization());
+
+        vm.expectRevert(IBondingCurveV1.NotInitialized.selector);
+        // forge-lint: disable-next-line(unused-return)
+        implementation.quoteBuy(1);
+    }
+
+    function testUninitializedCloneCannotUseCurvePhaseFunctions() external {
+        BondingCurveV1Harness curve = _newClone();
+
+        vm.expectRevert(IBondingCurveV1.NotInitialized.selector);
+        // forge-lint: disable-next-line(unused-return)
+        curve.quoteBuy(1);
+
+        vm.expectRevert(IBondingCurveV1.NotInitialized.selector);
+        // forge-lint: disable-next-line(unused-return)
+        curve.quoteSell(1);
     }
 
     function testCloneInitializesExactlyOnceWithDefaultState() external {
@@ -414,20 +431,28 @@ contract BondingCurveV1Test is Test {
         assertEq(finalBuy.newVirtualToken, 20);
         assertTrue(finalBuy.graduates);
 
+        CurveMath.BuyQuote memory exactBoundary = math.quoteBuy(1000, 10, 100, 20, 40, 0, 0);
+        assertEq(exactBoundary.ethGrossUsed, 40);
+        assertEq(exactBoundary.refund, 0);
+        assertEq(exactBoundary.newVirtualEth, 50);
+        assertEq(exactBoundary.newVirtualToken, 20);
+        assertTrue(exactBoundary.graduates);
+
         CurveMath.BuyQuote memory oneUnitOverfill = math.quoteBuy(1000, 10, 100, 20, 41, 0, 0);
         assertEq(oneUnitOverfill.ethGrossUsed, 40);
         assertEq(oneUnitOverfill.refund, 1);
         assertEq(oneUnitOverfill.newVirtualEth, 50);
         assertEq(oneUnitOverfill.newVirtualToken, 20);
 
-        CurveMath.BuyQuote memory feePlateauOverfill =
+        CurveMath.BuyQuote memory feePlateauBoundary =
             math.quoteBuy(1100, 10, 110, 10, 200, 5000, 5000);
-        assertEq(feePlateauOverfill.ethGrossUsed, 199);
-        assertEq(feePlateauOverfill.protocolFee, 49);
-        assertEq(feePlateauOverfill.creatorFee, 50);
-        assertEq(feePlateauOverfill.refund, 1);
-        assertEq(feePlateauOverfill.newVirtualEth, 110);
-        assertEq(feePlateauOverfill.newVirtualToken, 10);
+        assertEq(feePlateauBoundary.ethGrossUsed, 200);
+        assertEq(feePlateauBoundary.protocolFee, 50);
+        assertEq(feePlateauBoundary.creatorFee, 50);
+        assertEq(feePlateauBoundary.refund, 0);
+        assertEq(feePlateauBoundary.newVirtualEth, 110);
+        assertEq(feePlateauBoundary.newVirtualToken, 10);
+        assertTrue(feePlateauBoundary.graduates);
     }
 
     function testInitializedContractQuotesRegularAndFinalBuys() external {
