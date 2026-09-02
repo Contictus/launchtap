@@ -47,7 +47,13 @@ from `contracts/` with:
 `abi/v1/ILaunchEvents.json` is the authoritative V1 event artifact consumed by the backend.
 `abi/v1/LaunchToken.json` freezes the concrete inherited ERC-20 callable surface. The gate
 uses an exact allowlist so accidental additions such as mint, burn, fallback, or receive fail.
+`abi/v1/LaunchFactory.json` freezes the launch and governance surface with the same exact
+allowlist approach; authority-transfer, rescue, fallback, and receive paths are rejected.
 `storage-layout/v1/LaunchToken.json` captures the composed ERC-20 implementation layout.
 `storage-layout/v1/BondingCurveV1.json` captures the concrete clone implementation layout.
-`LaunchFactoryStorageBase.json` is explicitly pre-composition until the factory implementation
-lands.
+`storage-layout/v1/LaunchFactory.json` captures the composed non-upgradeable factory layout.
+
+Market-delivery ETH sends (final-buy refunds and sell proceeds) use a 50,000 gas probe so a
+recipient cannot consume the transaction's remaining gas and block market progress. A failed
+probe becomes a pull refund. Explicit fee/refund claims use an uncapped call and revert on
+failure, so smart accounts that need more than the probe limit remain able to receive funds.

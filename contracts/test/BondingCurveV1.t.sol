@@ -3,7 +3,6 @@ pragma solidity 0.8.36;
 
 import { Test } from "forge-std/Test.sol";
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
-import { IBondingCurveV1 } from "../src/interfaces/IBondingCurveV1.sol";
 import { ILaunchErrors } from "../src/interfaces/ILaunchErrors.sol";
 import { CurveMath } from "../src/libraries/CurveMath.sol";
 import { LaunchTypes } from "../src/types/LaunchTypes.sol";
@@ -99,7 +98,7 @@ contract BondingCurveV1Test is Test {
         vm.expectRevert(ILaunchErrors.ImplementationInitializationDisabled.selector);
         implementation.initialize(_defaultInitialization());
 
-        vm.expectRevert(IBondingCurveV1.NotInitialized.selector);
+        vm.expectRevert(ILaunchErrors.NotInitialized.selector);
         // forge-lint: disable-next-line(unused-return)
         implementation.quoteBuy(1);
     }
@@ -107,11 +106,11 @@ contract BondingCurveV1Test is Test {
     function testUninitializedCloneCannotUseCurvePhaseFunctions() external {
         BondingCurveV1Harness curve = _newClone();
 
-        vm.expectRevert(IBondingCurveV1.NotInitialized.selector);
+        vm.expectRevert(ILaunchErrors.NotInitialized.selector);
         // forge-lint: disable-next-line(unused-return)
         curve.quoteBuy(1);
 
-        vm.expectRevert(IBondingCurveV1.NotInitialized.selector);
+        vm.expectRevert(ILaunchErrors.NotInitialized.selector);
         // forge-lint: disable-next-line(unused-return)
         curve.quoteSell(1);
     }

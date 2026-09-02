@@ -38,4 +38,20 @@ library LaunchTypes {
         uint256 minDeveloperTokensOut;
         uint256 deadline;
     }
+
+    struct FactoryDefaults {
+        CurveParameters parameters;
+        address weth;
+        address uniswapFactory;
+        uint256 launchFee;
+    }
+
+    struct FactoryInitialization {
+        address pauseAuthority;
+        address timelock;
+        address protocolTreasury;
+        uint16 engineVersion;
+        address implementation;
+        FactoryDefaults defaults;
+    }
 }

@@ -3,6 +3,7 @@ pragma solidity 0.8.36;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { ILaunchErrors } from "../interfaces/ILaunchErrors.sol";
+import { LaunchTypes } from "../types/LaunchTypes.sol";
 
 library CurveMath {
     uint256 internal constant BPS_DENOMINATOR = 10_000;
@@ -168,5 +169,42 @@ library CurveMath {
         returns (uint256)
     {
         return virtualEth - initialVirtualEth;
+    }
+
+    function validateParameters(LaunchTypes.CurveParameters memory parameters) internal pure {
+        uint256 allocatedSupply = checkedAdd(parameters.curveTokens, parameters.lpTokens);
+        if (parameters.totalSupply != allocatedSupply) {
+            revert ILaunchErrors.InvalidSupplyAllocation(
+                parameters.totalSupply, parameters.curveTokens, parameters.lpTokens
+            );
+        }
+        if (parameters.lpTokens == 0 || parameters.curveTokens <= parameters.lpTokens) {
+            revert ILaunchErrors.InvalidCurveAllocation(parameters.curveTokens, parameters.lpTokens);
+        }
+        if (parameters.graduationEth == 0) revert ILaunchErrors.InvalidGraduationEth();
+        if (
+            parameters.initialVirtualEth == 0
+                || parameters.initialVirtualToken <= parameters.curveTokens
+        ) {
+            revert ILaunchErrors.InvalidVirtualReserves(
+                parameters.initialVirtualEth, parameters.initialVirtualToken, parameters.curveTokens
+            );
+        }
+        if (parameters.tradeFeeBps >= BPS_DENOMINATOR) {
+            revert ILaunchErrors.InvalidTradeFeeBps(parameters.tradeFeeBps);
+        }
+        if (parameters.protocolShareBps > BPS_DENOMINATOR) {
+            revert ILaunchErrors.InvalidProtocolShareBps(parameters.protocolShareBps);
+        }
+
+        uint256 invariant = checkedMul(parameters.initialVirtualEth, parameters.initialVirtualToken);
+        uint256 finalVirtualToken = parameters.initialVirtualToken - parameters.curveTokens;
+        uint256 finalVirtualEth = checkedAdd(parameters.initialVirtualEth, parameters.graduationEth);
+        if (
+            ceilDiv(invariant, finalVirtualToken) != finalVirtualEth
+                || ceilDiv(invariant, finalVirtualEth) != finalVirtualToken
+        ) {
+            revert ILaunchErrors.InvalidCurveBoundary(invariant, finalVirtualToken, finalVirtualEth);
+        }
     }
 }

@@ -2,6 +2,7 @@
 pragma solidity 0.8.36;
 
 interface ILaunchErrors {
+    error NotInitialized();
     error AlreadyInitialized();
     error ImplementationInitializationDisabled();
     error AlreadyGraduated();
@@ -36,6 +37,9 @@ interface ILaunchErrors {
     error PairLiquidityZero();
     error LaunchesPaused();
     error TradingPaused();
+    error UnauthorizedPauseAuthority(address caller, address authority);
+    error UnauthorizedTimelock(address caller, address timelock);
+    error InvalidAuthority(bytes32 field, address authority);
     error UnauthorizedCreatorClaim(address caller, address creator);
     error UnauthorizedProtocolClaim(address caller, address treasury);
     error NothingToClaim();
@@ -44,6 +48,10 @@ interface ILaunchErrors {
     error CurveInvariantFailed(uint256 virtualEth, uint256 virtualToken, uint256 invariant);
     error DeveloperBuyCapExceeded(uint256 tokensOut, uint256 maximumTokensOut);
     error LaunchValueMismatch(uint256 expectedValue, uint256 actualValue);
+    error UnknownEngine(uint16 engineVersion);
+    error EngineDisabled(uint16 engineVersion);
+    error InvalidEngineImplementation(address implementation);
+    error EngineVersionMismatch(uint16 expected, uint16 actual);
     error EthTransferFailed(address recipient, uint256 amount);
     error TokenTransferFailed(address token, address recipient, uint256 amount);
     error WethTransferFailed(address recipient, uint256 amount);

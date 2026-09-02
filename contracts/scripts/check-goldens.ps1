@@ -175,14 +175,54 @@ try {
     $tokenAbi = ConvertTo-StableJson $tokenAbiObject
     Compare-OrWrite (Join-Path $contractsRoot "abi/v1/LaunchToken.json") $tokenAbi
 
+    $factoryAbiObject = Invoke-ForgeJson @("inspect", "LaunchFactory", "abi", "--json")
+    $factoryCallables = @(
+        foreach ($entry in $factoryAbiObject) {
+            if ($entry.type -eq "function") {
+                $inputTypes = @($entry.inputs | ForEach-Object { [string] $_.type })
+                "$($entry.name)($($inputTypes -join ','))"
+            }
+            elseif ($entry.type -in @("fallback", "receive")) {
+                [string] $entry.type
+            }
+        }
+    ) | Sort-Object
+    $expectedFactoryCallables = @(
+        "claimLaunchFees()",
+        "configureEngine(uint16,address,bool)",
+        "curveImplementation(uint16)",
+        "engineEnabled(uint16)",
+        "futureDefaults()",
+        "futureDefaultsHash()",
+        "launch(tuple)",
+        "launchFee()",
+        "launchFeesByTreasury(address)",
+        "launchesPaused()",
+        "pauseAuthority()",
+        "protocolTreasury()",
+        "setFutureDefaults(tuple)",
+        "setFutureTreasury(address)",
+        "setLaunchesPaused(bool)",
+        "setTradingPaused(bool)",
+        "timelock()",
+        "tradingPaused()",
+        "uniswapFactory()",
+        "weth()"
+    ) | Sort-Object
+    if (($factoryCallables -join "`n") -ne ($expectedFactoryCallables -join "`n")) {
+        Fail "LaunchFactory callable ABI must remain fixed and must not expose authority transfer or rescue paths"
+    }
+    $factoryAbi = ConvertTo-StableJson $factoryAbiObject
+    Compare-OrWrite (Join-Path $contractsRoot "abi/v1/LaunchFactory.json") $factoryAbi
+
     $storageContracts = @(
         [PSCustomObject]@{
             Contract = "BondingCurveV1"
             Golden = "BondingCurveV1"
         },
         [PSCustomObject]@{
-            Contract = "LaunchFactoryStorage"
-            Golden = "LaunchFactoryStorageBase"
+            Contract = "LaunchFactory"
+            Golden = "LaunchFactory"
         },
         [PSCustomObject]@{
             Contract = "LaunchToken"

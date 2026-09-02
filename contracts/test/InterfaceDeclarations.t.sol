@@ -28,7 +28,10 @@ contract InterfaceDeclarationsTest is Test {
         assertTrue(ICurveClaims.claimRefund.selector != bytes4(0));
         assertTrue(IFactoryClaims.claimLaunchFees.selector != bytes4(0));
         assertTrue(ILaunchErrors.ZeroOutput.selector != bytes4(0));
+        assertTrue(ILaunchErrors.NotInitialized.selector != bytes4(0));
         assertTrue(ILaunchFactory.launch.selector != bytes4(0));
+        assertTrue(ILaunchFactory.configureEngine.selector != bytes4(0));
+        assertTrue(ILaunchFactory.setFutureDefaults.selector != bytes4(0));
         assertTrue(ILaunchPause.setTradingPaused.selector != bytes4(0));
         assertTrue(ILaunchToken.markGraduated.selector != bytes4(0));
         assertTrue(IUniswapV2Factory.getPair.selector != bytes4(0));

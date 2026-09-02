@@ -3,7 +3,6 @@ pragma solidity 0.8.36;
 
 import { BondingCurveV1Storage } from "./storage/BondingCurveV1Storage.sol";
 import { CurveMath } from "./libraries/CurveMath.sol";
-import { IBondingCurveV1 } from "./interfaces/IBondingCurveV1.sol";
 import { ILaunchErrors } from "./interfaces/ILaunchErrors.sol";
 import { ILaunchEvents } from "./interfaces/ILaunchEvents.sol";
 import { ILaunchPause } from "./interfaces/ILaunchPause.sol";
@@ -59,7 +58,7 @@ contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
         _validateAddress(initialization.lpPair, FIELD_LP_PAIR);
 
         LaunchTypes.CurveParameters calldata parameters = initialization.parameters;
-        _validateParameters(parameters);
+        CurveMath.validateParameters(parameters);
         _validatePair(initialization);
 
         uint256 invariant =
@@ -242,6 +241,18 @@ contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
         return _protocolTreasury;
     }
 
+    function implementation() external view returns (address) {
+        return _implementation;
+    }
+
+    function weth() external view returns (address) {
+        return _weth;
+    }
+
+    function uniswapFactory() external view returns (address) {
+        return _uniswapFactory;
+    }
+
     function lpPair() external view returns (address) {
         return _lpPair;
     }
@@ -381,6 +392,9 @@ contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
     }
 
     function _validateGraduationPair() private view {
+        address tokenPair = ILaunchToken(_token).lpPair();
+        if (tokenPair != _lpPair) revert PairNotCanonical(_lpPair, tokenPair);
+
         address expectedPair = IUniswapV2Factory(_uniswapFactory).getPair(_token, _weth);
         if (expectedPair != _lpPair) revert PairNotCanonical(expectedPair, _lpPair);
 
@@ -421,45 +435,6 @@ contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
         }
     }
 
-    function _validateParameters(LaunchTypes.CurveParameters calldata parameters) private pure {
-        uint256 allocatedSupply = CurveMath.checkedAdd(parameters.curveTokens, parameters.lpTokens);
-        if (parameters.totalSupply != allocatedSupply) {
-            revert InvalidSupplyAllocation(
-                parameters.totalSupply, parameters.curveTokens, parameters.lpTokens
-            );
-        }
-        if (parameters.lpTokens == 0 || parameters.curveTokens <= parameters.lpTokens) {
-            revert InvalidCurveAllocation(parameters.curveTokens, parameters.lpTokens);
-        }
-        if (parameters.graduationEth == 0) revert InvalidGraduationEth();
-        if (
-            parameters.initialVirtualEth == 0
-                || parameters.initialVirtualToken <= parameters.curveTokens
-        ) {
-            revert InvalidVirtualReserves(
-                parameters.initialVirtualEth, parameters.initialVirtualToken, parameters.curveTokens
-            );
-        }
-        if (parameters.tradeFeeBps >= CurveMath.BPS_DENOMINATOR) {
-            revert InvalidTradeFeeBps(parameters.tradeFeeBps);
-        }
-        if (parameters.protocolShareBps > CurveMath.BPS_DENOMINATOR) {
-            revert InvalidProtocolShareBps(parameters.protocolShareBps);
-        }
-
-        uint256 invariant =
-            CurveMath.checkedMul(parameters.initialVirtualEth, parameters.initialVirtualToken);
-        uint256 finalVirtualToken = parameters.initialVirtualToken - parameters.curveTokens;
-        uint256 finalVirtualEth =
-            CurveMath.checkedAdd(parameters.initialVirtualEth, parameters.graduationEth);
-        if (
-            CurveMath.ceilDiv(invariant, finalVirtualToken) != finalVirtualEth
-                || CurveMath.ceilDiv(invariant, finalVirtualEth) != finalVirtualToken
-        ) {
-            revert InvalidCurveBoundary(invariant, finalVirtualToken, finalVirtualEth);
-        }
-    }
-
     function _validatePair(LaunchTypes.CurveInitialization calldata initialization) private view {
         address expectedPair = IUniswapV2Factory(initialization.uniswapFactory)
             .getPair(initialization.token, initialization.weth);
@@ -485,7 +460,7 @@ contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
 
     function _requireCurvePhase() private view {
         if (!_initialized || _implementation == address(this)) {
-            revert IBondingCurveV1.NotInitialized();
+            revert NotInitialized();
         }
         if (_phase != LaunchTypes.Phase.Curve) {
             revert WrongPhase(uint8(LaunchTypes.Phase.Curve), uint8(_phase));

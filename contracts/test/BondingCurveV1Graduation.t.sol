@@ -404,6 +404,18 @@ contract BondingCurveV1GraduationTest is Test {
         );
     }
 
+    function testGraduationRejectsTokenAndCurvePairMismatch() external {
+        address mismatchedPair = address(0xBAD);
+        vm.store(
+            address(launchToken), bytes32(uint256(7)), bytes32(uint256(uint160(mismatchedPair)))
+        );
+        _expectFinalBuyRevert(
+            abi.encodeWithSelector(
+                ILaunchErrors.PairNotCanonical.selector, address(pair), mismatchedPair
+            )
+        );
+    }
+
     function testExistingLpSupplyFailsWithoutPartialState() external {
         pair.setTotalSupply(1);
         _expectFinalBuyRevert(abi.encodeWithSelector(ILaunchErrors.PairSupplyNotZero.selector, 1));

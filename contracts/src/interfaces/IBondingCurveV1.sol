@@ -7,8 +7,6 @@ import { ILaunchEvents } from "./ILaunchEvents.sol";
 import { LaunchTypes } from "../types/LaunchTypes.sol";
 
 interface IBondingCurveV1 is ICurveClaims, ILaunchErrors, ILaunchEvents {
-    error NotInitialized();
-
     // forge-lint: disable-next-line(mixed-case-function)
     function ENGINE_VERSION() external view returns (uint16);
     function initialize(LaunchTypes.CurveInitialization calldata initialization) external;
@@ -53,6 +51,9 @@ interface IBondingCurveV1 is ICurveClaims, ILaunchErrors, ILaunchEvents {
     function token() external view returns (address);
     function creator() external view returns (address);
     function protocolTreasury() external view returns (address);
+    function implementation() external view returns (address);
+    function weth() external view returns (address);
+    function uniswapFactory() external view returns (address);
     function lpPair() external view returns (address);
     function virtualEthReserve() external view returns (uint256);
     function virtualTokenReserve() external view returns (uint256);
