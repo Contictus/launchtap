@@ -177,8 +177,8 @@ try {
 
     $storageContracts = @(
         [PSCustomObject]@{
-            Contract = "BondingCurveV1Storage"
-            Golden = "BondingCurveV1Storage"
+            Contract = "BondingCurveV1"
+            Golden = "BondingCurveV1"
         },
         [PSCustomObject]@{
             Contract = "LaunchFactoryStorage"
