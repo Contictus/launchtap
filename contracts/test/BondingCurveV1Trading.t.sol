@@ -4,6 +4,9 @@ pragma solidity 0.8.36;
 import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { BondingCurveV1 } from "../src/BondingCurveV1.sol";
 import { ILaunchErrors } from "../src/interfaces/ILaunchErrors.sol";
 import { ILaunchEvents } from "../src/interfaces/ILaunchEvents.sol";
@@ -26,9 +29,16 @@ contract TradingV2Factory {
 }
 
 contract TradingV2Pair {
+    using SafeCast for uint256;
+
     address public immutable factory;
     address public immutable token0;
     address public immutable token1;
+    uint256 public totalSupply;
+    mapping(address account => uint256 amount) public balanceOf;
+
+    uint112 private _reserve0;
+    uint112 private _reserve1;
 
     // The production initializer, not this fixture, owns nonzero validation.
     // forge-lint: disable-next-line(missing-zero-check)
@@ -36,6 +46,36 @@ contract TradingV2Pair {
         factory = factory_;
         token0 = token0_;
         token1 = token1_;
+    }
+
+    function getReserves()
+        external
+        view
+        returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)
+    {
+        return (_reserve0, _reserve1, 0);
+    }
+
+    function mint(address to) external returns (uint256 liquidity) {
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+        uint256 amount0 = balance0 - _reserve0;
+        uint256 amount1 = balance1 - _reserve1;
+        liquidity = amount0 < amount1 ? amount0 : amount1;
+        totalSupply += liquidity;
+        balanceOf[to] += liquidity;
+        _reserve0 = balance0.toUint112();
+        _reserve1 = balance1.toUint112();
+    }
+}
+
+// This WETH fixture intentionally retains ETH as backing for its minted test balance.
+// forge-lint: disable-next-line(locked-ether)
+contract TradingWETH is ERC20 {
+    constructor() ERC20("Wrapped Ether", "WETH") { }
+
+    function deposit() external payable {
+        _mint(msg.sender, msg.value);
     }
 }
 
@@ -146,7 +186,6 @@ contract BondingCurveV1TradingTest is Test {
 
     address private constant CREATOR = address(0x2000);
     address private constant TREASURY = address(0x3000);
-    address private constant WETH = address(0x4000);
     address private constant ALICE = address(0xA11CE);
     address private constant BOB = address(0xB0B);
 
@@ -164,15 +203,17 @@ contract BondingCurveV1TradingTest is Test {
     TradingFactory private launchFactory;
     TradingV2Factory private uniswapFactory;
     TradingV2Pair private pair;
+    TradingWETH private weth;
     ExpectedTrade private expectedTrade;
 
     function setUp() external {
         implementation = new BondingCurveV1Harness();
         launchFactory = new TradingFactory();
         uniswapFactory = new TradingV2Factory();
+        weth = new TradingWETH();
         curve = BondingCurveV1Harness(Clones.clone(address(implementation)));
         launchToken = new LaunchToken("Launch", "LCH", address(curve), TOTAL_SUPPLY);
-        pair = new TradingV2Pair(address(uniswapFactory), address(launchToken), WETH);
+        pair = new TradingV2Pair(address(uniswapFactory), address(launchToken), address(weth));
         uniswapFactory.setPair(address(pair));
         launchToken.initializePair(address(pair));
 
@@ -182,7 +223,7 @@ contract BondingCurveV1TradingTest is Test {
             token: address(launchToken),
             creator: CREATOR,
             protocolTreasury: TREASURY,
-            weth: WETH,
+            weth: address(weth),
             uniswapFactory: address(uniswapFactory),
             lpPair: address(pair),
             parameters: _defaultParameters()
@@ -525,11 +566,10 @@ contract BondingCurveV1TradingTest is Test {
     function testClaimsAreAuthorizedAndAvailableWhilePausedAndGraduated() external {
         vm.prank(ALICE);
         // forge-lint: disable-next-line(arbitrary-send-eth, unused-return)
-        curve.buy{ value: 1 ether }(ALICE, ALICE, 0, DEADLINE);
+        curve.buy{ value: 10 ether }(ALICE, ALICE, 0, DEADLINE);
         uint256 creatorFees = curve.unclaimedCreatorFees();
         uint256 protocolFees = curve.unclaimedProtocolFees();
         launchFactory.setTradingPaused(true);
-        curve.setPhase(LaunchTypes.Phase.Graduated);
 
         vm.expectRevert(
             abi.encodeWithSelector(ILaunchErrors.UnauthorizedCreatorClaim.selector, ALICE, CREATOR)
@@ -699,8 +739,9 @@ contract BondingCurveV1TradingTest is Test {
     }
 
     function _assertExactAccounting() private view {
-        uint256 required = curve.realCurveEth() + curve.unclaimedCreatorFees()
-            + curve.unclaimedProtocolFees() + curve.totalPendingRefunds();
+        uint256 curveEth = curve.phase() == LaunchTypes.Phase.Curve ? curve.realCurveEth() : 0;
+        uint256 required = curveEth + curve.unclaimedCreatorFees() + curve.unclaimedProtocolFees()
+            + curve.totalPendingRefunds();
         assertEq(address(curve).balance, required);
     }
 

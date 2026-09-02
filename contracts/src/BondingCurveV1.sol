@@ -10,10 +10,13 @@ import { ILaunchPause } from "./interfaces/ILaunchPause.sol";
 import { ILaunchToken } from "./interfaces/ILaunchToken.sol";
 import { IUniswapV2Factory } from "./interfaces/external/IUniswapV2Factory.sol";
 import { IUniswapV2Pair } from "./interfaces/external/IUniswapV2Pair.sol";
+import { IWETH } from "./interfaces/external/IWETH.sol";
 import { LaunchTypes } from "./types/LaunchTypes.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
     uint256 private constant IMMEDIATE_ETH_SEND_GAS = 50_000;
+    address private constant LP_BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
     bytes32 private constant FIELD_FACTORY = "factory";
     bytes32 private constant FIELD_IMPLEMENTATION = "implementation";
     bytes32 private constant FIELD_TOKEN = "token";
@@ -293,9 +296,12 @@ contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
             quote.newVirtualToken
         );
 
+        // The contract is non-reentrant and any later graduation failure reverts this transfer.
+        // forge-lint: disable-next-line(reentrancy-no-eth)
         bool transferred = ILaunchToken(_token).transfer(tokenRecipient, quote.tokensOut);
         if (!transferred) revert TokenTransferFailed(_token, tokenRecipient, quote.tokensOut);
 
+        if (quote.graduates) _graduate();
         _sendOrCredit(refundRecipient, quote.refund);
         _assertAccountingInvariant();
         return (quote.tokensOut, quote.ethGrossUsed);
@@ -350,8 +356,63 @@ contract BondingCurveV1 is BondingCurveV1Storage, ILaunchErrors, ILaunchEvents {
         if (!success) revert EthTransferFailed(recipient, amount);
     }
 
+    function _graduate() private {
+        _validateGraduationPair();
+
+        _phase = LaunchTypes.Phase.Graduated;
+        ILaunchToken(_token).markGraduated();
+
+        // WETH is a non-user-controlled launch snapshot validated again in the fork gate.
+        // forge-lint: disable-next-line(arbitrary-send-eth)
+        IWETH(_weth).deposit{ value: _graduationEth }();
+
+        bool tokenTransferred = ILaunchToken(_token).transfer(_lpPair, _lpTokens);
+        if (!tokenTransferred) revert TokenTransferFailed(_token, _lpPair, _lpTokens);
+
+        bool wethTransferred = IWETH(_weth).transfer(_lpPair, _graduationEth);
+        if (!wethTransferred) revert WethTransferFailed(_lpPair, _graduationEth);
+
+        uint256 liquidity = IUniswapV2Pair(_lpPair).mint(LP_BURN_ADDRESS);
+        if (liquidity == 0) revert PairLiquidityZero();
+
+        // The returned liquidity is only known after mint; nonReentrant prevents event reordering.
+        // forge-lint: disable-next-line(reentrancy-events)
+        emit Graduated(_token, _lpPair, _graduationEth, _lpTokens, liquidity);
+    }
+
+    function _validateGraduationPair() private view {
+        address expectedPair = IUniswapV2Factory(_uniswapFactory).getPair(_token, _weth);
+        if (expectedPair != _lpPair) revert PairNotCanonical(expectedPair, _lpPair);
+
+        IUniswapV2Pair pair = IUniswapV2Pair(_lpPair);
+        address actualFactory = pair.factory();
+        if (actualFactory != _uniswapFactory) {
+            revert PairFactoryMismatch(_uniswapFactory, actualFactory);
+        }
+
+        address token0 = pair.token0();
+        address token1 = pair.token1();
+        bool tokenIs0 = token0 == _token && token1 == _weth;
+        bool tokenIs1 = token0 == _weth && token1 == _token;
+        if (!tokenIs0 && !tokenIs1) revert PairTokensMismatch(token0, token1);
+
+        uint256 supply = pair.totalSupply();
+        if (supply != 0) revert PairSupplyNotZero(supply);
+
+        // The timestamp is irrelevant to launched-token reserve validation.
+        // forge-lint: disable-next-line(unused-return)
+        (uint112 reserve0, uint112 reserve1,) = pair.getReserves();
+        uint256 tokenReserve = tokenIs0 ? uint256(reserve0) : uint256(reserve1);
+        if (tokenReserve != 0) revert PairTokenReserveNotZero(tokenReserve);
+
+        uint256 tokenBalance = IERC20(_token).balanceOf(_lpPair);
+        if (tokenBalance != 0) revert PairTokenBalanceNotZero(tokenBalance);
+    }
+
     function _assertAccountingInvariant() private view {
-        uint256 requiredBalance = CurveMath.realCurveEth(_virtualEthReserve, _initialVirtualEth);
+        uint256 requiredBalance = _phase == LaunchTypes.Phase.Curve
+            ? CurveMath.realCurveEth(_virtualEthReserve, _initialVirtualEth)
+            : 0;
         requiredBalance = CurveMath.checkedAdd(requiredBalance, _unclaimedCreatorFees);
         requiredBalance = CurveMath.checkedAdd(requiredBalance, _unclaimedProtocolFees);
         requiredBalance = CurveMath.checkedAdd(requiredBalance, _totalPendingRefunds);
