@@ -29,6 +29,7 @@ Individual commands, run from `contracts/`, are:
 forge fmt --check
 forge build
 ./scripts/check-goldens.ps1
+./scripts/check-vectors.ps1
 forge test
 forge lint --severity high med low info -D warnings
 forge build --sizes
@@ -43,6 +44,20 @@ from `contracts/` with:
 ```powershell
 ./scripts/check-goldens.ps1 -Write
 ```
+
+`vectors/v1/curve.schema.json` defines the backend-facing V1 differential-vector format.
+Every `uint256` is encoded as a base-10 string so JSON consumers cannot lose precision.
+`vectors/v1/curve-v1.json` is generated from deployed `BondingCurveV1` clones and actual
+buy, sell, quote, and graduation paths; expected amounts are never recalculated in the
+generator. Regenerate it from `contracts/` only after reviewing an intentional math change:
+
+```powershell
+./scripts/check-vectors.ps1 -Write
+```
+
+The normal `./scripts/check-vectors.ps1` command regenerates into a temporary path and fails
+on byte drift, missing coverage cases, malformed amounts, failed-state mutation, or buy/sell
+conservation errors. It is part of `check.ps1 all` and therefore the GitHub Actions gate.
 
 `abi/v1/ILaunchEvents.json` is the authoritative V1 event artifact consumed by the backend.
 `abi/v1/LaunchToken.json` freezes the concrete inherited ERC-20 callable surface. The gate
