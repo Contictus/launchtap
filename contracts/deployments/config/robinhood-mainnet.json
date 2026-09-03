@@ -5,7 +5,7 @@
   "name": "Robinhood Chain",
   "explorerBase": "https://robinhoodchain.blockscout.com",
   "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
-  "uniswapV2Factory": "0x8BceAA40b9aCdfAeDf85AdF4fF01f5ad6517937F",
+  "uniswapV2Factory": "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f",
   "uniswapV2Router02": "0x89e5dB8B5aA49Aa85aC63F691524311aeB649eBA",
   "pairInitCodeHash": "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
   "sources": {

@@ -48,7 +48,7 @@ if ([uint64] $mainnet.chainId -ne 4663) { Fail "mainnet chain id must remain 466
 if ([string] $mainnet.weth -cne "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73") {
     Fail "mainnet WETH drifted from the reviewed dependency record"
 }
-if ([string] $mainnet.uniswapV2Factory -cne "0x8BceAA40b9aCdfAeDf85AdF4fF01f5ad6517937F") {
+if ([string] $mainnet.uniswapV2Factory -cne "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f") {
     Fail "mainnet Uniswap v2 factory drifted from the reviewed dependency record"
 }
 if ([string] $mainnet.uniswapV2Router02 -cne "0x89e5dB8B5aA49Aa85aC63F691524311aeB649eBA") {

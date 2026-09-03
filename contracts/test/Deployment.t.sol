@@ -35,6 +35,15 @@ contract DeploymentValidationHarness {
     ) external returns (DeploymentValidation.DependencyEvidence memory) {
         return DeploymentValidation.validateDependencies(target, dependencies, reviewed);
     }
+
+    function expectedPairAddress(
+        address factory,
+        address tokenA,
+        address tokenB,
+        bytes32 pairInitCodeHash
+    ) external pure returns (address) {
+        return DeploymentValidation.expectedPairAddress(factory, tokenA, tokenB, pairInitCodeHash);
+    }
 }
 
 contract CanonicalPairHashFactory {
@@ -44,6 +53,28 @@ contract CanonicalPairHashFactory {
 }
 
 contract CodeBearingWETH { }
+
+contract PairWithoutFactoryHashGetter { }
+
+contract FactoryWithoutPairHashGetter {
+    mapping(address token0 => mapping(address token1 => address pair)) public getPair;
+
+    function creationCodeHash() external pure returns (bytes32) {
+        return keccak256(type(PairWithoutFactoryHashGetter).creationCode);
+    }
+
+    function createPair(address tokenA, address tokenB) external returns (address pair) {
+        require(tokenA != tokenB, "FallbackV2: identical addresses");
+        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(token0 != address(0), "FallbackV2: zero address");
+        require(getPair[token0][token1] == address(0), "FallbackV2: pair exists");
+
+        bytes32 salt = keccak256(abi.encodePacked(token0, token1));
+        pair = address(new PairWithoutFactoryHashGetter{ salt: salt }());
+        getPair[token0][token1] = pair;
+        getPair[token1][token0] = pair;
+    }
+}
 
 contract DeploymentTest is Test {
     uint16 private constant ENGINE_VERSION = 1;
@@ -62,6 +93,8 @@ contract DeploymentTest is Test {
         0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f;
     bytes32 private constant FIELD_PAUSE_AUTHORITY = "pauseAuthority";
     bytes32 private constant FIELD_WETH = "weth";
+    address private constant PROBE_TOKEN_A = 0x0000000000000000000000000000000000001001;
+    address private constant PROBE_TOKEN_B = 0x0000000000000000000000000000000000001002;
 
     address private constant PAUSE_AUTHORITY = address(0xA11CE);
     address private constant TIMELOCK = address(0xB0B);
@@ -174,6 +207,52 @@ contract DeploymentTest is Test {
         validator.validateDependencies(
             DeploymentValidation.Target.Anvil,
             _dependencies(address(weth), address(factory), incorrect),
+            false
+        );
+        // forge-lint: disable-end(unused-return)
+    }
+
+    function testPairInitCodeHashFallbackAcceptsCreate2Match() external {
+        LocalWETH weth = new LocalWETH();
+        FactoryWithoutPairHashGetter factory = new FactoryWithoutPairHashGetter();
+        bytes32 pairInitCodeHash = factory.creationCodeHash();
+
+        DeploymentValidation.DependencyEvidence memory evidence = validator.validateDependencies(
+            DeploymentValidation.Target.Anvil,
+            _dependencies(address(weth), address(factory), pairInitCodeHash),
+            false
+        );
+
+        assertTrue(evidence.pairInitCodeHashVerified);
+        assertEq(
+            factory.getPair(PROBE_TOKEN_A, PROBE_TOKEN_B),
+            validator.expectedPairAddress(
+                address(factory), PROBE_TOKEN_A, PROBE_TOKEN_B, pairInitCodeHash
+            )
+        );
+    }
+
+    function testPairInitCodeHashFallbackRejectsCreate2Mismatch() external {
+        LocalWETH weth = new LocalWETH();
+        FactoryWithoutPairHashGetter factory = new FactoryWithoutPairHashGetter();
+        bytes32 actualPairInitCodeHash = factory.creationCodeHash();
+        bytes32 incorrectPairInitCodeHash = bytes32(uint256(actualPairInitCodeHash) + 1);
+        address expected = validator.expectedPairAddress(
+            address(factory), PROBE_TOKEN_A, PROBE_TOKEN_B, incorrectPairInitCodeHash
+        );
+        address actual = validator.expectedPairAddress(
+            address(factory), PROBE_TOKEN_A, PROBE_TOKEN_B, actualPairInitCodeHash
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeploymentValidation.PairAddressMismatch.selector, expected, actual
+            )
+        );
+        // forge-lint: disable-start(unused-return)
+        validator.validateDependencies(
+            DeploymentValidation.Target.Anvil,
+            _dependencies(address(weth), address(factory), incorrectPairInitCodeHash),
             false
         );
         // forge-lint: disable-end(unused-return)
