@@ -60,5 +60,11 @@ GitHub Actions run `33732833303` confirmed those archive reads but exposed a pro
 boundary in the preflight: Foundry `cast codehash` uses `eth_getProof`, which QuickNode Discover
 limits for historical requests. The gate instead reads exact runtime bytecode with
 `eth_getCode` and computes its Keccak hash locally. This preserves the bytecode identity check
-without depending on a provider proof feature. The pinned QuickNode fork job remains required
-before Task 11 is accepted.
+without depending on a provider proof feature.
+
+## Accepted fork run
+
+On 2026-09-03 GitHub Actions workflow-dispatch run `33733283872` tested commit `d09ba9a`.
+Both the normal Foundry gate and the explicit `Robinhood mainnet fork` job passed. The fork job
+verified the pinned block and dependency hashes through QuickNode, then passed both Solidity
+fork tests. This run satisfies the Task 11 archive/fork acceptance requirement.
