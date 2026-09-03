@@ -31,9 +31,10 @@ forge build
 ./scripts/check-goldens.ps1
 ./scripts/check-vectors.ps1
 ./scripts/check-deployments.ps1
+./scripts/check-release.ps1
 forge test
 forge lint --severity high med low info -D warnings
-forge build --sizes
+./scripts/check-sizes.ps1
 ```
 
 The compiler configuration in `foundry.toml` is authoritative for local and CI builds.
@@ -44,6 +45,17 @@ from `contracts/` with:
 
 ```powershell
 ./scripts/check-goldens.ps1 -Write
+```
+
+`scripts/check-sizes.ps1` freezes the runtime and init bytecode size of `BondingCurveV1`,
+`LaunchFactory`, and `LaunchToken` in `sizes/v1/sizes.json` and fails on any byte drift after
+running `forge build --sizes`. `scripts/check-release.ps1` rejects an upgrade, self-destruct,
+owner, or admin control, a test-only import or cheatcode reference, an unresolved marker, an
+unreviewed address literal, or a dropped `check.ps1` gate in `src/`. After an intentional
+reviewed bytecode change, regenerate the size baseline from `contracts/` with:
+
+```powershell
+./scripts/check-sizes.ps1 -Write
 ```
 
 `vectors/v1/curve.schema.json` defines the backend-facing V1 differential-vector format.
@@ -119,6 +131,19 @@ GitHub Actions exposes the same explicit job through `workflow_dispatch` and rea
 from the `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` repository secret. Missing credentials, missing
 archive history, chain mismatch, block-hash drift, dependency-code drift, or any fork-test
 failure fails that job; none of those conditions silently skips the suite.
+
+## Release gate
+
+`./scripts/check.ps1 release` runs the full reproducible security verification in one pass:
+`check.ps1 all` (format, build, goldens, vectors, deployments, release review, tests, lint,
+size), then Slither, then the pinned Robinhood mainnet fork gate. It needs Python with the
+pinned `slither-analyzer` from `slither/v1/slither-version.txt` on `PATH` and the
+`ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` archive endpoint; a missing tool or endpoint fails the
+gate rather than skipping a step. `slither.config.json` filters vendored, test, and script
+paths; `slither.db.json` records reviewed triage. GitHub Actions runs the same gate as the
+`Release gate` job on `workflow_dispatch`. `coverage/task-12.md` records the final-diff
+review and the accepted run. An external audit remains a separate mandatory mainnet-release
+gate; passing this gate is not an external audit.
 
 Market-delivery ETH sends (final-buy refunds and sell proceeds) use a 50,000 gas probe so a
 recipient cannot consume the transaction's remaining gas and block market progress. A failed

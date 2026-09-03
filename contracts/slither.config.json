@@ -1,0 +1,6 @@
+{
+    "detectors_to_exclude": "naming-convention,solc-version,pragma,similar-names,too-many-digits",
+    "filter_paths": "lib/|test/|fork-test/|script/",
+    "exclude_dependencies": true,
+    "disable_color": true
+}
