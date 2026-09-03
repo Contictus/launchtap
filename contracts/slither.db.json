@@ -1,0 +1,42 @@
+[
+  {
+    "check": "arbitrary-send-eth",
+    "impact": "High",
+    "confidence": "Medium",
+    "description": "BondingCurveV1._graduate() (src/BondingCurveV1.sol#370-392) sends eth to arbitrary user\n\tDangerous calls:\n\t- IWETH(_weth).deposit{value: _graduationEth}() (src/BondingCurveV1.sol#378)\n",
+    "id": "2e812341f6229e9df95464e3ed19445952f07d3bc13553e0e0b04030a97cb7d4",
+    "first_markdown_element": "src/BondingCurveV1.sol#L370-L392"
+  },
+  {
+    "check": "arbitrary-send-eth",
+    "impact": "High",
+    "confidence": "Medium",
+    "description": "LaunchFactory._callDeveloperBuy(IBondingCurveV1,address,uint256,uint256,uint256) (src/LaunchFactory.sol#305-315) sends eth to arbitrary user\n\tDangerous calls:\n\t- curve.buyFor{value: gross}(creator,creator,creator,minTokensOut,deadline) (src/LaunchFactory.sol#314)\n",
+    "id": "42b0e1b871612543843ea44654c73d9476f2547022e39daf61ab45285587b8a5",
+    "first_markdown_element": "src/LaunchFactory.sol#L305-L315"
+  },
+  {
+    "check": "uninitialized-local",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "description": "LaunchFactory.launch(LaunchTypes.LaunchRequest).eventData (src/LaunchFactory.sol#119) is a local variable never initialized\n",
+    "id": "5b51b0993e49f396f8157cf8aebed0fd840fa508c3bd469257bf1a07422aede3",
+    "first_markdown_element": "src/LaunchFactory.sol#L119"
+  },
+  {
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "description": "BondingCurveV1._validateGraduationPair() (src/BondingCurveV1.sol#394-424) ignores return value by (reserve0,reserve1,None) = pair.getReserves() (src/BondingCurveV1.sol#418)\n",
+    "id": "cdd33f0d96cdaa6959b5667bb27af51c7300aa57ffeee6c4e6ebb295ed26b07b",
+    "first_markdown_element": "src/BondingCurveV1.sol#L394-L424"
+  },
+  {
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "description": "LaunchFactory._validateDeveloperBuy(address,LaunchTypes.LaunchRequest,LaunchTypes.CurveParameters) (src/LaunchFactory.sol#264-278) ignores return value by (None,tokensOut,None,None,None,None) = IBondingCurveV1(curve).quoteBuy(request.developerBuyGross) (src/LaunchFactory.sol#273)\n",
+    "id": "f80749dca281fcbb9fc9a7aad6036b6a1d550de6a62b7d17bbacea91acc740e0",
+    "first_markdown_element": "src/LaunchFactory.sol#L264-L278"
+  }
+]

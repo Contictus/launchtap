@@ -70,3 +70,11 @@
 - **Completed:** 2026-09-03
 - **Evidence:** GitHub Actions run `33733283872` passed both the normal Foundry gate and the
   explicit QuickNode-backed fork job at pinned block `53,240,126` on commit `d09ba9a`.
+
+### Task 12 contract release gate
+
+- **Completed:** 2026-09-04
+- **Evidence:** GitHub Actions `workflow_dispatch` run `33811377759` passed the `Foundry`,
+  `Release gate`, and `Robinhood mainnet fork` jobs on commit `e663eb0`. Closes Contract
+  Foundations (Tasks 1-12); external audit stays out of scope under "Production governance
+  and audit inputs".
