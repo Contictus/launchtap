@@ -54,5 +54,11 @@ failed with `missing trie node`, so the endpoint did not provide the required hi
 Before changing providers, the public QuickNode Robinhood docs endpoint was checked against the
 same evidence. It reported chain ID `4663`, returned the exact pinned block hash, and returned
 non-empty historical WETH and Factory bytecode. QuickNode's provider documentation records
-Robinhood mainnet as archive-enabled with no pruning. The pinned QuickNode fork job remains
-required before Task 11 is accepted.
+Robinhood mainnet as archive-enabled with no pruning.
+
+GitHub Actions run `33732833303` confirmed those archive reads but exposed a provider-plan
+boundary in the preflight: Foundry `cast codehash` uses `eth_getProof`, which QuickNode Discover
+limits for historical requests. The gate instead reads exact runtime bytecode with
+`eth_getCode` and computes its Keccak hash locally. This preserves the bytecode identity check
+without depending on a provider proof feature. The pinned QuickNode fork job remains required
+before Task 11 is accepted.

@@ -55,10 +55,14 @@ foreach ($dependency in @(
         Hash = [string] $config.bytecodeHashes.uniswapV2Factory
     }
 )) {
-    $actual = Invoke-Text "cast" @(
-        "codehash", $dependency.Address, "--block", [string] $forkBlock,
+    $runtimeCode = Invoke-Text "cast" @(
+        "code", $dependency.Address, "--block", [string] $forkBlock,
         "--rpc-url", $RpcUrl
     )
+    if ($runtimeCode -eq "0x") {
+        Fail "$($dependency.Name) has no runtime code at the fork block"
+    }
+    $actual = Invoke-Text "cast" @("keccak", $runtimeCode)
     if ($actual -cne $dependency.Hash) {
         Fail "$($dependency.Name) runtime code hash does not match the reviewed evidence"
     }
