@@ -78,7 +78,7 @@ if (
 }
 if (
     [string] $mainnet.forkVerification.observedRpcProvider -cne "Robinhood Public RPC" -or
-    [string] $mainnet.forkVerification.archiveRpcProvider -cne "Alchemy" -or
+    [string] $mainnet.forkVerification.archiveRpcProvider -cne "QuickNode" -or
     [string] $mainnet.forkVerification.rpcEnvironmentVariable -cne
     "ROBINHOOD_MAINNET_ARCHIVE_RPC_URL" -or
     $mainnet.forkVerification.archiveRequired -ne $true

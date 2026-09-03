@@ -24,8 +24,16 @@ if ([string]::IsNullOrWhiteSpace($RpcUrl)) {
 }
 
 $rpcUri = [Uri] $RpcUrl
-if ($rpcUri.Scheme -ne "https" -or $rpcUri.Host -ne "robinhood-mainnet.g.alchemy.com") {
-    Fail "the recorded Task 11 archive provider is Alchemy; configure its HTTPS Robinhood endpoint"
+$quickNodeHostSuffix = ".robinhood-mainnet.quiknode.pro"
+if (
+    $rpcUri.Scheme -ne "https" -or
+    $rpcUri.Host.Length -le $quickNodeHostSuffix.Length -or
+    -not $rpcUri.Host.EndsWith(
+        $quickNodeHostSuffix,
+        [StringComparison]::OrdinalIgnoreCase
+    )
+) {
+    Fail "the recorded Task 11 archive provider is QuickNode; configure its HTTPS Robinhood mainnet endpoint"
 }
 
 $chainId = Invoke-Text "cast" @("chain-id", "--rpc-url", $RpcUrl)
@@ -74,4 +82,4 @@ finally {
     )
 }
 
-Write-Output "Robinhood mainnet fork compatibility verified at block $forkBlock via Alchemy."
+Write-Output "Robinhood mainnet fork compatibility verified at block $forkBlock via QuickNode."

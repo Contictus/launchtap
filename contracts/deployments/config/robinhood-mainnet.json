@@ -17,13 +17,14 @@
     "blockNumber": 53240126,
     "blockHash": "0xa1249b79d3ad41991913b02bb10057156a49fc22ab54ffebec27d05cff5f529a",
     "observedRpcProvider": "Robinhood Public RPC",
-    "archiveRpcProvider": "Alchemy",
+    "archiveRpcProvider": "QuickNode",
     "rpcEnvironmentVariable": "ROBINHOOD_MAINNET_ARCHIVE_RPC_URL",
     "archiveRequired": true
   },
   "sources": {
     "chainContracts": "https://docs.robinhood.com/chain/contracts/",
     "chainRpc": "https://docs.robinhood.com/chain/connecting/",
+    "quickNodeArchive": "https://www.quicknode.com/docs/platform/supported-chains-node-types",
     "uniswapV2Deployments": "https://developers.uniswap.org/docs/protocols/v2/deployments",
     "pairInitCodeHash": "https://github.com/Uniswap/v2-periphery/blob/master/contracts/libraries/UniswapV2Library.sol"
   }

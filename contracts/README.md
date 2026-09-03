@@ -101,13 +101,13 @@ the external-audit release gate pass. Production simulation also requires the fi
 pause multisig, timelock, and treasury addresses as arguments, so there is no authority
 handover or placeholder manifest.
 
-The Robinhood mainnet fork gate uses block `53,240,126` and an Alchemy archive endpoint. The
+The Robinhood mainnet fork gate uses block `53,240,126` and a QuickNode archive endpoint. The
 official public RPC is suitable for current-state checks but does not serve the historical
 state required for a reproducible fork. Set the archive URL without writing it to disk, then
 run the explicit gate:
 
 ```powershell
-$archiveRpc = Read-Host "Alchemy Robinhood archive RPC URL" -AsSecureString
+$archiveRpc = Read-Host "QuickNode Robinhood archive RPC URL" -AsSecureString
 $env:ROBINHOOD_MAINNET_ARCHIVE_RPC_URL =
   [System.Net.NetworkCredential]::new("", $archiveRpc).Password
 ./scripts/check.ps1 fork

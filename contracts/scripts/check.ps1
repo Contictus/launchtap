@@ -11,8 +11,12 @@ Push-Location $contractsRoot
 try {
     function Invoke-Checked([scriptblock] $Command) {
         & $Command
-        if ($LASTEXITCODE -ne 0) {
-            throw "Contract check failed with exit code $LASTEXITCODE"
+        if (-not $?) {
+            $exitCode = Get-Variable -Name LASTEXITCODE -ValueOnly -ErrorAction SilentlyContinue
+            if ($null -ne $exitCode) {
+                throw "Contract check failed with exit code $exitCode"
+            }
+            throw "Contract check failed"
         }
     }
 

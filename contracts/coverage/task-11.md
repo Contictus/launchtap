@@ -4,8 +4,8 @@
 
 The reproducible fork target is Robinhood Chain block `53,240,126`, hash
 `0xa1249b79d3ad41991913b02bb10057156a49fc22ab54ffebec27d05cff5f529a`. The successful
-development run used Robinhood Public RPC while that block was current. Reproduction uses an
-Alchemy archive endpoint supplied as `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL`. The reviewed
+development run used Robinhood Public RPC while that block was current. Reproduction uses a
+QuickNode archive endpoint supplied as `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL`. The reviewed
 configuration records both providers, the block, dependency addresses, and runtime code hashes.
 
 Run from `contracts/`:
@@ -47,5 +47,12 @@ hash `0xbab145d02e7005f0d84c6c1639d39b799b0ea16df99ebbdaf5a14d9da820b4e0`, and P
 hash `0x5b83bdbcc56b2e630f2807bbadd2b0c21619108066b92a58de081261089e9ce5`.
 
 That run proves the pinned state once but not its reproducibility. Within minutes the official
-public endpoint rejected historical state at the same block; the pinned Alchemy archive job
-remains required before Task 11 is accepted.
+public endpoint rejected historical state at the same block. GitHub Actions run `33731325316`
+then tried the pinned state twice through an Alchemy Robinhood mainnet endpoint; both attempts
+failed with `missing trie node`, so the endpoint did not provide the required historical state.
+
+Before changing providers, the public QuickNode Robinhood docs endpoint was checked against the
+same evidence. It reported chain ID `4663`, returned the exact pinned block hash, and returned
+non-empty historical WETH and Factory bytecode. QuickNode's provider documentation records
+Robinhood mainnet as archive-enabled with no pruning. The pinned QuickNode fork job remains
+required before Task 11 is accepted.
