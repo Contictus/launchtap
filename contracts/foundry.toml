@@ -21,6 +21,9 @@ fs_permissions = [
     { access = "read", path = "./deployments" },
 ]
 
+[profile.fork]
+test = "fork-test"
+
 [fmt]
 line_length = 100
 tab_width = 4

@@ -15,6 +15,22 @@
 
 ## Active
 
+### Task 11 pinned Robinhood mainnet fork acceptance
+- **Date:** 2026-09-03
+- **Reason:** external archive-RPC credential prerequisite
+- **Where it stopped:** The fork suite passes both tests against current mainnet state through
+  the official public RPC. That endpoint and the tested public alternatives reject historical
+  state at the pinned block `53,240,126`. No `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` environment
+  value or GitHub repository secret is configured.
+- **Related files:** `contracts/fork-test/RobinhoodMainnetFork.t.sol`,
+  `contracts/scripts/check-fork.ps1`, `contracts/coverage/task-11.md`,
+  `.github/workflows/contracts.yml`
+- **Resume (next step):** Create an Alchemy Robinhood mainnet archive endpoint, set the
+  `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` repository secret, dispatch the `contracts` workflow on
+  `dev`, and require the `Robinhood mainnet fork` job to pass at block `53,240,126`.
+- **Pitfalls / notes:** Do not replace the pinned block with `latest` and do not fall back to the
+  public RPC; either change would make the test non-reproducible or silently weaken the gate.
+
 ### Robinhood testnet deployment manifest
 - **Date:** 2026-09-01
 - **Reason:** external deployment prerequisite

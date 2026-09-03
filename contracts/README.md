@@ -96,10 +96,29 @@ Example local broadcast from `contracts/` using Anvil's deterministic developmen
 Robinhood testnet is disabled until `scripts/bootstrap-testnet-dependencies.ps1` deploys
 testnet-specific dependencies and its generated evidence is independently reviewed into
 `deployments/config/robinhood-testnet.json`. Mainnet broadcasts are intentionally blocked;
-the same deployment command supports simulation only until Task 11 fork compatibility and
+the same deployment command supports simulation only until the pinned Task 11 fork job and
 the external-audit release gate pass. Production simulation also requires the final reviewed
 pause multisig, timelock, and treasury addresses as arguments, so there is no authority
 handover or placeholder manifest.
+
+The Robinhood mainnet fork gate uses block `53,240,126` and an Alchemy archive endpoint. The
+official public RPC is suitable for current-state checks but does not serve the historical
+state required for a reproducible fork. Set the archive URL without writing it to disk, then
+run the explicit gate:
+
+```powershell
+$archiveRpc = Read-Host "Alchemy Robinhood archive RPC URL" -AsSecureString
+$env:ROBINHOOD_MAINNET_ARCHIVE_RPC_URL =
+  [System.Net.NetworkCredential]::new("", $archiveRpc).Password
+./scripts/check.ps1 fork
+Remove-Item Env:ROBINHOOD_MAINNET_ARCHIVE_RPC_URL
+Remove-Variable archiveRpc
+```
+
+GitHub Actions exposes the same explicit job through `workflow_dispatch` and reads the URL
+from the `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` repository secret. Missing credentials, missing
+archive history, chain mismatch, block-hash drift, dependency-code drift, or any fork-test
+failure fails that job; none of those conditions silently skips the suite.
 
 Market-delivery ETH sends (final-buy refunds and sell proceeds) use a 50,000 gas probe so a
 recipient cannot consume the transaction's remaining gas and block market progress. A failed

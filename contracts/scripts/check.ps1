@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "pins", "fmt", "build", "goldens", "vectors", "deployments", "test", "lint", "size")]
+    [ValidateSet("all", "pins", "fmt", "build", "goldens", "vectors", "deployments", "test", "lint", "size", "fork")]
     [string] $Target = "all"
 )
 
@@ -42,6 +42,9 @@ try {
     }
     if ($Target -in @("all", "size")) {
         Invoke-Checked { forge build --sizes }
+    }
+    if ($Target -eq "fork") {
+        Invoke-Checked { & "$PSScriptRoot/check-fork.ps1" }
     }
 }
 finally {
