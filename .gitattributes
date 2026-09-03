@@ -1,2 +1,4 @@
 contracts/abi/**/*.json text eol=lf
 contracts/storage-layout/**/*.json text eol=lf
+contracts/sizes/**/*.json text eol=lf
+contracts/slither.db.json text eol=lf

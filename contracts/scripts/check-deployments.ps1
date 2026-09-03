@@ -48,14 +48,42 @@ if ([uint64] $mainnet.chainId -ne 4663) { Fail "mainnet chain id must remain 466
 if ([string] $mainnet.weth -cne "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73") {
     Fail "mainnet WETH drifted from the reviewed dependency record"
 }
-if ([string] $mainnet.uniswapV2Factory -cne "0x8BceAA40b9aCdfAeDf85AdF4fF01f5ad6517937F") {
+if ([string] $mainnet.uniswapV2Factory -cne "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f") {
     Fail "mainnet Uniswap v2 factory drifted from the reviewed dependency record"
 }
-if ([string] $mainnet.uniswapV2Router02 -cne "0x89e5dB8B5aA49Aa85aC63F691524311aeB649eBA") {
+if ([string] $mainnet.uniswapV2Router02 -cne "0x89e5DB8B5aA49aA85AC63f691524311AEB649eba") {
     Fail "mainnet Uniswap v2 Router02 drifted from the reviewed dependency record"
 }
 if ([string] $mainnet.pairInitCodeHash -cne "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f") {
     Fail "canonical Uniswap v2 pair init-code hash drifted"
+}
+$expectedMainnetCodeHashes = @{
+    weth = "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353"
+    uniswapV2Factory = "0xbab145d02e7005f0d84c6c1639d39b799b0ea16df99ebbdaf5a14d9da820b4e0"
+    uniswapV2Pair = "0x5b83bdbcc56b2e630f2807bbadd2b0c21619108066b92a58de081261089e9ce5"
+}
+foreach ($field in $expectedMainnetCodeHashes.Keys) {
+    if ([string] $mainnet.bytecodeHashes.$field -cne $expectedMainnetCodeHashes[$field]) {
+        Fail "mainnet $field runtime code hash drifted from the Task 11 evidence"
+    }
+}
+if ([uint64] $mainnet.forkVerification.blockNumber -ne 53240126) {
+    Fail "mainnet fork block drifted from the Task 11 evidence"
+}
+if (
+    [string] $mainnet.forkVerification.blockHash -cne
+    "0xa1249b79d3ad41991913b02bb10057156a49fc22ab54ffebec27d05cff5f529a"
+) {
+    Fail "mainnet fork block hash drifted from the Task 11 evidence"
+}
+if (
+    [string] $mainnet.forkVerification.observedRpcProvider -cne "Robinhood Public RPC" -or
+    [string] $mainnet.forkVerification.archiveRpcProvider -cne "QuickNode" -or
+    [string] $mainnet.forkVerification.rpcEnvironmentVariable -cne
+    "ROBINHOOD_MAINNET_ARCHIVE_RPC_URL" -or
+    $mainnet.forkVerification.archiveRequired -ne $true
+) {
+    Fail "mainnet fork provider evidence drifted"
 }
 foreach ($forbidden in @("factory", "curveImplementation", "pauseAuthority", "timelock")) {
     if ($null -ne $mainnet.PSObject.Properties[$forbidden]) {

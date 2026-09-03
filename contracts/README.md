@@ -31,9 +31,10 @@ forge build
 ./scripts/check-goldens.ps1
 ./scripts/check-vectors.ps1
 ./scripts/check-deployments.ps1
+./scripts/check-release.ps1
 forge test
 forge lint --severity high med low info -D warnings
-forge build --sizes
+./scripts/check-sizes.ps1
 ```
 
 The compiler configuration in `foundry.toml` is authoritative for local and CI builds.
@@ -44,6 +45,17 @@ from `contracts/` with:
 
 ```powershell
 ./scripts/check-goldens.ps1 -Write
+```
+
+`scripts/check-sizes.ps1` freezes the runtime and init bytecode size of `BondingCurveV1`,
+`LaunchFactory`, and `LaunchToken` in `sizes/v1/sizes.json` and fails on any byte drift after
+running `forge build --sizes`. `scripts/check-release.ps1` rejects an upgrade, self-destruct,
+owner, or admin control, a test-only import or cheatcode reference, an unresolved marker, an
+unreviewed address literal, or a dropped `check.ps1` gate in `src/`. After an intentional
+reviewed bytecode change, regenerate the size baseline from `contracts/` with:
+
+```powershell
+./scripts/check-sizes.ps1 -Write
 ```
 
 `vectors/v1/curve.schema.json` defines the backend-facing V1 differential-vector format.
@@ -96,10 +108,43 @@ Example local broadcast from `contracts/` using Anvil's deterministic developmen
 Robinhood testnet is disabled until `scripts/bootstrap-testnet-dependencies.ps1` deploys
 testnet-specific dependencies and its generated evidence is independently reviewed into
 `deployments/config/robinhood-testnet.json`. Mainnet broadcasts are intentionally blocked;
-the same deployment command supports simulation only until Task 11 fork compatibility and
+the same deployment command supports simulation only until the pinned Task 11 fork job and
 the external-audit release gate pass. Production simulation also requires the final reviewed
 pause multisig, timelock, and treasury addresses as arguments, so there is no authority
 handover or placeholder manifest.
+
+The Robinhood mainnet fork gate uses block `53,240,126` and a QuickNode archive endpoint. The
+official public RPC is suitable for current-state checks but does not serve the historical
+state required for a reproducible fork. Set the archive URL without writing it to disk, then
+run the explicit gate:
+
+```powershell
+$archiveRpc = Read-Host "QuickNode Robinhood archive RPC URL" -AsSecureString
+$env:ROBINHOOD_MAINNET_ARCHIVE_RPC_URL =
+  [System.Net.NetworkCredential]::new("", $archiveRpc).Password
+./scripts/check.ps1 fork
+Remove-Item Env:ROBINHOOD_MAINNET_ARCHIVE_RPC_URL
+Remove-Variable archiveRpc
+```
+
+GitHub Actions exposes the same explicit job through `workflow_dispatch` and reads the URL
+from the `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` repository secret. Missing credentials, missing
+archive history, chain mismatch, block-hash drift, dependency-code drift, or any fork-test
+failure fails that job; none of those conditions silently skips the suite.
+
+## Release gate
+
+`./scripts/check.ps1 release` runs the full reproducible security verification in one pass:
+`check.ps1 all` (format, build, goldens, vectors, deployments, release review, tests, lint,
+size), then Slither, then the pinned Robinhood mainnet fork gate. It needs Python with the
+pinned `slither-analyzer` from `slither/v1/slither-version.txt` on `PATH` and the
+`ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` archive endpoint; a missing tool or endpoint fails the
+gate rather than skipping a step. `slither.config.json` filters vendored, test, and script
+paths; `check-slither.ps1` runs `--fail-medium` and `slither.db.json` records the reviewed
+triage that keeps that pass green. GitHub Actions runs the same gate as the
+`Release gate` job on `workflow_dispatch`. `coverage/task-12.md` records the final-diff
+review and the accepted run. An external audit remains a separate mandatory mainnet-release
+gate; passing this gate is not an external audit.
 
 Market-delivery ETH sends (final-buy refunds and sell proceeds) use a 50,000 gas probe so a
 recipient cannot consume the transaction's remaining gas and block market progress. A failed
