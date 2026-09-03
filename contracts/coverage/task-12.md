@@ -137,5 +137,10 @@ The pinned Robinhood mainnet fork suite itself was accepted under Task 11 (GitHu
 
 ## Accepted release-gate run
 
-_Pending: fill with the GitHub Actions `workflow_dispatch` run id and commit hash once the
-`Foundry`, `Release gate`, and `Robinhood mainnet fork` jobs pass green._
+On 2026-09-04 GitHub Actions `workflow_dispatch` run `33811377759` tested commit `e663eb0`.
+All three jobs passed: `Foundry` (`check.ps1 all`), `Release gate` (`check.ps1 release`
+with Python and `slither-analyzer` `0.11.6`), and `Robinhood mainnet fork`
+(`check.ps1 fork` against the pinned QuickNode archive block). This run satisfies the Task 12
+release-gate acceptance requirement. The independent review of the diff and the five Slither
+triage decisions remains the third acceptance criterion; an external audit remains a
+separate mandatory mainnet-release gate.
