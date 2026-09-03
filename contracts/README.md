@@ -140,7 +140,8 @@ size), then Slither, then the pinned Robinhood mainnet fork gate. It needs Pytho
 pinned `slither-analyzer` from `slither/v1/slither-version.txt` on `PATH` and the
 `ROBINHOOD_MAINNET_ARCHIVE_RPC_URL` archive endpoint; a missing tool or endpoint fails the
 gate rather than skipping a step. `slither.config.json` filters vendored, test, and script
-paths; `slither.db.json` records reviewed triage. GitHub Actions runs the same gate as the
+paths; `check-slither.ps1` runs `--fail-medium` and `slither.db.json` records the reviewed
+triage that keeps that pass green. GitHub Actions runs the same gate as the
 `Release gate` job on `workflow_dispatch`. `coverage/task-12.md` records the final-diff
 review and the accepted run. An external audit remains a separate mandatory mainnet-release
 gate; passing this gate is not an external audit.

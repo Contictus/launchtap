@@ -30,7 +30,7 @@ if ($reportedVersion -ne $expectedVersion) {
 
 Push-Location $contractsRoot
 try {
-    & slither . --config-file $configPath --fail-on medium
+    & slither . --config-file $configPath --fail-medium
     if ($LASTEXITCODE -ne 0) {
         Fail "slither reported unresolved findings at medium or higher impact"
     }

@@ -24,7 +24,7 @@ function Invoke-ForgeJson([string[]] $Arguments) {
 }
 
 function ConvertTo-StableJson([object] $Value) {
-    return ($Value | ConvertTo-Json -Depth 100) + "`n"
+    return ($Value | ConvertTo-Json -Depth 100 -Compress) + "`n"
 }
 
 Push-Location $contractsRoot
