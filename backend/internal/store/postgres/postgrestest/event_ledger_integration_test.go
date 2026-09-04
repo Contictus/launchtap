@@ -132,8 +132,9 @@ func testSharedEventConstraintsAndIndexes(t *testing.T, ctx context.Context, dat
 	`).Scan(&blockFKs); err != nil {
 		t.Fatalf("count deferred block foreign keys: %v", err)
 	}
-	if blockFKs != len(eventPayloadColumns) {
-		t.Fatalf("deferred no-action block foreign keys = %d, want %d", blockFKs, len(eventPayloadColumns))
+	wantBlockFKs := len(eventPayloadColumns) + 2 // tokens graduation and token_reserves source coordinates.
+	if blockFKs != wantBlockFKs {
+		t.Fatalf("deferred no-action block foreign keys = %d, want %d", blockFKs, wantBlockFKs)
 	}
 
 	var tokenFKs int
@@ -148,8 +149,8 @@ func testSharedEventConstraintsAndIndexes(t *testing.T, ctx context.Context, dat
 	`).Scan(&tokenFKs); err != nil {
 		t.Fatalf("count deferred token foreign keys: %v", err)
 	}
-	if tokenFKs != 7 {
-		t.Fatalf("deferred no-action token foreign keys = %d, want 7", tokenFKs)
+	if tokenFKs != 9 { // Seven event links plus tokens and token_metadata.
+		t.Fatalf("deferred no-action token foreign keys = %d, want 9", tokenFKs)
 	}
 
 	for _, index := range []string{"pool_swaps_reserve_lookup_idx", "pool_syncs_reserve_lookup_idx"} {
