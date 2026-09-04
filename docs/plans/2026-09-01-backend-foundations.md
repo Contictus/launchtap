@@ -4,10 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1 and 2 are implemented and on `dev`.
-Task 3's high-risk pre-flight is complete and its acceptance criteria are locked (see the
-task and spec §3); it is gated on two Codex follow-ups named in the task. Tasks 4-12 still
-require their high-risk pre-flight before implementation.
+artifact exists at `contracts/vectors/v1/`. Tasks 1, 2, and 3 are implemented and on `dev`.
+Task 4's high-risk pre-flight is complete and its acceptance criteria are locked (see the
+task and spec §2.5). Tasks 5-12 still require their high-risk pre-flight before
+implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -151,20 +151,54 @@ validation, lookup, reconciliation), `backend/deployments/*_test.go`,
 
 ## Task 4 — Migration runner and PostgreSQL test support · Risk: high
 
-**Delivers:** embedded goose migrations, `cmd/migrate`, testcontainers helper, and an
-integration-test execution sentinel.
+**Pre-flight:** complete. Acceptance criteria below are locked (spec §2.5).
 
-**Depends on:** Task 1
+**Delivers:** embedded goose migrations (single source at
+`internal/store/postgres/migrations/`), `cmd/migrate` with an explicit `up`/`down`/`status`
+CLI, a reusable PostgreSQL test-database helper (`DATABASE_URL`-aware with a
+testcontainers-go fallback), and a CI sentinel that proves the up/down/up integration test
+itself executed and passed.
+
+**Depends on:** Task 1.
+
+**Files:** `backend/internal/store/postgres/migrations/` (embedded `.sql`, goose format),
+`backend/cmd/migrate/` (CLI), `backend/internal/store/postgres/*.go` (migration runner and
+test-database helper), `backend/internal/store/postgres/*_test.go`
+(`TestMigrationsUpDownUp` and helper tests), `backend/go.mod`/`go.sum`
+(`testcontainers-go` and its postgres module), `.github/workflows/backend.yml` (sentinel
+step).
 
 **Acceptance criteria:**
 
-- Migrations run from `embed.FS` and support up/down/up verification in tests.
-- Test helper creates a throwaway database and returns cleanup owned by the test.
-- Local absence of Docker reports a clear skip reason.
-- CI sets an explicit integration-required flag; under it, Docker/PostgreSQL failure or zero
-  executed integration tests fails the job.
-- No production process runs migrations implicitly unless a later plan adds an explicit
-  operator flag.
+- Migrations live at `internal/store/postgres/migrations/*.sql`, embedded via
+  `//go:embed migrations`; one source shared unmodified by `cmd/migrate` and the test
+  helper.
+- `cmd/migrate` uses `config.LoadDatabase`. It has no implicit default command; the
+  operator names one of `up`, `down`, `status` explicitly (`task migrate -- up`).
+- The shared migration runner is callable only from `cmd/migrate` and the PostgreSQL
+  integration test helper. `cmd/api` and `cmd/indexer` never run migrations at startup and
+  never import the runner for that purpose.
+- The test helper never migrates or otherwise touches the database named in
+  `DATABASE_URL`. When `DATABASE_URL` is set, it uses only the server coordinates, opens an
+  administrative connection to the `postgres` maintenance database, and issues `CREATE
+  DATABASE`/`DROP DATABASE` for a uniquely named throwaway database per test (`t.Cleanup()`
+  owns the drop). An unreachable `DATABASE_URL` or a role lacking `CREATE`/`DROP DATABASE`
+  privilege **fails** the test — it does not skip.
+- When `DATABASE_URL` is unset, the helper starts a pinned `postgres:18.6-alpine` via
+  `testcontainers-go` with a bounded startup timeout. Docker unavailable → local skip with
+  an explicit reason; under `INTEGRATION_REQUIRED=true` that same condition is fatal, not a
+  skip.
+- Every test gets its own uniquely named database; no two tests — including
+  `t.Parallel()` and `go test -race` package-level parallelism — ever share one.
+- Migrations run from `embed.FS`, and `TestMigrationsUpDownUp` proves up/down/up
+  round-trips cleanly against a real, helper-provisioned database.
+- CI runs a dedicated step asserting `TestMigrationsUpDownUp` itself executed and passed —
+  not merely that the overall test command exited zero:
+  `go test -tags=integration -race -v -run '^TestMigrationsUpDownUp$'
+  ./internal/store/postgres/...`, grepping the `-v` output for a literal
+  `--- PASS: TestMigrationsUpDownUp` line. A missing test, a `--- SKIP:`, or a `--- FAIL:`
+  line fails the step regardless of the command's own exit code.
+- No production process runs migrations implicitly.
 
 ## Task 5 — Chain control and block-ledger schema · Risk: high
 

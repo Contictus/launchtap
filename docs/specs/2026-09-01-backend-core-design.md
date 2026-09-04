@@ -84,6 +84,64 @@ The foundation exposes a store-internal `WithinTx` primitive backed by `pgx.Tx` 
 with Plan 2 feature ports; Plan 1 must not freeze repository interfaces before their
 consumers exist.
 
+### 2.5 Migrations and test database provisioning
+
+Migrations live at `internal/store/postgres/migrations/*.sql` — the single source,
+embedded via `//go:embed migrations` and shared unmodified by `cmd/migrate` and the
+PostgreSQL integration test helper. No second migrations directory and no copy.
+
+**CLI contract.** `cmd/migrate` uses `config.LoadDatabase`, never `config.Load`. It has no
+implicit default command; the operator names one explicitly:
+
+```
+cmd/migrate up
+cmd/migrate down
+cmd/migrate status
+```
+
+(Local invocation: `task migrate -- up`.) No production process runs migrations
+implicitly. The shared migration runner is callable only from `cmd/migrate` and the
+PostgreSQL integration test helper (which provisions throwaway per-test databases).
+`cmd/api` and `cmd/indexer` (Plan 2/3) never run migrations at startup and never import
+the runner for that purpose.
+
+**Test database provisioning.** The integration test helper never migrates or otherwise
+touches the database named in `DATABASE_URL`:
+
+- If `DATABASE_URL` is set, the helper uses only its server coordinates (host, port,
+  credentials), opens an administrative connection to the `postgres` maintenance database,
+  and issues `CREATE DATABASE` for a uniquely named throwaway database per test.
+  `DROP DATABASE` runs in the test's `t.Cleanup()`. If the supplied `DATABASE_URL` is
+  unreachable, or the connecting role lacks `CREATE DATABASE`/`DROP DATABASE` privilege,
+  the test **fails** — it does not skip, because an operator explicitly supplied
+  `DATABASE_URL` and expected it to work.
+- If `DATABASE_URL` is unset, the helper starts a `postgres:18.6-alpine` container via
+  `testcontainers-go` (pinned to match `.github/workflows/backend.yml`'s service image),
+  with a bounded startup timeout. If Docker is unavailable, the test skips with an explicit
+  reason. Under `INTEGRATION_REQUIRED=true` that same condition is fatal, not a skip.
+- Every test gets its own uniquely named database. No test runs against a database another
+  test also uses; `t.Parallel()` and `go test -race` package-level parallelism must never
+  race on shared schema state.
+
+**Migration reversibility.** Every migration added by Tasks 5–7 ships a `Down` step that
+actually restores the prior schema — not a no-op — so the required `up/down/up`
+integration test is meaningful. This binds migration authors, not production operations:
+production rollback stays forward-fix (a new forward migration); `Down` exists for the test
+gate and local development, not a production revert procedure.
+
+**Integration sentinel.** CI verifies more than "the test command exited zero." A named
+test, `TestMigrationsUpDownUp`, run against a real database via the helper above, must be
+observed to execute and pass. Concretely, a dedicated CI step runs:
+
+```
+go test -tags=integration -race -v -run '^TestMigrationsUpDownUp$' ./internal/store/postgres/...
+```
+
+and greps the `-v` output for a literal `--- PASS: TestMigrationsUpDownUp` line. A missing
+test, a `--- SKIP:` line, or a `--- FAIL:` line fails the step regardless of the command's
+own exit code — Go exits 0 when `-run` matches zero tests, so exit code alone cannot prove
+the test ran.
+
 ## 3. Chain deployment registry
 
 The backend defines no manifest schema of its own. `contracts/deployments/` is the single
