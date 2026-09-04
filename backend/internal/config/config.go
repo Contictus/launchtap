@@ -21,7 +21,7 @@ var (
 	ErrInvalid = errors.New("invalid configuration value")
 	ErrMissing = errors.New("missing configuration value")
 
-	deploymentIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	deploymentIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
 )
 
 // FieldError identifies a configuration field that failed validation.

@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -150,6 +151,8 @@ func TestLoadRejectsInvalidUniversalFields(t *testing.T) {
 		{name: "non-decimal chain id", field: "CHAIN_ID", value: "0x1237"},
 		{name: "uppercase deployment id", field: "DEPLOYMENT_ID", value: "Robinhood-mainnet"},
 		{name: "leading deployment hyphen", field: "DEPLOYMENT_ID", value: "-mainnet"},
+		{name: "short deployment id", field: "DEPLOYMENT_ID", value: "ab"},
+		{name: "long deployment id", field: "DEPLOYMENT_ID", value: "a" + strings.Repeat("b", 64)},
 		{name: "rpc scheme", field: "RPC_URL", value: "ws://rpc.example.test"},
 		{name: "rpc host", field: "RPC_URL", value: "https:///missing-host"},
 		{name: "database scheme", field: "DATABASE_URL", value: "mysql://db.example.test/launchpad"},
@@ -164,6 +167,33 @@ func TestLoadRejectsInvalidUniversalFields(t *testing.T) {
 			env[test.field] = test.value
 
 			assertFieldError(t, Load, env, test.field, ErrInvalid)
+		})
+	}
+}
+
+func TestLoadAcceptsCanonicalDeploymentIDs(t *testing.T) {
+	t.Parallel()
+
+	for _, deploymentID := range []string{
+		"abc",
+		"release-v1",
+		"release_v1",
+		"release.v1",
+		"a" + strings.Repeat("b", 63),
+	} {
+		deploymentID := deploymentID
+		t.Run(deploymentID, func(t *testing.T) {
+			t.Parallel()
+			env := validEnvironment()
+			env["DEPLOYMENT_ID"] = deploymentID
+
+			got, err := Load(mapGetenv(env))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.DeploymentID != deploymentID {
+				t.Fatalf("DeploymentID = %q, want %q", got.DeploymentID, deploymentID)
+			}
 		})
 	}
 }
