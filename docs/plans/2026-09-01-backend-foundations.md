@@ -4,11 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-4 are implemented and on `dev` (Task 4's
-independent commit review has one open MINOR — a depguard follow-up — not yet triaged).
-Task 5's high-risk pre-flight is complete and its acceptance criteria are locked (see the
-task and spec §5.1). Tasks 6-12 still require their high-risk pre-flight before
-implementation.
+artifact exists at `contracts/vectors/v1/`. Tasks 1-5 are implemented and on `dev`. Task 6's
+high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
+spec §5.1, "Canonical event-ledger schema"). Tasks 7-12 still require their high-risk
+pre-flight before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -243,27 +242,67 @@ constraints, the trigger, and the common-ancestor query.
 
 ## Task 6 — Canonical event-ledger schema · Risk: high
 
-**Delivers:** exact event tables for V1 contract and Uniswap events.
+**Pre-flight:** complete. Acceptance criteria below are locked (spec §5.1, "Canonical
+event-ledger schema").
 
-**Depends on:** Task 5
+**Delivers:** 18 exact event tables — 13 for V1 contract and Uniswap pair events, plus 5
+control-plane/governance tables (captured for auditability per spec §4.4, out of Task 7's
+market aggregation) — the block-ledger linkage FK (added to `indexed_blocks` by this
+task's migration), the `token_launches` linkage FK, and the two order-independent
+graduation-ordering constraint triggers.
+
+**Depends on:** Task 5.
+
+**Files:** `backend/internal/store/postgres/migrations/` (new up/down `.sql`),
+`backend/internal/store/postgres/postgrestest/*_test.go` (or equivalent) proving the
+constraints, FKs, and triggers.
 
 **Acceptance criteria:**
 
-- Tables exist for token launches, trades, graduations, creator/protocol/launch fee claims,
-  refund credits/claims, transfers, and pair Mint/Burn/Swap/Sync.
-- Payload columns map one-to-one to the contract spec; `engine_version`, name, symbol, pair,
-  LP liquidity burned, and the `Trade` `eth_gross`/`eth_refund` pair are not omitted.
-- Every event table stores chain id, block number/hash/time, transaction index/hash, and log
-  index, with unique `(chain_id, tx_hash, log_index)`.
-- `NUMERIC(78,0)` plus nonnegative checks cover uint256 values without signed overflow.
-- Foreign keys are deferrable/replay-safe: the token constructor's initial `Transfer` may
-  precede `TokenLaunched` in the same transaction, while optional developer-buy events follow
-  it. Rollback deletes dependent events before the launch.
-- A curve `Trade` log whose block number is greater than the same token's `Graduated` block
-  is rejected as a fatal invariant violation and not stored; the curve phase is one-way.
+- Tables exist for `token_launches`, `trades`, `graduations`, `creator_fee_claims`,
+  `protocol_fee_claims`, `launch_fee_claims`, `refund_credits`, `refund_claims`,
+  `transfers`, `pool_mints`, `pool_burns`, `pool_swaps`, `pool_syncs`,
+  `launch_pause_events`, `trading_pause_events`, `engine_configurations`,
+  `future_defaults_configurations`, and `future_treasury_configurations`. Payload columns
+  map one-to-one to the contract spec per the locked table in spec §5.1; `engine_version`,
+  `name`, `symbol`, `lp_pair`, `lp_liquidity_burned`, and the `Trade` `eth_gross`/
+  `eth_refund` pair are not omitted; `launch_fee_claims` correctly has no `token_address`
+  (the event is per-treasury, not per-launch).
+- Every event table stores `chain_id`, `block_number`, `block_hash`, `block_time`,
+  `transaction_index`, `tx_hash`, and `log_index`, each with its own explicit `CHECK`
+  (`chain_id > 0`, `block_number >= 0`, `transaction_index >= 0`, `log_index >= 0`), with
+  primary key `(chain_id, tx_hash, log_index)` — no surrogate `id` column, uniqueness
+  enforced independently per table.
+- `NUMERIC(78,0)` plus nonnegative `CHECK`s cover every `uint256` value (including `Sync`'s
+  `uint112` reserves, for consistency) without signed overflow. `uint16` fields use
+  `INTEGER CHECK (... BETWEEN 0 AND 65535)`, not `SMALLINT` (which cannot hold the full
+  `uint16` range).
+- This task's migration adds `UNIQUE (chain_id, block_number, block_hash, block_time)` to
+  `indexed_blocks`. Every event table carries a `DEFERRABLE INITIALLY DEFERRED` foreign key
+  on that exact tuple to `indexed_blocks`, with no `ON DELETE` action — an event can never
+  claim a block coordinate the block ledger doesn't recognize, and reorg rollback's
+  event-before-block deletion order (spec §4.2) is DB-enforced.
+- `token_launches` carries `UNIQUE (chain_id, token_address)`. `trades`, `graduations`,
+  `creator_fee_claims`, `protocol_fee_claims`, `refund_credits`, `refund_claims`, and
+  `transfers` each carry a `DEFERRABLE INITIALLY DEFERRED` foreign key on
+  `(chain_id, token_address)` to `token_launches` — this is what lets the constructor's
+  initial `Transfer` legally precede `TokenLaunched` within one transaction.
+  `launch_fee_claims`, the five control-plane tables, and `pool_mints`/`pool_burns`/
+  `pool_swaps`/`pool_syncs` carry **no** such FK (factory-level events, and pair events
+  that can be indexed before any launch claims that pair — spec §6).
+- A curve `Trade` log whose block number is strictly greater than the same token's
+  `Graduated` block is rejected as a fatal invariant violation and not stored, enforced by
+  **two** order-independent `DEFERRABLE INITIALLY DEFERRED` `CONSTRAINT TRIGGER`s — one on
+  `trades` rejecting a trade after an existing graduation, one on `graduations` rejecting a
+  graduation before an existing later trade — so the check does not depend on which row is
+  inserted first within a transaction. A `Trade` sharing the exact same block as its
+  `Graduated` row (the graduating trade itself) is always accepted. Tests cover both
+  insertion orders, a trade after an already-committed graduation (rejected), and same-block
+  trade+graduation (accepted).
 - `pool_syncs` rows carry the coordinates needed to resolve a `pool_swaps` row's reserve
   state by the Task 7 rule (same `chain_id`, pair address, and `tx_hash`; greatest
-  `log_index` strictly less than the swap's `log_index`).
+  `log_index` strictly less than the swap's `log_index`); `pool_syncs` and `pool_swaps`
+  are indexed on `(chain_id, pair_address, tx_hash, log_index)` for that lookup.
 - Duplicate-event, unknown-engine, negative-value, and rollback tests pass.
 
 ## Task 7 — Chain projections, aggregates, and market view · Risk: high

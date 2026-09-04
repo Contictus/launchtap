@@ -448,6 +448,145 @@ Integration tests prove all three: a plain duplicate-key `INSERT` fails, an
 tests is written inline with raw SQL — `sqlc` does not exist until Task 8, and this task
 must not freeze a reusable named query before Task 8's consumers exist.
 
+**Canonical event-ledger schema.** 18 tables, all sharing the same identity columns:
+`chain_id BIGINT NOT NULL CHECK (chain_id > 0)`,
+`block_number BIGINT NOT NULL CHECK (block_number >= 0)`,
+`block_hash BYTEA NOT NULL CHECK (octet_length(block_hash) = 32)`,
+`block_time TIMESTAMPTZ NOT NULL`,
+`transaction_index INTEGER NOT NULL CHECK (transaction_index >= 0)`,
+`tx_hash BYTEA NOT NULL CHECK (octet_length(tx_hash) = 32)`,
+`log_index INTEGER NOT NULL CHECK (log_index >= 0)`.
+Primary key is `(chain_id, tx_hash, log_index)` directly — no surrogate `id` column,
+matching §4.4's uniqueness rule, enforced independently per table (never a shared
+cross-table constraint). Every address column is `BYTEA CHECK (octet_length(...) = 20)`;
+every `uint256` column — including `Sync`'s `uint112` reserves, for consistency, no
+narrower type — is `NUMERIC(78,0) CHECK (... >= 0)`. `uint16` fields (`engine_version`,
+`trade_fee_bps`, `protocol_share_bps`) are `INTEGER CHECK (... BETWEEN 0 AND 65535)` —
+`SMALLINT` cannot hold the full `uint16` range. `name`/`symbol` are `TEXT`, unbounded.
+
+**Block-ledger linkage.** Task 6's migration adds
+`UNIQUE (chain_id, block_number, block_hash, block_time)` to `indexed_blocks` (a superset
+of its existing primary key, valid as an FK target). Every one of the 18 event tables
+carries:
+
+```sql
+FOREIGN KEY (chain_id, block_number, block_hash, block_time)
+  REFERENCES indexed_blocks (chain_id, block_number, block_hash, block_time)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+An event can never record a block coordinate the block ledger doesn't recognize.
+`DEFERRABLE INITIALLY DEFERRED` because one processed chunk is one transaction (§2.4) and
+block-ledger rows and event rows for that chunk may be inserted in either order within it.
+No `ON DELETE` action is defined, so reorg rollback's event-rows-before-block-rows deletion
+order (§4.2) is enforced by the database, not just by the caller's discipline.
+
+**`token_launches` linkage.** `token_launches` additionally carries
+`UNIQUE (chain_id, token_address)`. `trades`, `graduations`, `creator_fee_claims`,
+`protocol_fee_claims`, `refund_credits`, `refund_claims`, and `transfers` each carry:
+
+```sql
+FOREIGN KEY (chain_id, token_address)
+  REFERENCES token_launches (chain_id, token_address)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+deferred for the same reason (§2.1: the constructor's initial `Transfer` may precede
+`TokenLaunched` within the same transaction). `launch_fee_claims` and the five
+control-plane tables below carry **no** such FK — `LaunchFeesClaimed` and the governance
+events are factory-level, not per-launch. `pool_mints`/`pool_burns`/`pool_swaps`/
+`pool_syncs` also carry **no** such FK: a pair's `Sync`/`Mint` can be indexed before any
+launch ever claims that pair (§6 — "the design assumes the pair may already exist"), so a
+deferred-within-transaction FK cannot cover it (that gap can span separate commits). The
+pair↔launch link is a query-time join through `tokens.lp_pair` (Task 7), never a DB
+constraint.
+
+**Event payload columns**, beyond the shared identity/FK columns above:
+
+| Table | Event | Payload columns |
+|---|---|---|
+| `token_launches` | `TokenLaunched` | `token_address` (unique w/ chain_id), `curve_address`, `creator`, `lp_pair`, `weth`, `protocol_treasury`, `engine_version`, `name`, `symbol`, `total_supply`, `virtual_eth`, `virtual_token`, `curve_tokens`, `lp_tokens`, `graduation_eth`, `launch_fee_paid`, `trade_fee_bps`, `protocol_share_bps` |
+| `trades` | `Trade` | `token_address` (FK), `trader`, `is_buy` (BOOLEAN), `eth_gross`, `eth_refund`, `token_amount`, `protocol_fee`, `creator_fee`, `new_eth_reserve`, `new_token_reserve` |
+| `graduations` | `Graduated` | `token_address` (FK), `lp_pair`, `eth_to_pool`, `tokens_to_pool`, `lp_liquidity_burned` |
+| `creator_fee_claims` | `CreatorFeesClaimed` | `token_address` (FK), `creator`, `amount` |
+| `protocol_fee_claims` | `ProtocolFeesClaimed` | `token_address` (FK), `treasury`, `amount` |
+| `launch_fee_claims` | `LaunchFeesClaimed` | `treasury`, `amount` — no `token_address`, no FK |
+| `refund_credits` | `RefundCredited` | `token_address` (FK), `account`, `amount` |
+| `refund_claims` | `RefundClaimed` | `token_address` (FK), `account`, `amount` |
+| `transfers` | ERC-20 `Transfer` | `token_address` (FK), `from_address`, `to_address`, `value` |
+| `pool_mints` | Uniswap `Mint` | `pair_address` (no FK), `sender`, `amount0`, `amount1` |
+| `pool_burns` | Uniswap `Burn` | `pair_address` (no FK), `sender`, `amount0`, `amount1`, `to_address` |
+| `pool_swaps` | Uniswap `Swap` | `pair_address` (no FK), `sender`, `amount0_in`, `amount1_in`, `amount0_out`, `amount1_out`, `to_address` |
+| `pool_syncs` | Uniswap `Sync` | `pair_address` (no FK), `reserve0`, `reserve1` |
+| `launch_pause_events` | `LaunchPauseSet` | `paused` (BOOLEAN) |
+| `trading_pause_events` | `TradingPauseSet` | `paused` (BOOLEAN) |
+| `engine_configurations` | `EngineConfigured` | `engine_version`, `implementation`, `enabled` (BOOLEAN) |
+| `future_defaults_configurations` | `FutureDefaultsConfigured` | `config_hash` |
+| `future_treasury_configurations` | `FutureTreasuryConfigured` | `previous_treasury`, `new_treasury` |
+
+`token_launches.lp_pair` and `pool_*.pair_address` hold the same on-chain address under
+different column names for the same pair (no FK between them, per above). Index
+`pool_syncs (chain_id, pair_address, tx_hash, log_index)` and the same shape on
+`pool_swaps` — Task 7's spot-price resolution (§5.3) is exactly this lookup.
+
+**Graduation ordering — two order-independent constraint triggers, not one.** A single
+`BEFORE INSERT ON trades` trigger depends on insertion order within a transaction and can
+miss the case where a violating `Trade` is inserted before its later-block `Graduated` row
+lands in the same chunk. Instead, both directions are checked, each as a deferred
+`CONSTRAINT TRIGGER` (Postgres requires constraint triggers to be `AFTER ROW`, which is
+what makes them deferrable to commit time — by which point every row in the chunk's
+transaction is present regardless of insertion order):
+
+```sql
+-- fires on trades: reject a trade strictly after an already-recorded graduation
+CREATE FUNCTION trades_reject_after_graduation() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM graduations
+    WHERE graduations.chain_id = NEW.chain_id
+      AND graduations.token_address = NEW.token_address
+      AND graduations.block_number < NEW.block_number
+  ) THEN
+    RAISE EXCEPTION 'trade (chain_id=%, token=%, block=%) occurs after graduation',
+      NEW.chain_id, NEW.token_address, NEW.block_number;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = pg_catalog;
+
+CREATE CONSTRAINT TRIGGER trades_reject_after_graduation_trigger
+  AFTER INSERT OR UPDATE ON trades
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION trades_reject_after_graduation();
+
+-- fires on graduations: reject a graduation strictly before an already-recorded later trade
+CREATE FUNCTION graduations_reject_before_later_trade() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM trades
+    WHERE trades.chain_id = NEW.chain_id
+      AND trades.token_address = NEW.token_address
+      AND trades.block_number > NEW.block_number
+  ) THEN
+    RAISE EXCEPTION 'graduation (chain_id=%, token=%, block=%) precedes an existing later trade',
+      NEW.chain_id, NEW.token_address, NEW.block_number;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = pg_catalog;
+
+CREATE CONSTRAINT TRIGGER graduations_reject_before_later_trade_trigger
+  AFTER INSERT OR UPDATE ON graduations
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION graduations_reject_before_later_trade();
+```
+
+Both use strict `<`/`>`, so a `Trade` sharing the exact same `block_number` as its
+`Graduated` row — the graduating trade itself — always passes, regardless of which row
+landed first in the transaction. Integration tests cover: Trade-then-Graduation insertion
+order, Graduation-then-Trade insertion order, a `Trade` in a block after an
+already-committed `Graduated` row (rejected), and same-block `Trade`+`Graduated` (accepted).
+
 ### 5.2 Chain projections
 
 | Table | Purpose |
