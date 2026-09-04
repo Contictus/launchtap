@@ -17,6 +17,13 @@ linters:
             - "**/internal/curve/**/*.go"
           allow:
             - $gostd
+        config-purity:
+          files:
+            - "**/internal/config/*.go"
+            - "**/internal/config/**/*.go"
+          deny:
+            - pkg: os
+              desc: configuration must use the injected environment lookup function
         domain-and-application:
           files:
             - "**/internal/launch/*.go"
