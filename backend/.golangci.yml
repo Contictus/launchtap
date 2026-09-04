@@ -50,6 +50,14 @@ linters:
           deny:
             - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/migrations
               desc: API and indexer startup must never run migrations implicitly
+        generated-sqlc-boundary:
+          files:
+            - $all
+            - "!**/internal/store/postgres/*.go"
+            - "!**/internal/store/postgres/**/*.go"
+          deny:
+            - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc
+              desc: generated sqlc packages must not escape PostgreSQL adapters
         domain-and-application:
           files:
             - "**/internal/launch/*.go"
@@ -68,8 +76,6 @@ linters:
               desc: feature and application packages must not depend on PostgreSQL adapters
             - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/migrations
               desc: feature and application packages must not depend on migration infrastructure
-            - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc
-              desc: generated sqlc packages must not escape PostgreSQL adapters
             - pkg: github.com/ethereum/go-ethereum/ethclient
               desc: feature and application packages must not depend on Ethereum RPC clients
             - pkg: github.com/Contictus/launchtap/backend/internal/chain

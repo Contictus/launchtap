@@ -65,6 +65,9 @@ jobs:
       - name: Verify deployment artifact copy
         run: diff --recursive --brief --exclude=.generated ../contracts/deployments deployments/testdata
 
+      - name: Verify sqlc generated code
+        run: go run github.com/go-task/task/v3/cmd/task@v3.53.1 sqlc-diff
+
       - name: Run backend gate
         run: go run github.com/go-task/task/v3/cmd/task@v3.53.1 verify
 

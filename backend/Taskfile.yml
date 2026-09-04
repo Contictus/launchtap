@@ -35,9 +35,14 @@ tasks:
       - go run ./cmd/migrate {{.CLI_ARGS}}
 
   sqlc:
-    desc: Generate sqlc code once sqlc.yaml is introduced by Task 8.
+    desc: Generate the pinned sqlc persistence package.
     cmds:
       - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+
+  sqlc-diff:
+    desc: Fail when committed sqlc output differs from its schema or queries.
+    cmds:
+      - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 diff
 
   verify:
     desc: Run the complete Backend Foundations Task 1 gate.
