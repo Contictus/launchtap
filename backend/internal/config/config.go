@@ -42,17 +42,17 @@ func (e *FieldError) Unwrap() error {
 // are trimmed before validation. IndexerConfirmations is nil when the local-only
 // override is absent; deployment validation decides whether it is permitted.
 type Config struct {
-	ChainID              uint64
-	DeploymentID         string
-	RPCURL               string
-	DatabaseURL          string
-	PrivyAppID           string
-	PrivyVerificationKey string
-	LogLevel             string
-	APIAddr              string
-	IndexerChunkSize     uint64
-	IndexerConfirmations *uint64
-	ETHUSDSource         string
+	ChainID              uint64  `env:"CHAIN_ID"`
+	DeploymentID         string  `env:"DEPLOYMENT_ID"`
+	RPCURL               string  `env:"RPC_URL"`
+	DatabaseURL          string  `env:"DATABASE_URL"`
+	PrivyAppID           string  `env:"PRIVY_APP_ID"`
+	PrivyVerificationKey string  `env:"PRIVY_VERIFICATION_KEY"`
+	LogLevel             string  `env:"LOG_LEVEL"`
+	APIAddr              string  `env:"API_ADDR"`
+	IndexerChunkSize     uint64  `env:"INDEXER_CHUNK_SIZE"`
+	IndexerConfirmations *uint64 `env:"INDEXER_CONFIRMATIONS"`
+	ETHUSDSource         string  `env:"ETH_USD_SOURCE"`
 }
 
 // DatabaseConfig is the reduced configuration surface used by migration-only
@@ -254,6 +254,8 @@ func parseAPIAddr(value string) (string, error) {
 		value = defaultAPIAddr
 	}
 
+	// API processes need a stable numeric listener. Ephemeral port zero and
+	// service names such as "http" are intentionally rejected.
 	_, port, err := net.SplitHostPort(value)
 	if err != nil {
 		return "", &FieldError{Field: "API_ADDR", Err: ErrInvalid}

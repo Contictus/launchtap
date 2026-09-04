@@ -18,12 +18,20 @@ linters:
           allow:
             - $gostd
         config-purity:
+          list-mode: strict
           files:
             - "**/internal/config/*.go"
             - "**/internal/config/**/*.go"
-          deny:
-            - pkg: os
-              desc: configuration must use the injected environment lookup function
+          allow:
+            - errors
+            - fmt
+            - net
+            - net/url
+            - reflect
+            - regexp
+            - strconv
+            - strings
+            - testing
         domain-and-application:
           files:
             - "**/internal/launch/*.go"

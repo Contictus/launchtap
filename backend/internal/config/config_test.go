@@ -42,6 +42,35 @@ func TestLoadParsesCompleteConfiguration(t *testing.T) {
 	}
 }
 
+func TestConfigEnvironmentMapping(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		"ChainID":              "CHAIN_ID",
+		"DeploymentID":         "DEPLOYMENT_ID",
+		"RPCURL":               "RPC_URL",
+		"DatabaseURL":          "DATABASE_URL",
+		"PrivyAppID":           "PRIVY_APP_ID",
+		"PrivyVerificationKey": "PRIVY_VERIFICATION_KEY",
+		"LogLevel":             "LOG_LEVEL",
+		"APIAddr":              "API_ADDR",
+		"IndexerChunkSize":     "INDEXER_CHUNK_SIZE",
+		"IndexerConfirmations": "INDEXER_CONFIRMATIONS",
+		"ETHUSDSource":         "ETH_USD_SOURCE",
+	}
+
+	typeOfConfig := reflect.TypeFor[Config]()
+	if typeOfConfig.NumField() != len(want) {
+		t.Fatalf("Config fields = %d, want %d", typeOfConfig.NumField(), len(want))
+	}
+	for index := range typeOfConfig.NumField() {
+		field := typeOfConfig.Field(index)
+		if got := field.Tag.Get("env"); got != want[field.Name] {
+			t.Errorf("Config.%s env tag = %q, want %q", field.Name, got, want[field.Name])
+		}
+	}
+}
+
 func TestLoadUsesBoundedDefaults(t *testing.T) {
 	t.Parallel()
 
