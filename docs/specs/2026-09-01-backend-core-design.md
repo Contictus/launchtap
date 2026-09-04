@@ -142,6 +142,110 @@ test, a `--- SKIP:` line, or a `--- FAIL:` line fails the step regardless of the
 own exit code — Go exits 0 when `-run` matches zero tests, so exit code alone cannot prove
 the test ran.
 
+### 2.6 Generated persistence layer
+
+sqlc (pinned `v1.31.1`, already in `Taskfile.yml`) generates a `Queries` struct from
+hand-written SQL into `internal/store/postgres/sqlc` — not `sqlcgen`, matching the
+existing `store/postgres` dependency-rule row (§2.3). `depguard` extends the same rule
+that protects `curve` and `config` (Task 1): every package **other than**
+`internal/store/postgres/**` is forbidden from importing `internal/store/postgres/sqlc`,
+proven by a temporary probe removed before commit (Task 1's own pattern). "No generated
+type escapes `internal/store/postgres`" (Task 8) is this depguard rule, not a
+documentation promise.
+
+**Column type overrides, not manual conversion helpers.** `BYTEA` carries no length in
+Postgres' own type system — a 20-byte address column and a 32-byte hash column are both
+just `bytea` — so a *per-type* sqlc override cannot distinguish them; every address and
+hash column needs its own *per-column* override entry (`column: "trades.trader"`, etc.)
+in `sqlc.yaml`. Three hand-written types live alongside the generated code in
+`internal/store/postgres/sqlc` and implement the pgx v5 scan/encode interfaces sqlc's
+driver expects:
+
+- `Address [20]byte` — every `BYTEA CHECK (octet_length(...) = 20)` column.
+- `Hash [32]byte` — every `BYTEA CHECK (octet_length(...) = 32)` column.
+- `Uint256` — every `NUMERIC(78,0)` column. Scanning rejects a negative value, a
+  fractional value (a `NUMERIC(78,0)` column is schema-guaranteed integral, but the type
+  itself must not silently truncate if that ever changed), and any value whose
+  `BitLen() > 256`. **Not** applied to `NUMERIC(38,18)` USD columns (§5.4) — those stay a
+  plain decimal type; USD is enrichment, not an exact on-chain integer.
+
+**Idempotent event insertion.** Every event insert query is
+`INSERT ... ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING` — never `DO UPDATE`.
+`DO NOTHING` alone cannot distinguish a genuine replay (identical payload) from a
+decoder/non-determinism bug (a conflicting row with a *different* payload), so the Go
+adapter wraps each insert: on conflict, it re-reads the existing row and compares every
+payload column against the value it just tried to insert. Identical → idempotent success,
+no error. Different → a typed conflict/invariant error, never silently swallowed and
+never silently overwritten. Task 8 builds this wrapper for `trades`, `launch_pause_events`,
+and `indexed_blocks` (representative scope, below); the same pattern applies to the other
+15 event tables when Plan 2 needs them.
+
+**Representative scope, not all 21 tables.** Task 8 writes hand-crafted queries for
+exactly: `trades` (a per-token event carrying the graduation-ordering trigger),
+`launch_pause_events` (a factory-level control-plane event with no `token_address` FK),
+and `indexed_blocks` (the block ledger itself — insert/upsert, plus
+`GetIndexedBlockByNumber`/`GetIndexedBlockByHash` link lookups), plus watermark upsert
+queries (`sync_state`) and a wrapper for `rebuild_token_projections` (§5.2) and the
+dirty-work claim/complete queries below. The remaining 15 event tables get their insert
+query added on demand in Plan 2, by copying this proven pattern — not pre-built here with
+no consumer, matching this plan's own "no indexer runtime is wired" boundary.
+
+**Common-ancestor walk stays out of Task 8's permanent API.** The candidate-chain
+parameter shape depends on what Plan 2's RPC-backed reorg detector actually has on hand at
+that point; freezing a named query for it now would guess at a shape Plan 2 hasn't
+decided. Task 8 supplies only the two link-lookup queries above; the recursive walk
+itself is designed with its Plan 2 consumer, as inline raw SQL until then (matching Task
+5's own test, which this task does not replace).
+
+**Dirty-work claim and complete.** A single atomic CTE claims a batch, ordered
+deterministically (`generation`, then `chain_id`, then `token_address`, so results are
+reproducible under `LIMIT`):
+
+```sql
+WITH candidate AS (
+    SELECT chain_id, token_address
+    FROM aggregation_dirty
+    WHERE claimed_generation IS NULL OR claimed_generation < generation
+    ORDER BY generation, chain_id, token_address
+    LIMIT $1
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE aggregation_dirty AS dirty
+SET claimed_generation = dirty.generation, claimed_at = now(), claimed_by = $2
+FROM candidate
+WHERE dirty.chain_id = candidate.chain_id AND dirty.token_address = candidate.token_address
+RETURNING dirty.chain_id, dirty.token_address, dirty.claimed_generation;
+```
+
+The naive completion `DELETE ... WHERE claimed_generation = generation` (Task 7 locked
+only the *column shape*, not this query text) has a real race: worker A claims generation
+1; the row is re-dirtied to generation 2 while A is still working; worker B claims
+generation 2; A's late completion call still matches `claimed_generation(2) = generation(2)`
+in the database and deletes the row B is actively processing. Completion instead
+compares-and-deletes against the exact values the caller received from its own claim,
+including who claimed it:
+
+```sql
+DELETE FROM aggregation_dirty
+WHERE chain_id = $1 AND token_address = $2
+  AND generation = $3            -- $3 = claimed_generation from this worker's own claim
+  AND claimed_generation = $3
+  AND claimed_by = $4;
+```
+
+A's stale call above now matches nothing (`generation` moved to 2, `$3` is still 1) and is
+a safe no-op. A crashed-worker lease/timeout recovery mechanism is not part of this —
+that's worker orchestration, Plan 2 scope (§5.2's "Scope boundary").
+
+**Transaction discipline.** No generated or hand-wrapped query opens, commits, or rolls
+back a transaction — every one accepts sqlc's `DBTX` and runs unmodified against either a
+pool connection or an already-open `pgx.Tx`. Composing several queries into one atomic
+unit (`WithinTx`) is Task 9's job, not this one's.
+
+**CI.** `sqlc diff` (available in the pinned `v1.31.1`) is added to `Taskfile.yml` and the
+CI gate alongside the existing drift checks (§3, §2.5) — generated code that doesn't match
+committed SQL fails the build the same way an out-of-sync deployment-manifest copy does.
+
 ## 3. Chain deployment registry
 
 The backend defines no manifest schema of its own. `contracts/deployments/` is the single

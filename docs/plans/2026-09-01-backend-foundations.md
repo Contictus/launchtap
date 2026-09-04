@@ -4,10 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-6 are implemented and on `dev`. Task 7's
+artifact exists at `contracts/vectors/v1/`. Tasks 1-7 are implemented and on `dev`. Task 8's
 high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
-spec §5.2, §5.3, §5.5). Tasks 8-12 still require their high-risk pre-flight before
-implementation.
+spec §2.6, "Generated persistence layer"). Tasks 9-12 still require their high-risk
+pre-flight before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -378,19 +378,61 @@ schema, the rebuild primitives, and the market view.
 
 ## Task 8 — sqlc queries and persistence adapters · Risk: high
 
-**Delivers:** sqlc v2 configuration, generated package, and foundation query adapters.
+**Pre-flight:** complete. Acceptance criteria below are locked (spec §2.6).
 
-**Depends on:** Task 7
+**Delivers:** `sqlc.yaml` (config schema v2, pinned CLI `v1.31.1`), the generated
+`internal/store/postgres/sqlc` package with per-column `Address`/`Hash`/`Uint256` type
+overrides, and a representative set of hand-wrapped query adapters (spec §2.6).
+
+**Depends on:** Task 7.
+
+**Files:** `backend/sqlc.yaml` (or `backend/internal/store/postgres/sqlc.yaml`),
+`backend/internal/store/postgres/sqlc/` (generated `Queries` + hand-written
+`Address`/`Hash`/`Uint256` types and their `.sql` sources), `backend/internal/store/postgres/*.go`
+(insert-with-conflict-comparison wrapper, claim/complete adapter), `backend/.golangci.yml`
+(depguard extension), `backend/Taskfile.yml` and `.github/workflows/backend.yml` (`sqlc
+diff` step), `backend/internal/store/postgres/postgrestest/*_test.go` (or equivalent).
 
 **Acceptance criteria:**
 
-- `sqlc generate` and `sqlc diff` are reproducible and leave no diff in CI.
-- Generated `DBTX` accepts pgx pool and transaction implementations.
-- Queries cover block insertion/link lookup, watermarks, idempotent event insertion,
-  projection rebuild primitives, and dirty-work claim/complete.
-- No generated type escapes `internal/store/postgres`.
-- Byte/address and uint256 numeric conversion helpers reject wrong lengths, negative values,
-  and values above 256 bits.
+- `sqlc generate` and `sqlc diff` are reproducible and leave no diff in CI (spec §2.6
+  "CI"); `sqlc diff` runs as a dedicated `Taskfile.yml` target and CI step alongside the
+  existing drift checks (§3, §2.5).
+- Generated code lives in `internal/store/postgres/sqlc`, never `sqlcgen` or any other
+  name. `depguard` is extended so every package other than `internal/store/postgres/**`
+  is forbidden from importing it — proven by a temporary probe removed before commit
+  (Task 1's own pattern). "No generated type escapes `internal/store/postgres`" is this
+  depguard rule, not a documentation claim.
+- Every `BYTEA CHECK (octet_length(...) = 20)` column has a per-column `sqlc.yaml`
+  override to `Address [20]byte`; every `= 32` column overrides to `Hash [32]byte`; every
+  `NUMERIC(78,0)` column overrides to `Uint256`, which rejects a negative value, a
+  fractional value, and any value with `BitLen() > 256` on scan. `NUMERIC(38,18)` USD
+  columns (§5.4) are explicitly excluded from the `Uint256` override.
+- Representative query scope only (spec §2.6): idempotent insert queries for `trades`,
+  `launch_pause_events`, and `indexed_blocks` (plus `GetIndexedBlockByNumber`/
+  `GetIndexedBlockByHash` link lookups), `sync_state` watermark upsert, a wrapper for
+  `rebuild_token_projections`, and the dirty-work claim/complete queries. The other 15
+  event tables' insert queries are explicitly deferred to Plan 2, added on demand by
+  copying this proven pattern.
+- Every event insert query is `INSERT ... ON CONFLICT (chain_id, tx_hash, log_index) DO
+  NOTHING` — never `DO UPDATE`. The Go adapter wrapping it re-reads the existing row on
+  conflict and compares every payload column: identical payload is an idempotent success;
+  a different payload is a typed conflict/invariant error, never silently swallowed or
+  silently overwritten. A test proves both paths for at least one representative table.
+- The dirty-work claim query is the atomic CTE from spec §2.6 (`FOR UPDATE SKIP LOCKED`,
+  ordered by `generation, chain_id, token_address`), selecting rows where
+  `claimed_generation IS NULL OR claimed_generation < generation`. The completion query
+  compares **all of** `generation = $claimed_generation`, `claimed_generation =
+  $claimed_generation`, and `claimed_by = $worker_id` before deleting — not the bare
+  `claimed_generation = generation` shape. A test proves the exact race from spec §2.6
+  (worker A claims generation 1, the row is re-dirtied to generation 2, worker B claims
+  generation 2, A's stale completion call is a no-op and does not delete B's live claim).
+- The common-ancestor recursive walk is **not** given a permanent named query in this
+  task; only the two link-lookup queries above are delivered. Task 5's inline raw-SQL test
+  query is unaffected.
+- No generated or hand-wrapped query opens, commits, or rolls back a transaction — every
+  one runs against sqlc's `DBTX`, unmodified, whether given a pool connection or an
+  already-open `pgx.Tx`. `WithinTx` composition stays Task 9's job.
 
 ## Task 9 — Store transaction primitive · Risk: high
 
