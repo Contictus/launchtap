@@ -4,9 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. The user has authorized Task 1 (Risk: low) to
-begin once this doc revision is committed and pulled. Tasks 3-12 still require their
-high-risk pre-flight before implementation.
+artifact exists at `contracts/vectors/v1/`. Tasks 1 and 2 are implemented and on `dev`.
+Task 3's high-risk pre-flight is complete and its acceptance criteria are locked (see the
+task and spec §3); it is gated on two Codex follow-ups named in the task. Tasks 4-12 still
+require their high-risk pre-flight before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -18,8 +19,8 @@ curve mirror.
 - `docs/specs/2026-09-01-contract-core-design.md`
 - `docs/specs/2026-09-01-backend-core-design.md`
 
-**Scope:** `backend/` scaffold, `internal/config`, `internal/store/postgres`, and
-`internal/curve`. No API or indexer runtime is wired in this plan.
+**Scope:** `backend/` scaffold, `internal/config`, `deployments`, `internal/store/postgres`,
+and `internal/curve`. No API or indexer runtime is wired in this plan.
 
 **Toolchain:** Go 1.26.x, Huma-compatible module baseline, pgx/v5, sqlc, goose/v3,
 go-ethereum value types, testcontainers-go, golangci-lint v2. `shopspring/decimal` is not
@@ -42,6 +43,10 @@ added until an API DTO actually needs it.
   The contract vector artifact already exists at `contracts/vectors/v1/` (schema-validated,
   regeneration-gated by the contracts milestone CI); Tasks 10-12 consume it and never
   regenerate it in the backend module.
+- Deployment manifests are owned by `contracts/deployments/` (the shared
+  `deployment.schema.json` plus `chain-dependencies` and `chain-disabled` records). Task 3
+  consumes a byte-identical copy and validates against those schemas; the backend authors no
+  manifest schema and no generator.
 
 ## Risk classes
 
@@ -85,22 +90,64 @@ environment example, and path-filtered backend CI.
 
 ## Task 3 — Reviewed deployment manifests · Risk: high
 
-**Delivers:** embedded manifest schema, lookup, validation, and initial reviewed records.
+**Pre-flight:** complete. Acceptance criteria below are locked (spec §3). Two Codex
+follow-ups must land and pass CI **before** implementation starts:
 
-**Depends on:** Task 2
+1. Align `config.DEPLOYMENT_ID` validation to the canonical manifest pattern
+   `^[a-z0-9][a-z0-9._-]{2,63}$`, with updated tests (one regex, not two).
+2. Add contracts-side `chain-dependencies.schema.json` and `chain-disabled.schema.json`, and
+   validate `config/robinhood-mainnet.json` and `config/robinhood-testnet.disabled.json`
+   against them in the contracts gate.
+
+**Delivers:** consumption of the shared `contracts/deployments/` artifacts — a byte-identical
+copy with a CI drift gate, load-time schema validation, static manifest validation, the
+`(chain_id, deployment_id)` lookup with typed fail-closed errors, and the config×manifest
+reconciliation that closes the Task 2 `INDEXER_CONFIRMATIONS` deferral. No backend-authored
+schema, no second generator, no RPC.
+
+**Depends on:** Task 2 and the two follow-ups above.
+
+**Files:** `backend/deployments/` (runtime model, `embed.FS`, schema validation, static
+validation, lookup, reconciliation), `backend/deployments/*_test.go`,
+`backend/deployments/testdata/` (byte-identical copy of `contracts/deployments/`),
+`.github/workflows/backend.yml` (drift-check step).
 
 **Acceptance criteria:**
 
-- Lookup key is `(chain_id, deployment_id)`, not chain id alone.
-- Robinhood mainnet dependency addresses match the backend spec exactly.
-- Testnet does not reuse mainnet addresses and is explicitly marked graduation-disabled
-  until its own deployment manifest is available.
-- Anvil manifests can be loaded from generated contract deployment output without becoming
-  production defaults.
-- Validation rejects zero required addresses, wrong burn address, duplicate deployment id,
-  unknown engine version, and chain mismatch. Deployment generation separately proves
-  `StartBlock` equals the factory deployment receipt block.
-- Unit tests prove a testnet configuration cannot silently select mainnet DEX contracts.
+- `contracts/deployments/` is copied into `testdata/` and CI fails if the copy is not
+  byte-identical to the source. The backend adds no second schema and no second generator.
+- Every embedded manifest is schema-validated against `deployment.schema.json` on load;
+  `schemaVersion == 1`, `engineVersion == 1`, `graduationEnabled == true`, and
+  `lpBurnAddress == 0x…dEaD` are enforced and a violation is rejected.
+- The lookup key is `(chain_id, deployment_id)`. An unknown key returns a typed
+  `ErrDeploymentNotFound`; a `chain-disabled` marker returns a typed `ErrDeploymentDisabled`
+  with the recorded `reason`; the two are distinguishable. No default, no Anvil fallback.
+- A `chain-dependencies` record (Robinhood mainnet, `chain_id 4663`) is never selectable as
+  a deployment. A production `(4663, …)` lookup fail-closes because no `LaunchFactory` /
+  `BondingCurveV1` is deployed yet.
+- Robinhood testnet (`chain_id 46630`) ships only its `chain-disabled` marker. A unit test
+  proves a `46630` selection returns `ErrDeploymentDisabled` and cannot fall back to the
+  mainnet dependency addresses or any other manifest.
+- Anvil manifests load from `contracts/deployments/.generated/` output, are
+  `environment == local`, and never become a default for any other `(chain_id,
+  deployment_id)`.
+- Static validation rejects: a zero `Factory` or `CurveImplementation`, `lpBurnAddress`
+  other than `0x…dEaD`, an `engineVersion` outside `{1}`, a malformed or zero
+  `pairInitCodeHash` or `bytecodeHashes` entry, a `deployment_id` that is not globally
+  unique or repeats a `(chain_id, deployment_id)`, a `deployment_id` outside
+  `^[a-z0-9][a-z0-9._-]{2,63}$`, and `startBlock == 0` for a non-`local` environment.
+  Addresses are checked with `common.IsHexAddress` then compared byte-level. Deployment
+  generation separately proves `StartBlock` equals the factory deployment receipt block.
+- `uniswapV2Router02` is parsed and schema-validated but is not mapped into the runtime
+  `Deployment` and is not surfaced by the backend API. `compiler`, `toolchain`,
+  `governance`, and `verification` are schema-validated but not in the runtime model.
+- `eth_getCode` bytecode verification and CREATE2 pair-address reproduction are explicitly
+  deferred to indexer startup (Plan 2).
+- API and indexer startup resolve the `(CHAIN_ID, DEPLOYMENT_ID)` manifest and reconcile:
+  `INDEXER_CONFIRMATIONS` set is fatal unless `environment == local`; `CHAIN_ID` must equal
+  the manifest `chainId`. `config.Load` / `config.LoadDatabase` do not resolve manifests.
+  Unit tests cover local-set-ok, testnet-set-fatal, production-set-fatal, and
+  chain-id-mismatch-fatal.
 
 ## Task 4 — Migration runner and PostgreSQL test support · Risk: high
 

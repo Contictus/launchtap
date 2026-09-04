@@ -62,6 +62,8 @@ backend/
 | Package | Allowed | Forbidden |
 |---|---|---|
 | `curve` | stdlib and `math/big` | all external packages |
+| `config` | stdlib only; no `os` (environment via injected `func(string) string`) | everything else |
+| `deployments` | stdlib, `encoding/json`, `embed`, go-ethereum `common` | pgx, sqlc, ethclient, chain, store, indexer, apiserver, feature modules |
 | feature modules | feature ports, config values, go-ethereum value types | pgx, sqlc output, ethclient, chain, apiserver |
 | `chain` | go-ethereum RPC/ABI packages | feature modules, store, indexer |
 | `indexer` | chain ports, feature handlers, transaction port | apiserver, concrete pgx/sqlc types |
@@ -84,39 +86,109 @@ consumers exist.
 
 ## 3. Chain deployment registry
 
-Runtime selects a reviewed deployment manifest by chain id and deployment id. A manifest
-contains:
+The backend defines no manifest schema of its own. `contracts/deployments/` is the single
+source of truth, shared by contract deployment, backend, and frontend:
+
+| Artifact | Schema | Selectable as a deployment? |
+|---|---|---|
+| Reviewed deployment manifest | `deployment.schema.json` | yes |
+| Chain dependency record | `chain-dependencies.schema.json` | no |
+| Chain disabled marker | `chain-disabled.schema.json` | no |
+
+The backend consumes a byte-identical copy of `contracts/deployments/` and a CI check fails
+if the copy drifts from the source (the curve-vector consumption pattern). No second schema,
+no second generator, no RPC in this plan. `deployment.schema.json` pins `schemaVersion == 1`,
+`engineVersion == 1`, `graduationEnabled == true`, and
+`lpBurnAddress == 0x000000000000000000000000000000000000dEaD`; a manifest that violates any
+of these is schema-invalid and rejected on load. There is no valid deployment manifest with
+graduation disabled — that state is expressed only by a `chain-disabled` marker, which is
+not a deployment.
+
+### 3.1 Runtime Deployment model
+
+The parsed runtime value carries only the fields the backend consumes:
 
 ```go
 type Deployment struct {
     ChainID             uint64
     DeploymentID        string
     Name                string
+    Environment         Environment // local | testnet | production
     Factory             common.Address
     StartBlock          uint64
-    EngineVersion       uint16
+    EngineVersion       uint16 // always 1 in V1
     CurveImplementation common.Address
     UniV2Factory        common.Address
     WETH                common.Address
     PairInitCodeHash    common.Hash
     LPBurnAddress       common.Address
+    BytecodeHashes      BytecodeHashes // launchFactory, bondingCurveV1, uniV2Factory, weth
+    DeployTransaction   common.Hash
     ExplorerBase        string
 }
 ```
 
-RPC URL is environment-provided; contract addresses are not. Startup validates chain id,
-nonzero required addresses, factory bytecode, and the manifest's deployment identity.
+`uniswapV2Router02` is parsed and schema-validated but is **not** mapped into `Deployment`
+and is never surfaced by the backend API; graduation uses Factory/Pair/WETH and routing is a
+frontend concern. The `compiler`, `toolchain`, `governance`, and `verification` blocks are
+schema-validated on load but are not part of the runtime model in this plan.
 
-Known Robinhood mainnet dependencies:
+### 3.2 Lookup and fail-closed rules
+
+- The lookup key is `(chain_id, deployment_id)`. An unknown key returns a typed
+  `ErrDeploymentNotFound`; there is no default and no fallback to an Anvil manifest.
+- A `chain-disabled` marker for the requested chain returns a typed `ErrDeploymentDisabled`
+  carrying the recorded `reason`, distinct from `ErrDeploymentNotFound` so an operator can
+  tell "explicitly disabled" from "unknown".
+- A `chain-dependencies` record is never selectable as a deployment. Robinhood mainnet
+  (`chain_id 4663`) currently has only a dependency record — no `LaunchFactory` or
+  `BondingCurveV1` is deployed — so a production `(4663, …)` lookup fail-closes until a real
+  reviewed and audited production manifest exists.
+- Robinhood testnet (`chain_id 46630`) ships only its `chain-disabled` marker in this plan;
+  producing the reviewed testnet manifest stays in `backlog.md`. A `46630` selection returns
+  `ErrDeploymentDisabled` and cannot fall back to the mainnet dependency addresses.
+- `deployment_id` is globally unique across every embedded manifest, and a repeated
+  `(chain_id, deployment_id)` is rejected on load. `deployment_id` matches the canonical
+  manifest pattern `^[a-z0-9][a-z0-9._-]{2,63}$`; `config.DEPLOYMENT_ID` uses the same
+  expression so any selectable deployment is reachable from configuration.
+
+### 3.3 Static validation (this plan) vs. chain verification (Plan 2)
+
+Task 3 performs static validation only:
+
+- schema validity against `deployment.schema.json`;
+- every address parses via `common.IsHexAddress` and is compared byte-level as
+  `common.Address` (embedded literals are stored EIP-55-checksummed for human review, but
+  the comparison is checksum-agnostic);
+- `Factory` and `CurveImplementation` are non-zero for every manifest;
+- `LPBurnAddress == 0x…dEaD`;
+- `EngineVersion` is in the supported set `{1}`;
+- `PairInitCodeHash` and each `BytecodeHashes` entry are well-formed 32-byte non-zero hashes;
+- `StartBlock` is the block of the factory deployment transaction and log discovery is
+  inclusive of it; `StartBlock == 0` is accepted only for `Environment == local`.
+
+`eth_getCode` bytecode verification and CREATE2 pair-address reproduction against
+`UniV2Factory` are indexer-startup steps in Plan 2, not Task 3. Deployment generation
+separately proves `StartBlock` equals the factory deployment receipt block.
+
+### 3.4 Configuration reconciliation
+
+`RPC_URL` and `DATABASE_URL` are environment-provided; contract addresses are not.
+`config.Load` and `config.LoadDatabase` never resolve a manifest. API and indexer startup
+each resolve the `(CHAIN_ID, DEPLOYMENT_ID)` manifest and then reconcile:
+
+- `INDEXER_CONFIRMATIONS` (config, `*uint64`, nil when unset) is accepted only when the
+  resolved manifest's `Environment == local`. For `testnet` or `production` a set
+  `INDEXER_CONFIRMATIONS` is a fatal startup error. This is the enforcement Task 2 deferred.
+- `CHAIN_ID` must equal the manifest `chainId`; a mismatch is fatal.
+
+Known Robinhood mainnet dependency addresses (from
+`contracts/deployments/config/robinhood-mainnet.json`, fork-verified at block `53240126`):
 
 - WETH: `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`
-- Uniswap v2 Factory: `0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f`
-- Router02: `0x89e5db8b5aa49aa85ac63f691524311aeb649eba`
-
-Router is recorded for frontend routing but contract graduation uses Factory/Pair/WETH.
-The mainnet addresses must not be copied to testnet. Testnet graduation remains disabled
-until a reviewed testnet manifest exists. Anvil manifests are generated by contract
-deployment scripts and are not committed as universal constants.
+- Uniswap v2 Factory: `0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f`
+- Router02: `0x89e5DB8B5aA49aA85AC63f691524311AEB649eba` (frontend routing only; not in the
+  runtime `Deployment` model)
 
 ## 4. Finality and ingestion
 
