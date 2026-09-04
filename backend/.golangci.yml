@@ -32,6 +32,15 @@ linters:
             - strconv
             - strings
             - testing
+        deployments-boundary:
+          list-mode: strict
+          files:
+            - "**/deployments/*.go"
+            - "**/deployments/**/*.go"
+          allow:
+            - $gostd
+            - github.com/ethereum/go-ethereum/common
+            - github.com/santhosh-tekuri/jsonschema/v6
         domain-and-application:
           files:
             - "**/internal/launch/*.go"

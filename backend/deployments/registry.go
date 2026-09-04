@@ -1,0 +1,365 @@
+package deployments
+
+import (
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"path"
+	"slices"
+	"strings"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+)
+
+const (
+	deploymentSchemaPath   = "deployment.schema.json"
+	dependenciesSchemaPath = "chain-dependencies.schema.json"
+	disabledSchemaPath     = "chain-disabled.schema.json"
+)
+
+var (
+	//go:embed all:testdata
+	embeddedArtifacts embed.FS
+
+	lpBurnAddress    = common.HexToAddress("0x000000000000000000000000000000000000dEaD")
+	supportedEngines = map[uint16]struct{}{1: {}}
+)
+
+type deploymentKey struct {
+	chainID      uint64
+	deploymentID string
+}
+
+// Registry contains validated selectable deployments and explicit disabled chains.
+type Registry struct {
+	deployments map[deploymentKey]Deployment
+	disabled    map[uint64]string
+}
+
+// LoadEmbedded loads the byte-identical copy of contracts/deployments.
+func LoadEmbedded() (*Registry, error) {
+	root, err := fs.Sub(embeddedArtifacts, "testdata")
+	if err != nil {
+		return nil, fmt.Errorf("open embedded deployment artifacts: %w", err)
+	}
+	return Load(root)
+}
+
+// Load validates and indexes deployment artifacts from fsys. It accepts
+// reviewed manifests at any depth, including generated Anvil output under
+// .generated, but never treats dependency records as selectable deployments.
+func Load(fsys fs.FS) (*Registry, error) {
+	validators, err := compileSchemas(fsys)
+	if err != nil {
+		return nil, err
+	}
+
+	registry := &Registry{
+		deployments: make(map[deploymentKey]Deployment),
+		disabled:    make(map[uint64]string),
+	}
+	deploymentIDs := make(map[string]string)
+
+	err = fs.WalkDir(fsys, ".", func(filePath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || path.Ext(filePath) != ".json" || strings.HasSuffix(filePath, ".schema.json") {
+			return nil
+		}
+
+		body, readErr := fs.ReadFile(fsys, filePath)
+		if readErr != nil {
+			return &ValidationError{Path: filePath, Err: readErr}
+		}
+
+		switch {
+		case strings.HasSuffix(filePath, ".disabled.json"):
+			return registry.addDisabled(filePath, body, validators.disabled)
+		case strings.HasPrefix(filePath, "config/"):
+			return validateDependencies(filePath, body, validators.dependencies)
+		default:
+			deployment, parseErr := parseDeployment(filePath, body, validators.deployment)
+			if parseErr != nil {
+				return parseErr
+			}
+			if previousPath, exists := deploymentIDs[deployment.DeploymentID]; exists {
+				return &ValidationError{Path: filePath, Err: fmt.Errorf("deployment id %q duplicates %q", deployment.DeploymentID, previousPath)}
+			}
+			key := deploymentKey{chainID: deployment.ChainID, deploymentID: deployment.DeploymentID}
+			if _, exists := registry.deployments[key]; exists {
+				return &ValidationError{Path: filePath, Err: fmt.Errorf("deployment key (%d, %q) is duplicated", key.chainID, key.deploymentID)}
+			}
+			deploymentIDs[deployment.DeploymentID] = filePath
+			registry.deployments[key] = deployment
+			return nil
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load deployment registry: %w", err)
+	}
+
+	return registry, nil
+}
+
+// Lookup resolves an exact chain and deployment pair without defaults or fallback.
+func (r *Registry) Lookup(chainID uint64, deploymentID string) (Deployment, error) {
+	if r == nil {
+		return Deployment{}, &ErrDeploymentNotFound{ChainID: chainID, DeploymentID: deploymentID}
+	}
+	if reason, disabled := r.disabled[chainID]; disabled {
+		return Deployment{}, &ErrDeploymentDisabled{ChainID: chainID, Reason: reason}
+	}
+	deployment, ok := r.deployments[deploymentKey{chainID: chainID, deploymentID: deploymentID}]
+	if !ok {
+		return Deployment{}, &ErrDeploymentNotFound{ChainID: chainID, DeploymentID: deploymentID}
+	}
+	return deployment, nil
+}
+
+type compiledSchemas struct {
+	deployment   *jsonschema.Schema
+	dependencies *jsonschema.Schema
+	disabled     *jsonschema.Schema
+}
+
+func compileSchemas(fsys fs.FS) (compiledSchemas, error) {
+	compile := func(schemaPath string) (*jsonschema.Schema, error) {
+		body, err := fs.ReadFile(fsys, schemaPath)
+		if err != nil {
+			return nil, &ValidationError{Path: schemaPath, Err: err}
+		}
+		document, err := jsonschema.UnmarshalJSON(strings.NewReader(string(body)))
+		if err != nil {
+			return nil, &ValidationError{Path: schemaPath, Err: err}
+		}
+		compiler := jsonschema.NewCompiler()
+		if err := compiler.AddResource(schemaPath, document); err != nil {
+			return nil, &ValidationError{Path: schemaPath, Err: err}
+		}
+		schema, err := compiler.Compile(schemaPath)
+		if err != nil {
+			return nil, &ValidationError{Path: schemaPath, Err: err}
+		}
+		return schema, nil
+	}
+
+	deployment, err := compile(deploymentSchemaPath)
+	if err != nil {
+		return compiledSchemas{}, err
+	}
+	dependencies, err := compile(dependenciesSchemaPath)
+	if err != nil {
+		return compiledSchemas{}, err
+	}
+	disabled, err := compile(disabledSchemaPath)
+	if err != nil {
+		return compiledSchemas{}, err
+	}
+	return compiledSchemas{deployment: deployment, dependencies: dependencies, disabled: disabled}, nil
+}
+
+func validateOnly(filePath string, body []byte, schema *jsonschema.Schema) error {
+	document, err := jsonschema.UnmarshalJSON(strings.NewReader(string(body)))
+	if err != nil {
+		return &ValidationError{Path: filePath, Err: err}
+	}
+	if err := schema.Validate(document); err != nil {
+		return &ValidationError{Path: filePath, Err: err}
+	}
+	return nil
+}
+
+type rawDependencies struct {
+	WETH              string `json:"weth"`
+	UniswapV2Factory  string `json:"uniswapV2Factory"`
+	UniswapV2Router02 string `json:"uniswapV2Router02"`
+	PairInitCodeHash  string `json:"pairInitCodeHash"`
+	BytecodeHashes    struct {
+		WETH             string `json:"weth"`
+		UniswapV2Factory string `json:"uniswapV2Factory"`
+		UniswapV2Pair    string `json:"uniswapV2Pair"`
+	} `json:"bytecodeHashes"`
+}
+
+func validateDependencies(filePath string, body []byte, schema *jsonschema.Schema) error {
+	if err := validateOnly(filePath, body, schema); err != nil {
+		return err
+	}
+	var raw rawDependencies
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return &ValidationError{Path: filePath, Err: err}
+	}
+	for name, value := range map[string]string{
+		"weth":               raw.WETH,
+		"uniswap v2 factory": raw.UniswapV2Factory,
+		"uniswap v2 router":  raw.UniswapV2Router02,
+	} {
+		if err := requireAddress(name, value, true); err != nil {
+			return &ValidationError{Path: filePath, Err: err}
+		}
+	}
+	for name, value := range map[string]string{
+		"pair init code":           raw.PairInitCodeHash,
+		"weth bytecode":            raw.BytecodeHashes.WETH,
+		"uniswap factory bytecode": raw.BytecodeHashes.UniswapV2Factory,
+		"uniswap pair bytecode":    raw.BytecodeHashes.UniswapV2Pair,
+	} {
+		if err := requireHash(name, value); err != nil {
+			return &ValidationError{Path: filePath, Err: err}
+		}
+	}
+	return nil
+}
+
+type rawDeployment struct {
+	SchemaVersion       uint16            `json:"schemaVersion"`
+	DeploymentID        string            `json:"deploymentId"`
+	Name                string            `json:"name"`
+	Environment         Environment       `json:"environment"`
+	ChainID             uint64            `json:"chainId"`
+	Factory             string            `json:"factory"`
+	StartBlock          uint64            `json:"startBlock"`
+	EngineVersion       uint16            `json:"engineVersion"`
+	CurveImplementation string            `json:"curveImplementation"`
+	UniswapV2Factory    string            `json:"uniswapV2Factory"`
+	UniswapV2Router02   *string           `json:"uniswapV2Router02"`
+	WETH                string            `json:"weth"`
+	PairInitCodeHash    string            `json:"pairInitCodeHash"`
+	LPBurnAddress       string            `json:"lpBurnAddress"`
+	ExplorerBase        string            `json:"explorerBase"`
+	GraduationEnabled   bool              `json:"graduationEnabled"`
+	DeployTransaction   string            `json:"deployTransaction"`
+	BytecodeHashes      rawBytecodeHashes `json:"bytecodeHashes"`
+}
+
+type rawBytecodeHashes struct {
+	LaunchFactory    string `json:"launchFactory"`
+	BondingCurveV1   string `json:"bondingCurveV1"`
+	UniswapV2Factory string `json:"uniswapV2Factory"`
+	WETH             string `json:"weth"`
+}
+
+func parseDeployment(filePath string, body []byte, schema *jsonschema.Schema) (Deployment, error) {
+	if err := validateOnly(filePath, body, schema); err != nil {
+		return Deployment{}, err
+	}
+	var raw rawDeployment
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return Deployment{}, &ValidationError{Path: filePath, Err: err}
+	}
+	if err := validateRawDeployment(raw); err != nil {
+		return Deployment{}, &ValidationError{Path: filePath, Err: err}
+	}
+	return Deployment{
+		ChainID:             raw.ChainID,
+		DeploymentID:        raw.DeploymentID,
+		Name:                raw.Name,
+		Environment:         raw.Environment,
+		Factory:             common.HexToAddress(raw.Factory),
+		StartBlock:          raw.StartBlock,
+		EngineVersion:       raw.EngineVersion,
+		CurveImplementation: common.HexToAddress(raw.CurveImplementation),
+		UniV2Factory:        common.HexToAddress(raw.UniswapV2Factory),
+		WETH:                common.HexToAddress(raw.WETH),
+		PairInitCodeHash:    common.HexToHash(raw.PairInitCodeHash),
+		LPBurnAddress:       common.HexToAddress(raw.LPBurnAddress),
+		BytecodeHashes: BytecodeHashes{
+			LaunchFactory:    common.HexToHash(raw.BytecodeHashes.LaunchFactory),
+			BondingCurveV1:   common.HexToHash(raw.BytecodeHashes.BondingCurveV1),
+			UniswapV2Factory: common.HexToHash(raw.BytecodeHashes.UniswapV2Factory),
+			WETH:             common.HexToHash(raw.BytecodeHashes.WETH),
+		},
+		DeployTransaction: common.HexToHash(raw.DeployTransaction),
+		ExplorerBase:      raw.ExplorerBase,
+	}, nil
+}
+
+func validateRawDeployment(raw rawDeployment) error {
+	if raw.SchemaVersion != 1 {
+		return fmt.Errorf("unsupported schema version %d", raw.SchemaVersion)
+	}
+	if !slices.Contains([]Environment{EnvironmentLocal, EnvironmentTestnet, EnvironmentProduction}, raw.Environment) {
+		return fmt.Errorf("unknown environment %q", raw.Environment)
+	}
+	if _, supported := supportedEngines[raw.EngineVersion]; !supported {
+		return fmt.Errorf("unsupported engine version %d", raw.EngineVersion)
+	}
+	if !raw.GraduationEnabled {
+		return errors.New("graduation must be enabled")
+	}
+	if raw.StartBlock == 0 && raw.Environment != EnvironmentLocal {
+		return errors.New("start block zero is allowed only for local deployments")
+	}
+	if err := requireAddress("factory", raw.Factory, true); err != nil {
+		return err
+	}
+	if err := requireAddress("curve implementation", raw.CurveImplementation, true); err != nil {
+		return err
+	}
+	for name, value := range map[string]string{
+		"uniswap v2 factory": raw.UniswapV2Factory,
+		"weth":               raw.WETH,
+		"lp burn address":    raw.LPBurnAddress,
+	} {
+		if err := requireAddress(name, value, false); err != nil {
+			return err
+		}
+	}
+	if common.HexToAddress(raw.LPBurnAddress) != lpBurnAddress {
+		return errors.New("lp burn address is not canonical")
+	}
+	for name, value := range map[string]string{
+		"pair init code":           raw.PairInitCodeHash,
+		"deploy transaction":       raw.DeployTransaction,
+		"launch factory bytecode":  raw.BytecodeHashes.LaunchFactory,
+		"bonding curve bytecode":   raw.BytecodeHashes.BondingCurveV1,
+		"uniswap factory bytecode": raw.BytecodeHashes.UniswapV2Factory,
+		"weth bytecode":            raw.BytecodeHashes.WETH,
+	} {
+		if err := requireHash(name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requireAddress(name, value string, nonZero bool) error {
+	if !common.IsHexAddress(value) {
+		return fmt.Errorf("%s is not a valid address", name)
+	}
+	if nonZero && common.HexToAddress(value) == (common.Address{}) {
+		return fmt.Errorf("%s is zero", name)
+	}
+	return nil
+}
+
+func requireHash(name, value string) error {
+	if len(value) != 66 || !strings.HasPrefix(value, "0x") || common.HexToHash(value) == (common.Hash{}) {
+		return fmt.Errorf("%s is not a non-zero 32-byte hash", name)
+	}
+	return nil
+}
+
+type rawDisabled struct {
+	ChainID uint64 `json:"chainId"`
+	Reason  string `json:"reason"`
+}
+
+func (r *Registry) addDisabled(filePath string, body []byte, schema *jsonschema.Schema) error {
+	if err := validateOnly(filePath, body, schema); err != nil {
+		return err
+	}
+	var marker rawDisabled
+	if err := json.Unmarshal(body, &marker); err != nil {
+		return &ValidationError{Path: filePath, Err: err}
+	}
+	if _, exists := r.disabled[marker.ChainID]; exists {
+		return &ValidationError{Path: filePath, Err: fmt.Errorf("chain %d has multiple disabled markers", marker.ChainID)}
+	}
+	r.disabled[marker.ChainID] = marker.Reason
+	return nil
+}
