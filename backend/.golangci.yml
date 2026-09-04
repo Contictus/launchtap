@@ -1,0 +1,47 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        curve:
+          list-mode: strict
+          files:
+            - "**/internal/curve/*.go"
+            - "**/internal/curve/**/*.go"
+          allow:
+            - $gostd
+        domain-and-application:
+          files:
+            - "**/internal/launch/*.go"
+            - "**/internal/trading/*.go"
+            - "**/internal/token/*.go"
+            - "**/internal/holder/*.go"
+            - "**/internal/candle/*.go"
+            - "**/internal/stats/*.go"
+            - "**/internal/metadata/*.go"
+            - "**/domain/*.go"
+            - "**/application/*.go"
+          deny:
+            - pkg: github.com/jackc/pgx/v5
+              desc: feature and application packages must not depend on PostgreSQL
+            - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres
+              desc: feature and application packages must not depend on PostgreSQL adapters
+            - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc
+              desc: generated sqlc packages must not escape PostgreSQL adapters
+            - pkg: github.com/ethereum/go-ethereum/ethclient
+              desc: feature and application packages must not depend on Ethereum RPC clients
+            - pkg: github.com/Contictus/launchtap/backend/internal/chain
+              desc: feature and application packages depend on chain ports, not adapters
+            - pkg: github.com/Contictus/launchtap/backend/internal/apiserver
+              desc: feature and application packages must not depend on HTTP delivery
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
