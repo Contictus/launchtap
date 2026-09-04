@@ -15,6 +15,26 @@
 
 ## Active
 
+### Robinhood RPC finality and getLogs capacity probe
+- **Date:** 2026-09-04
+- **Reason:** scope decision — operational prerequisite for the indexer runtime (Backend
+  Plan 2); explicitly does not block Backend Foundations Task 1 (Go module/tooling scaffold).
+- **Where it stopped:** Backend Foundations design assumes usable `safe`/`finalized` block
+  tags and unspecified `eth_getLogs` limits on Robinhood Chain (Arbitrum Nitro/Orbit).
+  Neither has been measured against the real providers.
+- **Related files:** `docs/specs/2026-09-01-backend-core-design.md` (§4.1, §4.3, §10),
+  `docs/plans/2026-09-01-backend-foundations.md`
+- **Resume (next step):** Before implementing the indexer runtime, run a read-only probe
+  against the Robinhood mainnet provider and the chosen testnet provider and record:
+  `latest`/`safe`/`finalized` tag support, tag monotonicity over time,
+  observed→safe→finalized lag distribution, block-hash consistency across repeated reads,
+  and `eth_getLogs` capacity (max block range, max response size, max addresses per filter).
+  Feed the result into the runtime finality config, health lag thresholds, and the
+  `INDEXER_CHUNK_SIZE` / address-filter partition defaults.
+- **Pitfalls / notes:** Production Robinhood deployments must not fall back to a fixed
+  confirmation count. If a provider cannot supply a usable `safe` tag, that is a launch
+  blocker to raise before Plan 2 architecture, not a runtime patch.
+
 ### Robinhood testnet deployment manifest
 - **Date:** 2026-09-01
 - **Reason:** external deployment prerequisite

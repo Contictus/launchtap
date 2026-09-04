@@ -3,8 +3,10 @@
 > **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
 > and independent review. This is an implementation task list, not implementation code.
 
-**Status:** Design closed; do not start until the user authorizes implementation and the
-high-risk pre-flight finds no blocker.
+**Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
+artifact exists at `contracts/vectors/v1/`. The user has authorized Task 1 (Risk: low) to
+begin once this doc revision is committed and pulled. Tasks 3-12 still require their
+high-risk pre-flight before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -37,7 +39,9 @@ added until an API DTO actually needs it.
 - Local integration tests may skip without Docker. CI must fail if PostgreSQL is unavailable
   or no integration test executes.
 - Solidity-generated vectors are the only expected-value authority for the Go curve mirror.
-  Tasks 10-12 cannot complete before the contract vector artifact exists.
+  The contract vector artifact already exists at `contracts/vectors/v1/` (schema-validated,
+  regeneration-gated by the contracts milestone CI); Tasks 10-12 consume it and never
+  regenerate it in the backend module.
 
 ## Risk classes
 
@@ -73,7 +77,8 @@ environment example, and path-filtered backend CI.
 
 - `Load(getenv func(string) string) (Config, error)` is deterministic and unit tested.
 - Missing/invalid `CHAIN_ID`, `DEPLOYMENT_ID`, `RPC_URL`, or `DATABASE_URL` fails.
-- `LOG_LEVEL`, API address, and bounded chunk-size defaults are explicit.
+- `LOG_LEVEL`, `API_ADDR`, and `INDEXER_CHUNK_SIZE` have explicit bounded defaults, and the
+  parsed struct field names match the backend spec's environment list exactly.
 - `INDEXER_CONFIRMATIONS` is rejected for a production manifest.
 - Privy and USD settings may be absent for migration/indexer-only commands but API startup
   performs its own required-field validation.
@@ -148,6 +153,11 @@ integration-test execution sentinel.
 - Foreign keys are deferrable/replay-safe: the token constructor's initial `Transfer` may
   precede `TokenLaunched` in the same transaction, while optional developer-buy events follow
   it. Rollback deletes dependent events before the launch.
+- A curve `Trade` log whose block number is greater than the same token's `Graduated` block
+  is rejected as a fatal invariant violation and not stored; the curve phase is one-way.
+- `pool_syncs` rows carry the coordinates needed to resolve a `pool_swaps` row's reserve
+  state by the Task 7 rule (same `chain_id`, pair address, and `tx_hash`; greatest
+  `log_index` strictly less than the swap's `log_index`).
 - Duplicate-event, unknown-engine, negative-value, and rollback tests pass.
 
 ## Task 7 — Chain projections, aggregates, and market view · Risk: high
@@ -161,18 +171,30 @@ and `market_trades`.
 
 - `tokens`, `token_reserves`, `holder_balances`, and `aggregation_dirty` are clearly marked
   rebuildable projections; metadata/images are separate off-chain state.
-- `pool_syncs` supports exact post-state reserve lookup using the pair `Sync` emitted
-  immediately before its `Swap` in the same transaction sequence.
+- `tokens`/`token_reserves` retain the launch snapshot's `initial_virtual_eth` and
+  `graduation_eth`. Curve progress is derived, not stored as chain state:
+  `real_curve_eth = new_eth_reserve - initial_virtual_eth` and
+  `progress = real_curve_eth / graduation_eth`. An integration test cross-checks the derived
+  `real_curve_eth` against `IBondingCurveV1.realCurveEth()` at a sampled block.
+- `market_trades` resolves a DEX swap's spot price from the `pool_syncs` row with the same
+  `chain_id`, pair address, and `tx_hash` whose `log_index` is the greatest value strictly
+  less than the swap's `log_index`. Tests cover multi-hop transactions with interleaved
+  `Sync`/`Swap` pairs and `Sync` emitted by `Mint`/`Burn`.
 - `market_trades` exposes execution and spot price separately, deterministic chain cursor
   fields, nullable DEX trader, gross ETH/WETH volume, token volume, source, and finality.
 - Curve `gross_eth_volume` in `market_trades` is `trades.eth_gross`; `eth_refund` is stored
   but never included in volume, candles, or 24h aggregates.
 - DEX token/WETH leg resolution works for both token orderings.
 - `candles`, `token_stats`, `protocol_daily`, and `protocol_stats` use ETH fields as required
-  and USD fields as nullable.
+  and USD fields as nullable `NUMERIC(38,18)` columns; no float type is introduced for USD.
 - Circulating supply, holder exclusions, and first-acquired reset behavior match the spec.
-- Tests cover both pair orderings, Mint/Sync without Swap, equal timestamps, graduation
-  circulation transition, and excluded system addresses.
+- A reorg that unwinds a graduation transaction is a named test: the rebuild from surviving
+  canonical events flips `tokens.phase` back to the curve phase, deletes the pair projection
+  rows above the common ancestor, restores the pre-graduation circulating-supply definition
+  (canonical pair balance no longer counts; reserved `L` is curve inventory again), and
+  rebuilds candles whose execution-price source reverted from DEX swaps to curve trades.
+- Tests cover both pair orderings, Mint/Sync without Swap, equal timestamps, the forward
+  graduation circulation transition, and excluded system addresses.
 
 ## Task 8 — sqlc queries and persistence adapters · Risk: high
 
@@ -206,22 +228,31 @@ and `market_trades`.
 - The feature-level repository bundle is explicitly deferred to Plan 2, where consumer
   interfaces exist.
 
-## Task 10 — Solidity curve-vector artifact gate · Risk: high
+## Task 10 — Solidity curve-vector artifact consumption · Risk: high
 
-**Delivers:** versioned vector schema and checked-in V1 vectors produced by Foundry.
+**Delivers:** the backend consumes the existing contract vector artifact
+(`contracts/vectors/v1/curve-v1.json` plus `curve.schema.json`, produced and
+regeneration-gated by the completed contracts milestone) and proves its local copy stays
+byte-identical to that source. The backend adds no second generator.
 
-**Depends on:** reviewed contract implementation and its vector generator; Task 1
+**Depends on:** Task 1. The contract vector artifact and its Foundry generator already exist.
 
 **Acceptance criteria:**
 
-- The artifact records engine version, parameter snapshot, initial state, operation input,
-  exact output, next state, fees, the `ethGross`/`ethRefund` split whose sum equals the buy
-  input, graduation flag, and expected revert where relevant.
-- Cases include normal/final buy, one-wei boundaries, refund, normal/max sell, invalid
-  oversell, fee split dust, and zero-output reverts.
-- The generator command is deterministic and CI proves regeneration has no diff.
+- A task step copies `contracts/vectors/v1/` into `backend/internal/curve/testdata/`; CI
+  fails if the copy is not byte-identical to the source artifact.
+- The copied artifact is schema-validated on load against `curve.schema.json`.
+- The consumed cases already cover normal/final buy, the one-wei buy boundary, final-buy
+  refund with graduation, normal/max sell, invalid zero-input buy and sell, invalid
+  oversell, sell one-wei zero-output, and fee-split dust.
+- Two additional buy vectors — a mid-curve buy from a non-genesis `tokensSold` state and a
+  buy that lands just below the graduation boundary without graduating — are added by a
+  small contracts-side follow-up commit before Task 11.
+- A buy-side zero-output revert vector is added only if it is first proven reachable under
+  the locked V1 parameters. An unreachable defensive branch is not given a synthetic
+  fixture presented as a production vector.
 - No human-, Claude-, or Codex-authored expected amount is accepted as an authoritative
-  contract fixture.
+  contract fixture; Foundry regeneration stays the only source and is gated in contracts CI.
 
 ## Task 11 — Pure Go curve mirror · Risk: high
 
@@ -252,7 +283,8 @@ and domain errors.
 **Acceptance criteria:**
 
 - Runs formatting, build, unit/race tests, required PostgreSQL integration tests, lint,
-  migrations up/down/up, sqlc generation/diff, and Solidity-vector regeneration/diff.
+  migrations up/down/up, sqlc generation/diff, and the curve-vector byte-identical check
+  against `contracts/vectors/v1/` (regeneration itself stays in the contracts gate).
 - Runs on Windows developer setup with a workspace-local `GOCACHE` when the global cache is
   inaccessible, without weakening CI.
 - Reviews `git diff` for generated noise, placeholder addresses, skipped integration gates,

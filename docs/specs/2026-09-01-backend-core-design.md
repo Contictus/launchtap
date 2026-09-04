@@ -135,6 +135,12 @@ does not support safe/finalized tags, startup fails unless the selected local-de
 manifest explicitly enables a confirmations fallback; production Robinhood deployments do
 not use that fallback.
 
+Before the indexer runtime is implemented, an operational spike measures `latest`, `safe`,
+and `finalized` tag support, tag monotonicity, the observed→safe→finalized lag distribution,
+and block-hash consistency on the real Robinhood mainnet and chosen testnet providers. Its
+result sets the runtime finality configuration and the health lag thresholds. It does not
+block the backend module scaffold. See `backlog.md`.
+
 ### 4.2 Block ledger and reorg
 
 `indexed_blocks` stores every processed block from `StartBlock`:
@@ -176,14 +182,23 @@ therefore processed in stages for every chunk:
    `(block_number, transaction_index, log_index)` before routing.
 
 Same-transaction developer buys and graduation logs must be captured by the staged refetch.
-Address lists are partitioned to provider limits. Adaptive chunk sizing handles range and
-response-size errors without changing event order.
+The initial block chunk size and the address-filter partition size come from configuration,
+not hard-coded provider numbers. Adaptive shrinking handles range and response-size errors
+without changing event order. The measured `eth_getLogs` capacity of the active provider
+(max block range, max response size, max addresses per filter) is recorded in the
+deployment/operations notes and revisited when the provider plan changes; the architecture
+does not embed a specific provider tier's limits.
 
 Processing is two-pass inside the chunk transaction. The discovery pass inserts launch
 ledger rows and token identity/projection skeletons idempotently. The event pass then applies
 all standard and market logs in chain order. This supports the constructor's initial
 `Transfer(0, curve, S)` appearing before `TokenLaunched`; any other pre-launch token log is
 a fatal contract-invariant violation.
+
+Under the locked V1 parameters the developer-buy cap (1% of `S`) is far below the curve
+allocation `T_r`, so a launch transaction cannot also graduate. This is recorded as current
+V1 deployment behavior, not a permanent indexer assumption: a future parameter snapshot or
+engine version could change the ratio, so the indexer must not encode it as a fatal rule.
 
 ### 4.4 Canonicality and idempotency
 
@@ -202,6 +217,9 @@ The V1 `Trade` decoder reads `ethGross` and `ethRefund` as adjacent fields (refu
 after gross) and persists both. `ethGross + ethRefund` is the ETH supplied to the curve for
 a buy and must reconcile from logs alone without transaction traces; `ethRefund` is `0` for
 every sell. Executed-volume and candle inputs use `ethGross` only and never add `ethRefund`.
+
+A curve `Trade` log dated after the same token's `Graduated` block is a fatal invariant
+violation. The curve phase is one-way and post-graduation market activity is DEX-only.
 
 ## 5. Data model
 
@@ -236,6 +254,13 @@ liquidity changes, direct syncs, or the opening reserves.
 These tables are updated transactionally for reads but are rebuildable from the canonical
 ledger. Off-chain metadata and images are not chain projections and survive a chain replay.
 
+Curve graduation progress is derived, not stored as chain state:
+`realCurveEth = virtualEthReserve - initialVirtualEth` and
+`progress = realCurveEth / graduationEth`, where `initialVirtualEth` and `graduationEth`
+come from the launch snapshot in `tokens`. The `Trade` event carries only the post-trade
+virtual reserve, so the snapshot must be retained for the life of the token. An integration
+test cross-checks the derived value against the curve's `realCurveEth()` view.
+
 ### 5.3 Market semantics
 
 Do not overload one `price_wad` with different meanings:
@@ -261,8 +286,11 @@ finality
 ```
 
 DEX `execution_price_wad` is derived from the Swap legs. Its `spot_price_wad` is resolved
-from the pair's corresponding post-state `Sync`, which Uniswap v2 emits immediately before
-the `Swap` event in the same pair/transaction sequence.
+from the `pool_syncs` row with the same `chain_id`, pair address, and `tx_hash` whose
+`log_index` is the greatest value strictly less than this `Swap`'s `log_index`. Uniswap v2
+emits `Sync` before each `Swap`, `Mint`, and `Burn`, so one transaction may carry several
+`Sync`/`Swap` pairs on a pair; the strict-less-than-by-log-index rule selects the correct
+post-state for each swap.
 
 ### 5.4 Supply and holder definitions
 
@@ -277,7 +305,8 @@ the `Swap` event in the same pair/transaction sequence.
   resets after the balance reaches zero.
 
 ETH-denominated fields are canonical derivations. USD fields are nullable enrichment and
-never determine list correctness or transaction behavior.
+never determine list correctness or transaction behavior. USD columns are nullable
+`NUMERIC(38,18)`; no float type is used even though the value is enrichment.
 
 ### 5.5 Derived market tables
 
@@ -362,6 +391,10 @@ CHAIN_ID, DEPLOYMENT_ID, RPC_URL, DATABASE_URL,
 PRIVY_APP_ID, PRIVY_VERIFICATION_KEY,
 LOG_LEVEL, API_ADDR, INDEXER_CHUNK_SIZE, ETH_USD_SOURCE
 ```
+
+`INDEXER_CHUNK_SIZE` is the initial block-range chunk; the staged-discovery address-filter
+partition size is a further configuration value introduced with the indexer plan. Both are
+starting points for adaptive shrinking, not hard limits.
 
 `INDEXER_CONFIRMATIONS` exists only for manifests explicitly marked local-development
 fallback. Contract addresses, start block, WETH, burn address, and engine version come from
