@@ -55,6 +55,11 @@
 - **Note:** the usage-limit percentage cannot be read automatically. Triggers:
   the user warns you, or signs such as the context starting to be summarized.
   If the user states a percentage, act on it.
+- **Backlog status must be surfaced, not just written.** Every task
+  completion/review report (either agent) states backlog status explicitly:
+  empty, or the open item count plus a one-line list. A non-empty backlog is
+  never passed over in silence — the report must say it out loud so it stays
+  prioritized instead of forgotten.
 
 ## Multi-agent workflow
 
