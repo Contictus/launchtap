@@ -1,8 +1,11 @@
 # Deployment manifests
 
-`deployment.schema.json` is the V1 manifest contract shared by contract deployment,
-backend, and frontend work. Generated manifests are candidates until a human reviews the
-transaction, addresses, bytecode hashes, dependencies, and governance owners.
+The JSON schemas in this directory are shared by contract deployment, backend, and
+frontend work. `deployment.schema.json` covers runnable deployments,
+`chain-dependencies.schema.json` covers reviewed chain dependencies without a launchpad
+deployment, and `chain-disabled.schema.json` covers explicit unavailable-chain markers.
+Generated manifests are candidates until a human reviews the transaction, addresses,
+bytecode hashes, dependencies, and governance owners.
 
 Local Anvil manifests are written to `deployments/.generated/` and are never committed as
 universal constants. A Robinhood testnet deployment is fail-closed while

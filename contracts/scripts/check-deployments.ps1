@@ -8,6 +8,22 @@ function Fail([string] $Message) {
     throw "Deployment artifact check failed: $Message"
 }
 
+function Assert-JsonSchema(
+    [string] $InstancePath,
+    [string] $SchemaPath,
+    [string] $Label
+) {
+    try {
+        $valid = Test-Json -LiteralPath $InstancePath -SchemaFile $SchemaPath -ErrorAction Stop
+    }
+    catch {
+        Fail "$Label failed schema validation: $($_.Exception.Message)"
+    }
+    if (-not $valid) {
+        Fail "$Label failed schema validation"
+    }
+}
+
 $schema = Get-Content -Raw -LiteralPath (Join-Path $deploymentsRoot "deployment.schema.json") |
     ConvertFrom-Json
 $expectedRequired = @(
@@ -41,9 +57,15 @@ if ($schema.additionalProperties -ne $false) {
     Fail "deployment manifest must reject unknown top-level fields"
 }
 
-$mainnet = Get-Content -Raw -LiteralPath (
-    Join-Path $deploymentsRoot "config/robinhood-mainnet.json"
-) | ConvertFrom-Json
+$chainDependenciesSchemaPath = Join-Path $deploymentsRoot "chain-dependencies.schema.json"
+$chainDisabledSchemaPath = Join-Path $deploymentsRoot "chain-disabled.schema.json"
+$mainnetPath = Join-Path $deploymentsRoot "config/robinhood-mainnet.json"
+$testnetDisabledPath = Join-Path $deploymentsRoot "config/robinhood-testnet.disabled.json"
+
+Assert-JsonSchema $mainnetPath $chainDependenciesSchemaPath "mainnet dependency record"
+Assert-JsonSchema $testnetDisabledPath $chainDisabledSchemaPath "testnet disabled marker"
+
+$mainnet = Get-Content -Raw -LiteralPath $mainnetPath | ConvertFrom-Json
 if ([uint64] $mainnet.chainId -ne 4663) { Fail "mainnet chain id must remain 4663" }
 if ([string] $mainnet.weth -cne "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73") {
     Fail "mainnet WETH drifted from the reviewed dependency record"
@@ -91,7 +113,6 @@ foreach ($forbidden in @("factory", "curveImplementation", "pauseAuthority", "ti
     }
 }
 
-$testnetDisabledPath = Join-Path $deploymentsRoot "config/robinhood-testnet.disabled.json"
 $testnetActivePath = Join-Path $deploymentsRoot "config/robinhood-testnet.json"
 if (Test-Path -LiteralPath $testnetActivePath) {
     if (Test-Path -LiteralPath $testnetDisabledPath) {
@@ -158,7 +179,7 @@ $trackedManifestCandidates = @(
     Get-ChildItem -LiteralPath $deploymentsRoot -File -Recurse -Filter "*.json" |
         Where-Object {
             $_.FullName -notmatch "[\\/]config[\\/]" -and
-            $_.Name -ne "deployment.schema.json" -and
+            $_.Name -notlike "*.schema.json" -and
             $_.FullName -notmatch "[\\/]\.generated[\\/]"
         }
 )
