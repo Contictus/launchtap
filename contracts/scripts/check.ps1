@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "release", "pins", "fmt", "build", "goldens", "vectors", "deployments", "review", "test", "lint", "size", "slither", "fork")]
+    [ValidateSet("all", "release", "pins", "fmt", "build", "goldens", "vectors", "deployments", "simulation", "review", "test", "lint", "size", "slither", "fork")]
     [string] $Target = "all"
 )
 
@@ -20,6 +20,34 @@ try {
         }
     }
 
+    function Invoke-WithFoundryProfile([string] $Profile, [scriptblock] $Command) {
+        $hadPreviousProfile = Test-Path Env:FOUNDRY_PROFILE
+        $previousProfile = [Environment]::GetEnvironmentVariable(
+            "FOUNDRY_PROFILE",
+            [EnvironmentVariableTarget]::Process
+        )
+        try {
+            [Environment]::SetEnvironmentVariable(
+                "FOUNDRY_PROFILE",
+                $Profile,
+                [EnvironmentVariableTarget]::Process
+            )
+            Invoke-Checked $Command
+        }
+        finally {
+            if ($hadPreviousProfile) {
+                [Environment]::SetEnvironmentVariable(
+                    "FOUNDRY_PROFILE",
+                    $previousProfile,
+                    [EnvironmentVariableTarget]::Process
+                )
+            }
+            else {
+                Remove-Item Env:FOUNDRY_PROFILE -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     if ($Target -in @("all", "release", "pins")) {
         Invoke-Checked { & "$PSScriptRoot/check-dependencies.ps1" }
     }
@@ -28,6 +56,7 @@ try {
     }
     if ($Target -in @("all", "release", "build")) {
         Invoke-Checked { forge build }
+        Invoke-WithFoundryProfile "fork" { forge build --no-lint }
     }
     if ($Target -in @("all", "release", "goldens")) {
         Invoke-Checked { & "$PSScriptRoot/check-goldens.ps1" }
@@ -37,6 +66,9 @@ try {
     }
     if ($Target -in @("all", "release", "deployments")) {
         Invoke-Checked { & "$PSScriptRoot/check-deployments.ps1" }
+    }
+    if ($Target -in @("release", "simulation")) {
+        Invoke-Checked { & "$PSScriptRoot/check-deployment-simulation.ps1" }
     }
     if ($Target -in @("all", "release", "review")) {
         Invoke-Checked { & "$PSScriptRoot/check-release.ps1" }

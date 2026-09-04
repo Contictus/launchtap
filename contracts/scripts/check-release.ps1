@@ -70,6 +70,7 @@ foreach ($gate in @(
     "check-goldens.ps1",
     "check-vectors.ps1",
     "check-deployments.ps1",
+    "check-deployment-simulation.ps1",
     "check-release.ps1",
     "check-sizes.ps1",
     "check-slither.ps1",

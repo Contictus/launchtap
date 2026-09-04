@@ -1,3 +1,5 @@
+.gitattributes text eol=lf
+.gitignore text eol=lf
 contracts/abi/**/*.json text eol=lf
 contracts/storage-layout/**/*.json text eol=lf
 contracts/sizes/**/*.json text eol=lf

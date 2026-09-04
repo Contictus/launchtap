@@ -150,7 +150,7 @@ foreach ($deploymentScript in $deploymentScripts) {
 }
 
 $gitignore = Get-Content -Raw -LiteralPath (Join-Path $contractsRoot "../.gitignore")
-if ($gitignore -notmatch "(?m)^/contracts/deployments/\.generated/$") {
+if ($gitignore -notmatch "(?m)^/contracts/deployments/\.generated/\r?$") {
     Fail "generated deployment candidates must remain git-ignored"
 }
 

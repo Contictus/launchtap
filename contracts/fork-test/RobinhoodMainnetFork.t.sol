@@ -243,7 +243,10 @@ contract RobinhoodMainnetForkTest is Test {
         uint256 syncIndex = type(uint256).max;
         uint256 graduatedIndex = type(uint256).max;
         for (uint256 i = 0; i < logs.length; ++i) {
-            if (logs[i].emitter == address(result.curve) && logs[i].topics[0] == TRADE_TOPIC) {
+            if (
+                logs[i].emitter == address(result.curve) && logs[i].topics.length == 3
+                    && logs[i].topics[0] == TRADE_TOPIC
+            ) {
                 tradeIndex = i;
             }
             if (
@@ -251,7 +254,10 @@ contract RobinhoodMainnetForkTest is Test {
                     && logs[i].topics[0] == TRANSFER_TOPIC
                     && _topicAddress(logs[i].topics[2]) == address(result.pair)
             ) tokenToPairIndex = i;
-            if (logs[i].emitter == address(result.pair) && logs[i].topics[0] == SYNC_TOPIC) {
+            if (
+                logs[i].emitter == address(result.pair) && logs[i].topics.length == 1
+                    && logs[i].topics[0] == SYNC_TOPIC
+            ) {
                 syncIndex = i;
             }
             if (
@@ -312,8 +318,14 @@ contract RobinhoodMainnetForkTest is Test {
         uint256 syncIndex = type(uint256).max;
         uint256 swapIndex = type(uint256).max;
         for (uint256 i = 0; i < logs.length; ++i) {
-            if (logs[i].emitter == pair && logs[i].topics[0] == SYNC_TOPIC) syncIndex = i;
-            if (logs[i].emitter == pair && logs[i].topics[0] == SWAP_TOPIC) swapIndex = i;
+            if (
+                logs[i].emitter == pair && logs[i].topics.length == 1
+                    && logs[i].topics[0] == SYNC_TOPIC
+            ) syncIndex = i;
+            if (
+                logs[i].emitter == pair && logs[i].topics.length == 3
+                    && logs[i].topics[0] == SWAP_TOPIC
+            ) swapIndex = i;
         }
         assertEq(syncIndex + 1, swapIndex, "Sync must immediately precede Swap");
     }
