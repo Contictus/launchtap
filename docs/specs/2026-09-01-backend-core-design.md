@@ -591,20 +591,224 @@ already-committed `Graduated` row (rejected), and same-block `Trade`+`Graduated`
 
 | Table | Purpose |
 |---|---|
-| `tokens` | latest launch identity, parameter snapshot, phase, pair ordering, and launch coordinates |
-| `token_reserves` | latest curve reserves or pair reserves with source block/log |
+| `tokens` | latest launch identity, parameter snapshot, phase, pair ordering, and launch/graduation coordinates |
+| `token_reserves` | latest curve or pair reserve snapshot, source-tagged |
 | `holder_balances` | folded Transfer balances and first acquisition |
-| `aggregation_dirty` | transactional rebuild queue keyed by chain/token |
+| `aggregation_dirty` | durable rebuild/aggregation work queue, keyed by token, generation-versioned |
+| `token_metadata` | off-chain creator-editable description/links; not a projection, survives chain replay |
 
-These tables are updated transactionally for reads but are rebuildable from the canonical
-ledger. Off-chain metadata and images are not chain projections and survive a chain replay.
+`tokens`, `token_reserves`, `holder_balances`, and `aggregation_dirty` are updated
+transactionally alongside canonical event ingestion but are fully rebuildable from the
+canonical ledger. `token_metadata` is explicitly excluded from rebuild — a reorg never
+touches it.
 
-Curve graduation progress is derived, not stored as chain state:
+**Scope boundary.** This task delivers the projection schema and SQL primitives that
+recompute a token's projections from its surviving canonical events, proven by integration
+tests that drive canonical tables directly with raw SQL (the same pattern as Task 5/6 — no
+live indexer exists yet). Detecting a reorg, walking to the common ancestor, deciding which
+rows are above it, and invoking these primitives from a running process is Plan 2's "reorg
+replay" (Plan boundary). Rebuild is always a full recompute of an affected token's
+projections from its complete surviving event history — never an incremental undo — because
+partial/incremental rebuild during exactly the failure scenario it exists to handle is far
+more failure-prone than a full recompute.
+
+**`tokens`.** Primary key `(chain_id, token_address)`. Carries the immutable launch
+snapshot needed for O(1) reads without joining `token_launches`, plus mutable `phase`:
+
+```sql
+chain_id              BIGINT NOT NULL CHECK (chain_id > 0)
+token_address          BYTEA NOT NULL CHECK (octet_length(token_address) = 20)
+curve_address           BYTEA NOT NULL CHECK (octet_length(curve_address) = 20)
+lp_pair                  BYTEA NOT NULL CHECK (octet_length(lp_pair) = 20)
+weth                      BYTEA NOT NULL CHECK (octet_length(weth) = 20)
+creator                    BYTEA NOT NULL CHECK (octet_length(creator) = 20)
+protocol_treasury           BYTEA NOT NULL CHECK (octet_length(protocol_treasury) = 20)
+engine_version                INTEGER NOT NULL CHECK (engine_version BETWEEN 0 AND 65535)
+name                            TEXT NOT NULL
+symbol                            TEXT NOT NULL
+total_supply                       NUMERIC(78,0) NOT NULL CHECK (total_supply >= 0)
+initial_virtual_eth                  NUMERIC(78,0) NOT NULL CHECK (initial_virtual_eth >= 0)   -- x0
+initial_virtual_token                  NUMERIC(78,0) NOT NULL CHECK (initial_virtual_token >= 0) -- y0
+curve_tokens                             NUMERIC(78,0) NOT NULL CHECK (curve_tokens >= 0)          -- T_r
+lp_tokens                                  NUMERIC(78,0) NOT NULL CHECK (lp_tokens >= 0)             -- L
+graduation_eth                               NUMERIC(78,0) NOT NULL CHECK (graduation_eth >= 0)        -- G
+trade_fee_bps                                  INTEGER NOT NULL CHECK (trade_fee_bps BETWEEN 0 AND 65535)
+protocol_share_bps                               INTEGER NOT NULL CHECK (protocol_share_bps BETWEEN 0 AND 65535)
+
+launch_block_number   BIGINT NOT NULL CHECK (launch_block_number >= 0)
+launch_block_hash       BYTEA NOT NULL CHECK (octet_length(launch_block_hash) = 32)
+launch_block_time         TIMESTAMPTZ NOT NULL
+launch_tx_hash              BYTEA NOT NULL CHECK (octet_length(launch_tx_hash) = 32)
+launch_log_index               INTEGER NOT NULL CHECK (launch_log_index >= 0)
+
+phase                  TEXT NOT NULL DEFAULT 'curve' CHECK (phase IN ('curve', 'graduated'))
+graduation_block_number  BIGINT CHECK (graduation_block_number >= 0)
+graduation_block_hash      BYTEA CHECK (octet_length(graduation_block_hash) = 32)
+graduation_block_time        TIMESTAMPTZ
+graduation_tx_hash              BYTEA CHECK (octet_length(graduation_tx_hash) = 32)
+graduation_log_index               INTEGER CHECK (graduation_log_index >= 0)
+
+token_is_token0     BOOLEAN NOT NULL GENERATED ALWAYS AS (token_address < weth) STORED
+```
+
+with:
+
+```sql
+CONSTRAINT tokens_graduation_coordinates_with_phase CHECK (
+  (phase = 'curve'
+    AND graduation_block_number IS NULL AND graduation_block_hash IS NULL
+    AND graduation_block_time IS NULL AND graduation_tx_hash IS NULL
+    AND graduation_log_index IS NULL)
+  OR
+  (phase = 'graduated'
+    AND graduation_block_number IS NOT NULL AND graduation_block_hash IS NOT NULL
+    AND graduation_block_time IS NOT NULL AND graduation_tx_hash IS NOT NULL
+    AND graduation_log_index IS NOT NULL)
+)
+
+FOREIGN KEY (chain_id, token_address)
+  REFERENCES token_launches (chain_id, token_address)
+  DEFERRABLE INITIALLY DEFERRED
+
+FOREIGN KEY (chain_id, graduation_block_number, graduation_block_hash, graduation_block_time)
+  REFERENCES indexed_blocks (chain_id, block_number, block_hash, block_time)
+  DEFERRABLE INITIALLY DEFERRED
+
+FOREIGN KEY (chain_id, graduation_tx_hash, graduation_log_index)
+  REFERENCES graduations (chain_id, tx_hash, log_index)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+Both FKs on the graduation coordinates are automatically satisfied while every column in
+them is `NULL` (`phase = 'curve'`) — Postgres's default `MATCH SIMPLE` skips the check
+unless all referencing columns are non-`NULL` — so a `graduated` row is additionally
+guaranteed to point at a real block and a real `graduations` row, not merely
+internally-consistent nulls-or-not-nulls.
+
+`token_is_token0` is `GENERATED ALWAYS ... STORED`, not queried from a router or resolved
+via RPC: Postgres compares `BYTEA` left-to-right as unsigned bytes, which for two 20-byte
+big-endian addresses is exactly Uniswap v2's own `token0 < token1` numeric-address
+ordering. No RPC call, no stored duplicate maintained by application code.
+
+**`token_reserves`.** Primary key `(chain_id, token_address)` — one "latest" row. A
+discriminated union, not four parallel nullable columns, so there is never a meaningless
+mixed-nullability state:
+
+```sql
+chain_id              BIGINT NOT NULL CHECK (chain_id > 0)
+token_address          BYTEA NOT NULL CHECK (octet_length(token_address) = 20)
+reserve_source           TEXT NOT NULL CHECK (reserve_source IN ('curve', 'pair'))
+eth_reserve                NUMERIC(78,0) NOT NULL CHECK (eth_reserve >= 0)
+token_reserve                 NUMERIC(78,0) NOT NULL CHECK (token_reserve >= 0)
+source_block_number              BIGINT NOT NULL CHECK (source_block_number >= 0)
+source_block_hash                   BYTEA NOT NULL CHECK (octet_length(source_block_hash) = 32)
+source_block_time                      TIMESTAMPTZ NOT NULL
+source_tx_hash                            BYTEA NOT NULL CHECK (octet_length(source_tx_hash) = 32)
+source_log_index                             INTEGER NOT NULL CHECK (source_log_index >= 0)
+```
+
+with a deferred FK to `tokens (chain_id, token_address)` and a deferred FK on the source
+block coordinates to `indexed_blocks`, matching the event-table block-ledger linkage.
+`reserve_source = 'curve'` rows are written from a `Trade`'s `new_eth_reserve`/
+`new_token_reserve`; `reserve_source = 'pair'` rows are written from a `pool_syncs` row's
+`reserve0`/`reserve1`, mapped to `(token_reserve, eth_reserve)` using
+`tokens.token_is_token0` (`reserve0` is the token leg when `token_is_token0`, the WETH leg
+otherwise). `initial_virtual_eth` and `graduation_eth` are **not** duplicated here — every
+reader joins `tokens` for those, so the launch snapshot has exactly one writer and one
+owner.
+
+**`holder_balances`.** Primary key `(chain_id, token_address, holder_address)`:
+
+```sql
+chain_id                     BIGINT NOT NULL CHECK (chain_id > 0)
+token_address                 BYTEA NOT NULL CHECK (octet_length(token_address) = 20)
+holder_address                   BYTEA NOT NULL CHECK (octet_length(holder_address) = 20)
+balance                            NUMERIC(78,0) NOT NULL CHECK (balance >= 0)
+first_acquired_block_number           BIGINT CHECK (first_acquired_block_number >= 0)
+
+CONSTRAINT holder_balances_first_acquired_with_balance CHECK (
+  (balance = 0 AND first_acquired_block_number IS NULL)
+  OR (balance > 0 AND first_acquired_block_number IS NOT NULL)
+)
+
+FOREIGN KEY (chain_id, token_address)
+  REFERENCES tokens (chain_id, token_address)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+`first_acquired_block_number` is set to the current event's block only on a `0 → nonzero`
+balance transition, left unchanged across further nonzero-to-nonzero transfers, and reset to
+`NULL` the moment balance returns to `0` (§5.4's "resets after the balance reaches zero").
+
+**`aggregation_dirty`.** Primary key `(chain_id, token_address)`. The generation/claim
+schema is locked now because Task 8's claim/complete queries and Task 9's atomic-write test
+both depend on this shape; the `LISTEN`/`NOTIFY` trigger and worker orchestration that *use*
+it are Plan 2 ("aggregators", Plan boundary) and are explicitly out of Task 7's scope:
+
+```sql
+CREATE SEQUENCE aggregation_dirty_generation_seq;
+
+chain_id               BIGINT NOT NULL CHECK (chain_id > 0)
+token_address           BYTEA NOT NULL CHECK (octet_length(token_address) = 20)
+generation                 BIGINT NOT NULL
+claimed_generation            BIGINT CHECK (claimed_generation >= 0)
+claimed_at                       TIMESTAMPTZ
+claimed_by                          TEXT
+
+CONSTRAINT aggregation_dirty_claim_together CHECK (
+  (claimed_generation IS NULL AND claimed_at IS NULL AND claimed_by IS NULL)
+  OR (claimed_generation IS NOT NULL AND claimed_at IS NOT NULL AND claimed_by IS NOT NULL)
+)
+CONSTRAINT aggregation_dirty_claim_not_ahead CHECK (
+  claimed_generation IS NULL OR claimed_generation <= generation
+)
+
+FOREIGN KEY (chain_id, token_address)
+  REFERENCES tokens (chain_id, token_address)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+`generation` is set from `nextval('aggregation_dirty_generation_seq')` on every insert or
+re-dirty upsert of the row — a single global counter, not per-row or per-chain, so any two
+generation values are totally ordered across the whole table. A worker claims a row by
+writing the row's *current* `generation` into `claimed_generation` (plus `claimed_at`/
+`claimed_by`); completion deletes the row only `WHERE claimed_generation = generation` — if
+the row was re-dirtied (bumping `generation` past what was claimed) while the worker was
+still processing it, the row survives completion and stays queued. Task 8 defines the exact
+claim/complete queries; this task defines only the shape they run against.
+
+**`token_metadata`.** Primary key `(chain_id, token_address)`. Off-chain, creator-editable,
+never rebuilt by a reorg:
+
+```sql
+chain_id        BIGINT NOT NULL CHECK (chain_id > 0)
+token_address     BYTEA NOT NULL CHECK (octet_length(token_address) = 20)
+description         TEXT
+image_url             TEXT
+x_url                    TEXT
+telegram_url                TEXT
+updated_at                     TIMESTAMPTZ NOT NULL
+
+FOREIGN KEY (chain_id, token_address)
+  REFERENCES token_launches (chain_id, token_address)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+The FK targets `token_launches`, not `tokens` — the immutable canonical-ledger row, not the
+rebuildable projection — because a realistic reorg (above the safe head, §4.2) never deletes
+a token's own launch row; only a reorg deep enough to erase the launch itself would, and
+that case already stops ingestion for operator review (§4.2, "at or below the stored safe
+head") rather than being auto-rebuilt. Ownership/authorization for who may write this table
+is a Plan 3 (API) concern, not schema.
+
+Curve graduation progress is derived, never stored as chain state:
 `realCurveEth = virtualEthReserve - initialVirtualEth` and
 `progress = realCurveEth / graduationEth`, where `initialVirtualEth` and `graduationEth`
-come from the launch snapshot in `tokens`. The `Trade` event carries only the post-trade
-virtual reserve, so the snapshot must be retained for the life of the token. An integration
-test cross-checks the derived value against the curve's `realCurveEth()` view.
+come from `tokens`. The `Trade` event carries only the post-trade virtual reserve, so the
+snapshot must be retained for the life of the token. Task 7's integration test verifies this
+SQL-level formula against fixture reserve values (e.g. drawn from the curve vector artifact
+Task 10 consumes) — it does not call a live `IBondingCurveV1.realCurveEth()`, since Task 7
+has no RPC access; a live on-chain cross-check is deferred to Plan 2's indexer runtime.
 
 ### 5.3 Market semantics
 
@@ -621,7 +825,7 @@ Do not overload one `price_wad` with different meanings:
 For DEX rows, `sender` and `to` are routing participants, not proven end-user identities;
 the normalized `trader` is nullable.
 
-`market_trades` is a SQL view over curve trades and DEX swaps with:
+`market_trades` is a plain, non-materialized SQL view over curve trades and DEX swaps with:
 
 ```text
 chain_id, token_address, block_number, block_time, transaction_index,
@@ -630,12 +834,17 @@ execution_price_wad, spot_price_wad, gross_eth_volume, token_volume,
 finality
 ```
 
+It stays a plain `CREATE VIEW`, not a materialized one, unless a measured performance
+problem justifies the added refresh-coordination cost later — not a Task 7 concern.
+
 DEX `execution_price_wad` is derived from the Swap legs. Its `spot_price_wad` is resolved
 from the `pool_syncs` row with the same `chain_id`, pair address, and `tx_hash` whose
 `log_index` is the greatest value strictly less than this `Swap`'s `log_index`. Uniswap v2
 emits `Sync` before each `Swap`, `Mint`, and `Burn`, so one transaction may carry several
 `Sync`/`Swap` pairs on a pair; the strict-less-than-by-log-index rule selects the correct
-post-state for each swap.
+post-state for each swap. Resolving which Swap leg is the WETH leg and which is the token
+leg (both pair orderings) uses `tokens.token_is_token0` (§5.2) — a stored generated column,
+never an RPC call.
 
 ### 5.4 Supply and holder definitions
 
@@ -657,10 +866,111 @@ never determine list correctness or transaction behavior. USD columns are nullab
 
 | Table | Purpose |
 |---|---|
-| `candles` | execution-price OHLCV at `1m`, `5m`, `1h`, `1d`; `6h` and `all` aggregate on read |
-| `token_stats` | ETH spot, market cap, FDV, liquidity, ATH, 24h volume/change, holder count, optional USD values |
-| `protocol_daily` | daily ETH/USD volume, launches, trades, graduations |
+| `candles` | execution-price OHLCV, four stored intervals; `6h`/`all` aggregate on read |
+| `token_stats` | current ETH spot/market cap/FDV/liquidity/ATH/24h volume/holder count, optional USD |
+| `protocol_daily` | daily ETH volume, launches, trades, graduations, optional USD |
 | `protocol_stats` | current 24h/all-time protocol summary |
+
+Every ETH-denominated column in this section is `NUMERIC(78,0)` WAD (18-decimal
+fixed-point, matching `execution_price_wad`/`spot_price_wad` from §5.3) with a nonnegative
+`CHECK`; every USD counterpart is nullable `NUMERIC(38,18)` (§5.4). No float type anywhere.
+
+**`candles`.** Primary key `(chain_id, token_address, interval, bucket_start_time)`:
+
+```sql
+chain_id             BIGINT NOT NULL CHECK (chain_id > 0)
+token_address          BYTEA NOT NULL CHECK (octet_length(token_address) = 20)
+interval                  TEXT NOT NULL CHECK (interval IN ('1m', '5m', '1h', '1d'))
+bucket_start_time            TIMESTAMPTZ NOT NULL
+open_price_wad                   NUMERIC(78,0) NOT NULL CHECK (open_price_wad >= 0)
+high_price_wad                       NUMERIC(78,0) NOT NULL CHECK (high_price_wad >= 0)
+low_price_wad                            NUMERIC(78,0) NOT NULL CHECK (low_price_wad >= 0)
+close_price_wad                              NUMERIC(78,0) NOT NULL CHECK (close_price_wad >= 0)
+gross_eth_volume                                 NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK (gross_eth_volume >= 0)
+token_volume                                          NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK (token_volume >= 0)
+trade_count                                               INTEGER NOT NULL DEFAULT 0 CHECK (trade_count >= 0)
+
+FOREIGN KEY (chain_id, token_address)
+  REFERENCES tokens (chain_id, token_address)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+`6h` and `all` are never stored rows — they aggregate the `1h`/`1d` rows on read. All four
+price columns use `execution_price_wad` (§5.3), never `spot_price_wad` — candles are trade
+history, not order-book state.
+
+**`token_stats`.** Primary key `(chain_id, token_address)` — one current row per token:
+
+```sql
+chain_id                BIGINT NOT NULL CHECK (chain_id > 0)
+token_address             BYTEA NOT NULL CHECK (octet_length(token_address) = 20)
+spot_price_eth_wad           NUMERIC(78,0) NOT NULL CHECK (spot_price_eth_wad >= 0)
+market_cap_eth_wad               NUMERIC(78,0) NOT NULL CHECK (market_cap_eth_wad >= 0)
+fdv_eth_wad                          NUMERIC(78,0) NOT NULL CHECK (fdv_eth_wad >= 0)
+liquidity_eth_wad                        NUMERIC(78,0) NOT NULL CHECK (liquidity_eth_wad >= 0)
+ath_price_eth_wad                            NUMERIC(78,0) NOT NULL CHECK (ath_price_eth_wad >= 0)
+ath_at                                           TIMESTAMPTZ NOT NULL
+volume_24h_eth_wad                                   NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK (volume_24h_eth_wad >= 0)
+price_change_24h_bps                                     INTEGER NOT NULL DEFAULT 0
+holder_count                                                 INTEGER NOT NULL DEFAULT 0 CHECK (holder_count >= 0)
+spot_price_usd                                                  NUMERIC(38,18)
+market_cap_usd                                                     NUMERIC(38,18)
+fdv_usd                                                                NUMERIC(38,18)
+liquidity_usd                                                            NUMERIC(38,18)
+ath_usd                                                                      NUMERIC(38,18)
+volume_24h_usd                                                                  NUMERIC(38,18)
+updated_at                                                                          TIMESTAMPTZ NOT NULL
+
+FOREIGN KEY (chain_id, token_address)
+  REFERENCES tokens (chain_id, token_address)
+  DEFERRABLE INITIALLY DEFERRED
+```
+
+`price_change_24h_bps` is a signed basis-point delta (a price can fall), so it is a plain
+`INTEGER` with no range `CHECK` — the `BETWEEN 0 AND 65535` pattern (§5.1) applies only to
+actual on-chain `uint16` fields, never to a derived signed metric. `ath_price_eth_wad`/
+`ath_at` are initialized at row creation (discovery pass, §4.3) to the launch snapshot's
+opening price and `launch_block_time`, then only ever move forward. `holder_count` follows
+§5.4's exclusion rule (zero, dead, curve, canonical pair addresses excluded).
+
+**`protocol_daily`.** Primary key `(chain_id, day)`:
+
+```sql
+chain_id           BIGINT NOT NULL CHECK (chain_id > 0)
+day                   DATE NOT NULL
+volume_eth_wad            NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK (volume_eth_wad >= 0)
+volume_usd                    NUMERIC(38,18)
+launches_count                    INTEGER NOT NULL DEFAULT 0 CHECK (launches_count >= 0)
+trades_count                          INTEGER NOT NULL DEFAULT 0 CHECK (trades_count >= 0)
+graduations_count                         INTEGER NOT NULL DEFAULT 0 CHECK (graduations_count >= 0)
+```
+
+`day` is UTC-anchored `DATE`, not `TIMESTAMPTZ` — one row per calendar day, never an
+intraday bucket. No FK: like `sync_state`, this is chain-scoped, not token-scoped, and
+there is no `chains` table (§5.1).
+
+**`protocol_stats`.** Primary key `chain_id` alone — one row per chain, matching the
+established assumption that one database instance serves exactly one active deployment
+(§3; no `deployment_id` column anywhere in this section for the same reason):
+
+```sql
+chain_id                   BIGINT NOT NULL CHECK (chain_id > 0)
+volume_24h_eth_wad             NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK (volume_24h_eth_wad >= 0)
+volume_24h_usd                     NUMERIC(38,18)
+volume_all_time_eth_wad                NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK (volume_all_time_eth_wad >= 0)
+volume_all_time_usd                        NUMERIC(38,18)
+launches_24h                                   INTEGER NOT NULL DEFAULT 0 CHECK (launches_24h >= 0)
+launches_all_time                                  INTEGER NOT NULL DEFAULT 0 CHECK (launches_all_time >= 0)
+trades_24h                                             INTEGER NOT NULL DEFAULT 0 CHECK (trades_24h >= 0)
+trades_all_time                                            BIGINT NOT NULL DEFAULT 0 CHECK (trades_all_time >= 0)
+graduations_24h                                                INTEGER NOT NULL DEFAULT 0 CHECK (graduations_24h >= 0)
+graduations_all_time                                               INTEGER NOT NULL DEFAULT 0 CHECK (graduations_all_time >= 0)
+updated_at                                                             TIMESTAMPTZ NOT NULL
+```
+
+`trades_all_time` is `BIGINT`, not `INTEGER` — an all-time counter can plausibly exceed
+2^31 over the protocol's life; every `24h`-scoped counter stays bounded enough for
+`INTEGER`.
 
 ## 6. Aggregation and notifications
 

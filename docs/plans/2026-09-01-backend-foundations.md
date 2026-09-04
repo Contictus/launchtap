@@ -4,10 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-5 are implemented and on `dev`. Task 6's
+artifact exists at `contracts/vectors/v1/`. Tasks 1-6 are implemented and on `dev`. Task 7's
 high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
-spec §5.1, "Canonical event-ledger schema"). Tasks 7-12 still require their high-risk
-pre-flight before implementation.
+spec §5.2, §5.3, §5.5). Tasks 8-12 still require their high-risk pre-flight before
+implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -307,39 +307,74 @@ constraints, FKs, and triggers.
 
 ## Task 7 — Chain projections, aggregates, and market view · Risk: high
 
-**Delivers:** migrations for projections, durable dirty work, market aggregates, metadata,
-and `market_trades`.
+**Pre-flight:** complete. Acceptance criteria below are locked (spec §5.2, §5.3, §5.5).
 
-**Depends on:** Task 6
+**Delivers:** migrations for `tokens`, `token_reserves`, `holder_balances`,
+`aggregation_dirty`, `token_metadata` (chain projections + off-chain metadata, spec §5.2),
+the `market_trades` SQL view (spec §5.3), and `candles`/`token_stats`/`protocol_daily`/
+`protocol_stats` (spec §5.5). Rebuild SQL primitives that recompute a token's projections
+from its surviving canonical events, proven by a raw-SQL-driven integration test — not a
+live indexer or reorg orchestrator (Plan 2 scope; spec §5.2 "Scope boundary").
+
+**Depends on:** Task 6.
+
+**Files:** `backend/internal/store/postgres/migrations/` (new up/down `.sql`),
+`backend/internal/store/postgres/postgrestest/*_test.go` (or equivalent) proving the
+schema, the rebuild primitives, and the market view.
 
 **Acceptance criteria:**
 
-- `tokens`, `token_reserves`, `holder_balances`, and `aggregation_dirty` are clearly marked
-  rebuildable projections; metadata/images are separate off-chain state.
-- `tokens`/`token_reserves` retain the launch snapshot's `initial_virtual_eth` and
-  `graduation_eth`. Curve progress is derived, not stored as chain state:
-  `real_curve_eth = new_eth_reserve - initial_virtual_eth` and
-  `progress = real_curve_eth / graduation_eth`. An integration test cross-checks the derived
-  `real_curve_eth` against `IBondingCurveV1.realCurveEth()` at a sampled block.
-- `market_trades` resolves a DEX swap's spot price from the `pool_syncs` row with the same
-  `chain_id`, pair address, and `tx_hash` whose `log_index` is the greatest value strictly
-  less than the swap's `log_index`. Tests cover multi-hop transactions with interleaved
-  `Sync`/`Swap` pairs and `Sync` emitted by `Mint`/`Burn`.
-- `market_trades` exposes execution and spot price separately, deterministic chain cursor
-  fields, nullable DEX trader, gross ETH/WETH volume, token volume, source, and finality.
-- Curve `gross_eth_volume` in `market_trades` is `trades.eth_gross`; `eth_refund` is stored
-  but never included in volume, candles, or 24h aggregates.
-- DEX token/WETH leg resolution works for both token orderings.
-- `candles`, `token_stats`, `protocol_daily`, and `protocol_stats` use ETH fields as required
-  and USD fields as nullable `NUMERIC(38,18)` columns; no float type is introduced for USD.
-- Circulating supply, holder exclusions, and first-acquired reset behavior match the spec.
-- A reorg that unwinds a graduation transaction is a named test: the rebuild from surviving
-  canonical events flips `tokens.phase` back to the curve phase, deletes the pair projection
-  rows above the common ancestor, restores the pre-graduation circulating-supply definition
-  (canonical pair balance no longer counts; reserved `L` is curve inventory again), and
-  rebuilds candles whose execution-price source reverted from DEX swaps to curve trades.
-- Tests cover both pair orderings, Mint/Sync without Swap, equal timestamps, the forward
-  graduation circulation transition, and excluded system addresses.
+- `tokens`, `token_reserves`, `holder_balances`, `aggregation_dirty`, and `token_metadata`
+  match spec §5.2 exactly — see the locked column lists there, including: `tokens`'
+  immutable launch snapshot, `phase`, nullable-together graduation coordinates (with FKs to
+  `indexed_blocks` and `graduations`), and generated `token_is_token0`; `token_reserves`'
+  `reserve_source` discriminated union instead of parallel nullable curve/pair columns,
+  with no duplicated `initial_virtual_eth`/`graduation_eth`; `holder_balances`'
+  `first_acquired_block_number` NULL-exactly-when-`balance = 0` invariant;
+  `aggregation_dirty`'s `aggregation_dirty_generation_seq`-backed `generation`/
+  `claimed_generation`/`claimed_at`/`claimed_by` shape (the claim/complete queries
+  themselves are Task 8's); `token_metadata`'s FK to `token_launches`, not `tokens`, so it
+  survives a realistic reorg untouched.
+- `candles`, `token_stats`, `protocol_daily`, and `protocol_stats` match spec §5.5 exactly
+  — every column, type, and unit locked there (ETH `NUMERIC(78,0)` WAD vs. nullable USD
+  `NUMERIC(38,18)`; `candles`' four-interval `CHECK` with `6h`/`all` aggregated on read
+  only; `token_stats`' unconstrained signed `price_change_24h_bps`; `protocol_daily`'s
+  `DATE` key; `protocol_stats`' `BIGINT trades_all_time`). No float type anywhere.
+- Curve graduation progress (`realCurveEth = virtualEthReserve - initialVirtualEth`,
+  `progress = realCurveEth / graduationEth`) is proven at the SQL-formula level against
+  fixture reserve values, not a live `IBondingCurveV1.realCurveEth()` RPC call (spec §5.2
+  — that cross-check moves to Plan 2, which has RPC access).
+- `market_trades` is a plain, non-materialized `CREATE VIEW` (spec §5.3) exposing
+  `chain_id, token_address, block_number, block_time, transaction_index, tx_hash,
+  log_index, source, side_buy, trader, execution_price_wad, spot_price_wad,
+  gross_eth_volume, token_volume, finality`. DEX `spot_price_wad` resolves from the
+  `pool_syncs` row with the same `chain_id`/pair address/`tx_hash` and the greatest
+  `log_index` strictly less than the swap's. DEX token/WETH leg resolution uses
+  `tokens.token_is_token0` for both orderings — never RPC, never a second stored column.
+  Curve `gross_eth_volume` is exactly `trades.eth_gross`; `eth_refund` is stored but never
+  included in volume, candles, or 24h aggregates. `sender`/`to` on DEX rows are routing
+  participants, not proven identities; `trader` is nullable.
+- Tests cover multi-hop transactions with interleaved `Sync`/`Swap` pairs, `Sync` emitted
+  by `Mint`/`Burn` without an adjoining `Swap`, and equal-timestamp blocks.
+- Rebuild SQL primitives recompute an affected token's `tokens`/`token_reserves`/
+  `holder_balances`/`candles` rows as a full recompute from that token's complete
+  surviving canonical events — never an incremental undo (spec §5.2 "Scope boundary").
+  A named integration test drives this with raw SQL, standing in for the indexer's own
+  ancestor walk (no live indexer exists yet): insert canonical events including a
+  `Graduated` row, delete the losing branch's rows above a chosen ancestor, invoke the
+  rebuild primitives, and assert `tokens.phase` flips back to `curve`, pair-sourced
+  `token_reserves`/DEX-sourced `candles` rows above the ancestor are gone, circulating
+  supply reflects the pre-graduation definition again (§5.4 — reserved `L` is curve
+  inventory again, canonical pair balance no longer counts), and candles rebuilt from
+  surviving curve `trades` replace the DEX-sourced ones. `token_metadata` is untouched.
+  The test also covers the forward direction: the graduation circulation transition
+  (`T_r` circulating pre-graduation → `S` after, absent burns/forced transfers).
+- `holder_balances`/holder-list/`holder_count` queries exclude zero, dead, curve, and
+  canonical pair addresses; the canonical pair balance still counts toward circulating
+  supply (§5.4). Excluded-address tests pass.
+- Duplicate-token-launch, negative-value, and unknown-address rejection tests pass for
+  every new table, matching the Task 6 pattern (`CHECK`/`FOREIGN KEY` violations asserted
+  by exact constraint name).
 
 ## Task 8 — sqlc queries and persistence adapters · Risk: high
 
