@@ -66,6 +66,8 @@ linters:
               desc: feature and application packages must not depend on PostgreSQL
             - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres
               desc: feature and application packages must not depend on PostgreSQL adapters
+            - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/migrations
+              desc: feature and application packages must not depend on migration infrastructure
             - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc
               desc: generated sqlc packages must not escape PostgreSQL adapters
             - pkg: github.com/ethereum/go-ethereum/ethclient
