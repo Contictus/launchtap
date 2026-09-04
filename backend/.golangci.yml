@@ -41,6 +41,15 @@ linters:
             - $gostd
             - github.com/ethereum/go-ethereum/common
             - github.com/santhosh-tekuri/jsonschema/v6
+        migration-startup-boundary:
+          files:
+            - "**/cmd/api/*.go"
+            - "**/cmd/api/**/*.go"
+            - "**/cmd/indexer/*.go"
+            - "**/cmd/indexer/**/*.go"
+          deny:
+            - pkg: github.com/Contictus/launchtap/backend/internal/store/postgres/migrations
+              desc: API and indexer startup must never run migrations implicitly
         domain-and-application:
           files:
             - "**/internal/launch/*.go"

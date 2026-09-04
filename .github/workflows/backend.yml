@@ -67,3 +67,15 @@ jobs:
 
       - name: Run backend gate
         run: go run github.com/go-task/task/v3/cmd/task@v3.53.1 verify
+
+      - name: Prove migration integration test executed
+        shell: bash
+        run: |
+          set -o pipefail
+          output_file="$(mktemp)"
+          trap 'rm -f "$output_file"' EXIT
+          go test -tags=integration -race -v -run '^TestMigrationsUpDownUp$' ./internal/store/postgres/... 2>&1 | tee "$output_file"
+          grep -Fq -- '--- PASS: TestMigrationsUpDownUp' "$output_file"
+          if grep -Eq -- '--- (SKIP|FAIL): TestMigrationsUpDownUp' "$output_file"; then
+            exit 1
+          fi

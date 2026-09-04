@@ -27,12 +27,12 @@ tasks:
   lint:
     desc: Run the pinned golangci-lint tool.
     cmds:
-      - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run
+      - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run --build-tags=integration
 
   migrate:
-    desc: Run goose; pass arguments after --.
+    desc: Run the embedded migration command; pass up, down, or status after --.
     cmds:
-      - go run github.com/pressly/goose/v3/cmd/goose@v3.28.0 {{.CLI_ARGS}}
+      - go run ./cmd/migrate {{.CLI_ARGS}}
 
   sqlc:
     desc: Generate sqlc code once sqlc.yaml is introduced by Task 8.
