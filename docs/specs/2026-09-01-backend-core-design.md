@@ -372,6 +372,82 @@ violation. The curve phase is one-way and post-graduation market activity is DEX
 `pool_syncs` is the authoritative reserve history. `pool_swaps` alone cannot reconstruct
 liquidity changes, direct syncs, or the opening reserves.
 
+**`sync_state` and `indexed_blocks` schema.** All hash and address columns across this
+ledger are `BYTEA` (32 bytes for a hash, 20 for an address), matching the Go side's
+`common.Hash`/`common.Address` byte representation; a `CHECK (octet_length(...) = 32)`
+(`= 20` for addresses) guards every such column. `chain_id` and `block_number` are
+`BIGINT` with nonnegative `CHECK`s; on-chain token/monetary amounts alone use
+`NUMERIC(78,0)` (Global constraints), not block heights. There is no `chains`/`deployments`
+table in PostgreSQL — `deployments` (§3) is an embedded Go artifact only; `chain_id`/
+`deployment_id` here are plain columns validated at the Go layer against that registry, not
+by a foreign key. `deployment_id` carries a `CHECK` using the same pattern as
+`config.DEPLOYMENT_ID` and the manifest schema:
+`CHECK (deployment_id ~ '^[a-z0-9][a-z0-9._-]{2,63}$')`.
+
+`sync_state` — one row per `(chain_id, deployment_id)`. Three watermark levels, each a
+`(number BIGINT, hash BYTEA, at TIMESTAMPTZ)` triple that is NULL together or filled
+together:
+
+```sql
+CHECK ((observed_number IS NULL) = (observed_hash IS NULL)
+       AND (observed_number IS NULL) = (observed_at IS NULL))
+CHECK ((safe_number IS NULL) = (safe_hash IS NULL)
+       AND (safe_number IS NULL) = (safe_at IS NULL))
+CHECK ((finalized_number IS NULL) = (finalized_hash IS NULL)
+       AND (finalized_number IS NULL) = (finalized_at IS NULL))
+CHECK (safe_number IS NULL
+       OR (observed_number IS NOT NULL AND safe_number <= observed_number))
+CHECK (finalized_number IS NULL
+       OR (safe_number IS NOT NULL AND finalized_number <= safe_number))
+```
+
+`safe_number`/`finalized_number` are the indexer's own locally-confirmed watermarks — set
+only once the indexer has processed the corresponding block and verified its hash against
+`indexed_blocks` (§4.2) — never the node's raw reported safe/finalized tag, which can be
+ahead of what the indexer has ingested and is not persisted here.
+
+`indexed_blocks` — primary key `(chain_id, block_number)`; `block_hash` unique per
+`chain_id`; `parent_hash` is always populated from the RPC header (`NOT NULL`), even for
+the row at `StartBlock`, whose parent legitimately has no row in this table — a
+common-ancestor walk stops when no row matches a given hash, which is the correct signal
+for "beyond the tracked range," not a NULL sentinel. `finality_status` is
+`TEXT NOT NULL CHECK (finality_status IN ('observed', 'safe', 'finalized'))`, not a native
+`ENUM` (adding an `ENUM` value later doesn't fit a plain transactional migration as cleanly
+as a `CHECK`).
+
+The primary key alone stops a plain duplicate `INSERT`, but not an
+`ON CONFLICT (chain_id, block_number) DO UPDATE`. Because block identity must never change
+in place — a reorg is always an explicit `DELETE` above the common ancestor followed by a
+fresh `INSERT` (§4.2) — `indexed_blocks` carries a `BEFORE UPDATE` trigger that rejects any
+change to `block_hash`, `parent_hash`, or `block_time`, while still allowing
+`finality_status` to be updated in place (a block's finality is promoted
+`observed → safe → finalized` over its lifetime, which is a normal, expected `UPDATE`):
+
+```sql
+CREATE FUNCTION indexed_blocks_immutable_identity() RETURNS trigger AS $$
+BEGIN
+  IF NEW.block_hash IS DISTINCT FROM OLD.block_hash
+     OR NEW.parent_hash IS DISTINCT FROM OLD.parent_hash
+     OR NEW.block_time IS DISTINCT FROM OLD.block_time THEN
+    RAISE EXCEPTION
+      'indexed_blocks block identity is immutable for (chain_id=%, block_number=%); delete and reinsert instead',
+      OLD.chain_id, OLD.block_number;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER indexed_blocks_immutable_identity_trigger
+  BEFORE UPDATE ON indexed_blocks
+  FOR EACH ROW EXECUTE FUNCTION indexed_blocks_immutable_identity();
+```
+
+Integration tests prove all three: a plain duplicate-key `INSERT` fails, an
+`ON CONFLICT ... DO UPDATE` that changes `block_hash` is rejected by the trigger, and an
+`UPDATE` that changes only `finality_status` succeeds. The common-ancestor query in these
+tests is written inline with raw SQL — `sqlc` does not exist until Task 8, and this task
+must not freeze a reusable named query before Task 8's consumers exist.
+
 ### 5.2 Chain projections
 
 | Table | Purpose |

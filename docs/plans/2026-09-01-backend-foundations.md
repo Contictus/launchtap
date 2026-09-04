@@ -4,9 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1, 2, and 3 are implemented and on `dev`.
-Task 4's high-risk pre-flight is complete and its acceptance criteria are locked (see the
-task and spec §2.5). Tasks 5-12 still require their high-risk pre-flight before
+artifact exists at `contracts/vectors/v1/`. Tasks 1-4 are implemented and on `dev` (Task 4's
+independent commit review has one open MINOR — a depguard follow-up — not yet triaged).
+Task 5's high-risk pre-flight is complete and its acceptance criteria are locked (see the
+task and spec §5.1). Tasks 6-12 still require their high-risk pre-flight before
 implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
@@ -202,19 +203,43 @@ step).
 
 ## Task 5 — Chain control and block-ledger schema · Risk: high
 
-**Delivers:** migration for `sync_state` and `indexed_blocks`.
+**Pre-flight:** complete. Acceptance criteria below are locked (spec §5.1).
 
-**Depends on:** Task 4
+**Delivers:** migration for `sync_state` and `indexed_blocks`, including the
+immutable-identity trigger on `indexed_blocks`.
+
+**Depends on:** Task 4.
+
+**Files:** `backend/internal/store/postgres/migrations/` (new up/down `.sql`),
+`backend/internal/store/postgres/postgrestest/*_test.go` (or equivalent) proving the
+constraints, the trigger, and the common-ancestor query.
 
 **Acceptance criteria:**
 
-- `sync_state` is keyed by `(chain_id, deployment_id)` and stores observed, safe, and
-  finalized numbers/hashes plus timestamps.
-- `indexed_blocks` is keyed by `(chain_id, block_number)` and stores block hash, parent hash,
-  block time, and constrained finality status.
-- Constraints forbid safe/finalized watermarks ahead of observed and finalized ahead of safe.
-- Duplicate block number with a different hash cannot be silently upserted.
-- Integration tests prove block-chain linkage queries can locate a common ancestor.
+- `sync_state` is keyed by `(chain_id, deployment_id)`; `deployment_id` carries
+  `CHECK (deployment_id ~ '^[a-z0-9][a-z0-9._-]{2,63}$')`. Each of the three watermark
+  levels (`observed`, `safe`, `finalized`) is a `(number BIGINT, hash BYTEA, at
+  TIMESTAMPTZ)` triple, NULL together or filled together.
+- `CHECK (safe_number IS NULL OR (observed_number IS NOT NULL AND safe_number <=
+  observed_number))` and `CHECK (finalized_number IS NULL OR (safe_number IS NOT NULL AND
+  finalized_number <= safe_number))`. `safe`/`finalized` are the indexer's own
+  hash-verified local watermarks, never the node's raw reported tag.
+- `indexed_blocks` is keyed by `(chain_id, block_number)`; `block_hash` unique per
+  `chain_id`; `parent_hash` is `NOT NULL` (always the real on-chain value, including at
+  `StartBlock`); `finality_status` is `TEXT NOT NULL CHECK (... IN ('observed', 'safe',
+  'finalized'))`, not a native `ENUM`.
+- All hash columns are `BYTEA` with `CHECK (octet_length(...) = 32)`; future address
+  columns (Task 6+) are `BYTEA` with `CHECK (octet_length(...) = 20)`. `chain_id`/
+  `block_number` are `BIGINT` with nonnegative `CHECK`s — not `NUMERIC(78,0)`, which stays
+  reserved for on-chain token/monetary amounts. No foreign key to a chains table; none
+  exists (`deployments` is an embedded Go artifact, spec §3).
+- `indexed_blocks` carries a `BEFORE UPDATE` trigger rejecting any change to `block_hash`,
+  `parent_hash`, or `block_time`; `finality_status` remains updatable in place. Integration
+  tests prove: a plain duplicate-key `INSERT` fails; an `ON CONFLICT ... DO UPDATE`
+  changing `block_hash` is rejected by the trigger; an `UPDATE` changing only
+  `finality_status` succeeds.
+- Integration tests prove a common-ancestor query (inline raw SQL — `sqlc` doesn't exist
+  until Task 8) can walk `parent_hash` back to find where two diverging chains meet.
 
 ## Task 6 — Canonical event-ledger schema · Risk: high
 
