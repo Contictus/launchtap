@@ -2,6 +2,7 @@ package deployments
 
 import (
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +101,14 @@ func Load(fsys fs.FS) (*Registry, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load deployment registry: %w", err)
+	}
+	for _, deployment := range registry.deployments {
+		if _, disabled := registry.disabled[deployment.ChainID]; disabled {
+			return nil, fmt.Errorf(
+				"load deployment registry: chain %d has both a selectable deployment and a disabled marker",
+				deployment.ChainID,
+			)
+		}
 	}
 
 	return registry, nil
@@ -338,7 +347,11 @@ func requireAddress(name, value string, nonZero bool) error {
 }
 
 func requireHash(name, value string) error {
-	if len(value) != 66 || !strings.HasPrefix(value, "0x") || common.HexToHash(value) == (common.Hash{}) {
+	if len(value) != 66 || !strings.HasPrefix(value, "0x") {
+		return fmt.Errorf("%s is not a non-zero 32-byte hash", name)
+	}
+	decoded, err := hex.DecodeString(value[2:])
+	if err != nil || common.BytesToHash(decoded) == (common.Hash{}) {
 		return fmt.Errorf("%s is not a non-zero 32-byte hash", name)
 	}
 	return nil

@@ -163,6 +163,29 @@ func TestLoadRejectsDuplicateDeploymentIDAcrossChains(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsDeploymentOnDisabledChain(t *testing.T) {
+	deployment := mutateManifest(t, validManifest, func(value map[string]any) {
+		value["deploymentId"] = "robinhood-testnet-v1"
+		value["environment"] = "testnet"
+		value["chainId"] = float64(46630)
+	})
+	files := manifestFS(t, map[string]string{"robinhood-testnet-v1.json": deployment})
+	root, err := fs.Sub(embeddedArtifacts, "testdata")
+	if err != nil {
+		t.Fatalf("fs.Sub() error = %v", err)
+	}
+	disabled, err := fs.ReadFile(root, "config/robinhood-testnet.disabled.json")
+	if err != nil {
+		t.Fatalf("read disabled marker: %v", err)
+	}
+	files["config/robinhood-testnet.disabled.json"] = &fstest.MapFile{Data: disabled}
+
+	_, err = Load(files)
+	if err == nil {
+		t.Fatal("Load() error = nil for deployment on disabled chain")
+	}
+}
+
 func TestLoadSchemaValidatesDependencyAndDisabledRecords(t *testing.T) {
 	files := manifestFS(t, nil)
 	files["config/invalid-dependency.json"] = &fstest.MapFile{Data: []byte(`{"schemaVersion":1}`)}
@@ -206,6 +229,13 @@ func TestLoadRejectsZeroDependencyAddressAndHash(t *testing.T) {
 				t.Fatalf("Load() error = %v, want ValidationError", err)
 			}
 		})
+	}
+}
+
+func TestRequireHashRejectsInvalidHexWithoutSchemaGuard(t *testing.T) {
+	invalid := "0x1234567890abcdef1234567890abcdef12345678zzzzzzzzzzzzzzzzzzzzzzzz"
+	if err := requireHash("test hash", invalid); err == nil {
+		t.Fatal("requireHash() error = nil for invalid hex")
 	}
 }
 
