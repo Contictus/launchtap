@@ -111,6 +111,16 @@ independently questions it.
    blind obedience.
 8. **Codex — re-verify + follow-up commit.**
 
+### Pre-flight documentation depth
+
+Locked pre-flight decisions go into the spec at the level of **decision + rationale**, not
+a full mechanical transcription of an algorithm or control flow that already exists (or will
+exist) in source — e.g., a step-by-step restatement of a Solidity function's exact
+operations. The precise, mechanical detail belongs in the implementation's own doc comment,
+naming the source it mirrors (for example `// mirrors CurveMath.quoteBuy`); the spec then
+points at that function by name instead of duplicating its body in prose. This keeps one
+executable, tested copy of the exact logic instead of two copies that can drift apart.
+
 ### When Claude is in the loop
 
 Optional for small, low-risk work (typo, rename, small DTO change) — Codex proceeds solo.
