@@ -1431,6 +1431,19 @@ the reviewed deployment manifest. Unknown or incomplete production manifests fai
 Local integration tests may skip when Docker is unavailable. The CI integration job must
 fail, not skip, if PostgreSQL is unavailable or no integration test ran.
 
+**One reproducible command.** `task verify` is the single local/CI entry point for the Go-side
+gates above. It also runs `sqlc diff` and the deployment-artifact and curve-vector
+byte-identical checks (folded in as part of Task 12, not left as separate CI-only steps), plus
+a formatting check (`gofmt`, added as a golangci-lint linter, since the `standard` preset alone
+doesn't include one). CI's migration up/down/up sentinel — a strict pass/fail grep guarding
+against `-run` silently matching zero tests — stays a separate CI step rather than being
+duplicated inside `task verify`, since the migration test itself already executes as part of
+the ordinary `integration` dependency.
+
+**AGENTS.md stays Claude's to edit.** Task 12's exact verified tool versions and commands are
+reported by Codex and recorded into AGENTS.md's placeholder tables by Claude, in a separate
+commit — matching the repo's own commit-ownership split, which Codex does not edit directly.
+
 ## 12. Observability
 
 Health reports deployment id; observed/safe/finalized blocks and timestamps; per-watermark

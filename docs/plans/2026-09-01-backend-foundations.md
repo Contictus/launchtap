@@ -5,7 +5,9 @@
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
 artifact exists at `contracts/vectors/v1/` (now 13 cases). Tasks 1-11 are implemented and on
-`dev`. Task 12 still requires its high-risk pre-flight before implementation.
+`dev`. Task 12's high-risk pre-flight is complete and its acceptance criteria are locked (see
+the task and spec §11, "Testing and delivery gates"). Once Task 12 lands and its independent
+review closes, Backend Foundations is complete and ready for its milestone `dev`→`main` PR.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -576,20 +578,34 @@ task's real implementation begins.
 
 ## Task 12 — Foundation verification gate · Risk: high
 
-**Delivers:** one reproducible verification command and a clean foundation handoff.
+**Delivers:** one reproducible verification command (`task verify`) and a clean foundation
+handoff. See spec §11, "Testing and delivery gates," for the consolidation this locks.
 
 **Depends on:** Tasks 1-11
 
 **Acceptance criteria:**
 
-- Runs formatting, build, unit/race tests, required PostgreSQL integration tests, lint,
-  migrations up/down/up, sqlc generation/diff, and the curve-vector byte-identical check
-  against `contracts/vectors/v1/` (regeneration itself stays in the contracts gate).
+- `.golangci.yml` gains a formatting linter (`gofmt`); `task lint`/`task verify` fail on
+  unformatted code.
+- `task verify` folds in `sqlc-diff` and the deployment-artifact-copy diff, alongside the
+  existing `curve-vectors-diff`, so build, unit/race tests, integration tests, lint,
+  migrations up/down/up (via the `integration` dependency), sqlc diff, the deployment-artifact
+  check, and the curve-vector byte-identical check all run from one command. `backend.yml`
+  collapses its now-redundant separate steps accordingly, keeping only the migration-sentinel
+  grep as its own step.
 - Runs on Windows developer setup with a workspace-local `GOCACHE` when the global cache is
-  inaccessible, without weakening CI.
-- Reviews `git diff` for generated noise, placeholder addresses, skipped integration gates,
-  float use, stale module path, and unreviewed dependency additions.
-- Records exact tool versions and commands in `AGENTS.md` only after they work.
+  inaccessible — demonstrated, not just configured (e.g. proven with the default Go cache
+  location temporarily made inaccessible), without weakening CI.
+- A one-time review of the whole plan's `git diff` (Task 1's first commit through Task 11's
+  last) checks for generated noise, placeholder addresses, skipped integration gates, float
+  use, stale module path, and unreviewed dependency additions — not a new permanent automated
+  gate.
+- Codex's completion report states the exact verified tool versions and commands (Go, Task,
+  golangci-lint, sqlc, PostgreSQL, and anything else `task verify` exercises); Claude records
+  them into `AGENTS.md`'s placeholder tables in a separate commit — Codex does not edit
+  `AGENTS.md` directly.
+- `verify`'s stale `desc:` ("Run the complete Backend Foundations Task 1 gate") is corrected
+  to reflect its actual, now much broader scope.
 
 ## Plan boundary
 
