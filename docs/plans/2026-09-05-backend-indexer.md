@@ -118,6 +118,32 @@ binding on the tasks named beside them.
    polls; WebSocket reconnect and subscription lifecycle are error surface this plan does not
    need. A subscription may be added later as a *latency hint only* — never as a finality
    source, which stays the `safe`/`finalized` tag reads.
+6. **Chain↔store type bridge — a neutral `internal/ledger` package (Tasks 3-4).** Canonical
+   event input models live in a new `internal/ledger`, in persistence-independent types
+   (`common.Address`, `common.Hash`, `*big.Int`, `time.Time`). The flow is
+   `chain.DecodedLog` → Task 4's handler conversion → `ledger.*` → feature port → PostgreSQL
+   adapter → `sqlc.Address` / `Hash` / `Uint256` / `pgtype`. Neither `chain` nor
+   `store/postgres` imports the other, and no feature port carries a generated or
+   persistence type. The `Uint256` conversion exists only inside the adapter — already
+   CI-enforced, since `generated-sqlc-boundary` in `.golangci.yml` denies the `sqlc` package
+   everywhere outside `internal/store/postgres`. The direction is also already enforced the
+   other way: `chain-boundary` is `list-mode: strict`, so `internal/chain` cannot import
+   `internal/ledger`, which is why the conversion is Task 4's handler and not a method on a
+   `chain` type.
+7. **Event insert results are typed (Task 3).** Event wrappers return
+   `(ledger.InsertResult, error)` where `InsertResult` carries `Inserted bool` — including
+   the two that exist today, `InsertTrade` and `InsertLaunchPauseEvent`, which are converted
+   rather than left on a bare `error`. `UpsertIndexedBlock` is deliberately *not* forced onto
+   the same type: it cannot separate a first insert from a finality promotion, and calling
+   that `Inserted` would be a lie. It returns `UpsertResult{Changed bool}` instead.
+8. **Incremental projection writes are SQL-side deltas (Task 3).** Each projection update is
+   a single-statement `INSERT … ON CONFLICT … DO UPDATE`. There is no Go-side
+   read-modify-write, which would be a lost-update race under any concurrency and would also
+   be unable to satisfy `holder_balances_first_acquired_with_balance` — a plain
+   non-deferrable CHECK that couples `balance` and `first_acquired_block_number`, and so
+   requires both to move in one statement. The adapter orchestrates: it inspects the event
+   insert result first and runs the projection statement only when `Inserted` is true. No
+   wrapper opens a transaction; all of it runs inside the `WithinTx` boundary Task 4 owns.
 
 ## Task 1 — Chain operability prerequisites · Risk: high
 
@@ -249,8 +275,9 @@ ingestion path, the differential test that proves it equivalent to
 `rebuild_token_projections()`, and the reorg SQL whose parameter shape was left for its Plan 2
 consumer to fix.
 
-**Files:** `backend/internal/store/postgres/` (pool constructor, adapter methods,
-`queries/*.sql`, regenerated `sqlc/`), `backend/internal/store/postgres/postgrestest/`.
+**Files:** `backend/internal/ledger/` (new), `backend/internal/store/postgres/` (pool
+constructor, adapter methods, `queries/*.sql`, regenerated `sqlc/`),
+`backend/internal/store/postgres/postgrestest/`, `backend/.golangci.yml`.
 
 **Acceptance criteria:**
 
@@ -269,10 +296,13 @@ consumer to fix.
   the hand-written adapter type it converts from, so a future column reordering breaks the
   build rather than silently mismapping.
 - Every idempotent insert wrapper **reports whether it actually inserted a row**, not just
-  whether it errored. Today's wrappers have the `:execrows` count in hand and discard it,
-  returning bare `error` (`adapter.go`, `InsertTrade`). The incremental writer's correctness
-  depends on that distinction, so it becomes part of the wrapper's signature rather than
-  something a caller re-derives.
+  whether it errored: `(ledger.InsertResult, error)` per decision 7. Today's wrappers have
+  the `:execrows` count in hand and discard it, returning bare `error` (`adapter.go`,
+  `InsertTrade`). The incremental writer's correctness depends on that distinction, so it
+  becomes part of the wrapper's signature rather than something a caller re-derives.
+  `InsertTrade` and `InsertLaunchPauseEvent` are converted to the new signature in this task,
+  not left inconsistent with the 16 new ones. `UpsertIndexedBlock` returns
+  `ledger.UpsertResult{Changed bool}`.
 - The incremental projection writer applies a change **only when the event insert genuinely
   added a row**. An idempotent conflict — the identical-payload replay path — must never
   apply a projection delta a second time. This is the single most likely way a replay after
@@ -314,12 +344,85 @@ consumer to fix.
   the same pattern Backend Foundations Tasks 5-7 used, and assert both the rows removed and
   the rows deliberately left intact — `token_metadata` in particular is never touched by a
   rollback (spec §5.2).
+- `internal/ledger` exists and is **governed**, not merely created. `.golangci.yml` gains a
+  strict `ledger-boundary` rule allowing `$gostd` and `github.com/ethereum/go-ethereum/common`
+  and nothing else, so the package cannot quietly acquire `pgx`, `sqlc`, `internal/chain`,
+  `ethclient`, or `internal/store/postgres`. Without this the one package whose entire purpose
+  is to be neutral is the only package in the tree with no boundary enforcing it.
+- Each `ledger.*` input model is cross-checked against **both** its `00003_event_ledger.sql`
+  payload columns and the corresponding struct in `internal/chain/types.go` (Task 2, commit
+  `fd5806c`), and any field present in one and absent from the other is justified in the
+  package doc comment. Task 3 defines these types before Task 4 writes the conversion that
+  consumes them; this check is what keeps that ordering from producing a rework, and it is
+  cheap now that `internal/chain` already exists.
+- The incremental writer applies transfers **one event at a time in canonical order**. No
+  chunk-level netting of holder deltas: the aggregate is not equivalent, because
+  `first_acquired_block_number` depends on the intermediate `0 → nonzero` crossings a netted
+  delta erases.
+- A projection delta that would drive `holder_balances.balance` below zero must surface as a
+  typed invariant error naming the token, holder, and log coordinates — not as a raw
+  `holder_balances_balance_nonnegative` CHECK violation. The abort is correct; an opaque
+  constraint name at three in the morning is not.
+- The incremental candle writer reproduces the rebuild's row-eligibility filter exactly. The
+  oracle bounds its bucketing with `WHERE market.execution_price_wad IS NOT NULL`, and
+  `execution_price_wad` is `trunc(eth_gross * 1e18 / NULLIF(token_amount, 0))` — so a fill
+  with `token_amount = 0` contributes **no** candle row and **no** volume or `trade_count`.
+  An incremental writer that skips this filter diverges from the oracle on exactly the input
+  the oracle discards silently.
+- Within a bucket the incremental writer sets `open_price_wad` **only on insert**, overwrites
+  `close_price_wad` on every application, and takes `greatest`/`least` for high and low —
+  correct only because events arrive in canonical `(block_number, transaction_index,
+  log_index)` order, which the criterion states rather than assumes.
+- The `bucket_start_time` expression has **one source of truth** shared by the incremental
+  writer and `rebuild_token_projections()`. The `'5m'` case in particular is
+  `date_trunc('hour', t) + floor(extract(minute FROM t) / 5) * interval '5 minutes'`, not
+  anything that merely looks equivalent. Either both paths call one `IMMUTABLE` SQL helper, or
+  the duplication is backed by an equivalence test over timestamps that sit exactly on and
+  either side of `1m`/`5m`/`1h`/`1d` bucket edges. Codex picks the mechanism; an unproven
+  second copy of the expression is not an option.
+- For the `dex` leg, the incremental writer selects the pairing `Sync` the way
+  `market_trades` does: the nearest **preceding** `pool_syncs` row *in the same transaction*
+  with a lower `log_index` (`ORDER BY sync.log_index DESC LIMIT 1`), not the pair's latest
+  sync. A multi-hop transaction containing two swaps, each with its own preceding sync, must
+  therefore price each swap against its own sync — and that transaction is part of the
+  differential test's pair-activity scenario. Note also that the lateral join is inner: a swap
+  with no preceding same-transaction sync vanishes from `market_trades` entirely, so the
+  incremental path must drop it too rather than write a candle the rebuild will delete.
+- Chunk boundaries are **block** boundaries, so every log of a block — and therefore every log
+  of a transaction — is applied inside one `WithinTx`. The writer may rely on this for the
+  same-transaction sync lookup above, and on the `DEFERRABLE INITIALLY DEFERRED` FK from
+  `holder_balances` to `tokens` for the constructor's `Transfer(0x0, curve, S)`, which legally
+  precedes the `TokenLaunched` that creates the `tokens` row. A test covers that pair landing
+  in a single transaction.
+- The differential test's four chunk-split arrangements are not free choices: at least one
+  must place a boundary **inside** a `1m` candle bucket (two trades in one bucket, split
+  across two chunks), and at least one must split a token's transfer history across chunks
+  while a holder balance is mid-flight between zero crossings. Four splits that all fall on
+  quiet boundaries prove nothing about the incremental path.
+- Test budget: a single differential scenario runs at most 24 events, four chunk-split
+  arrangements, and at most 32 oracle rebuild calls. The cap bounds one scenario, **not** the
+  scenario list — if a named scenario above cannot be expressed within it, the scenario is
+  split into a second fixture and the cap holds per fixture. Coverage does not yield to the
+  budget.
+- Snapshot comparison reads the values actually stored in PostgreSQL and compares those. No
+  test-side truncation or rounding is applied, `block_time` included — a comparison that
+  normalises before comparing cannot detect the precision loss it normalises away.
+- The conflict-path test covers **all 18** event wrappers, not only the 16 added here. The two
+  that exist today change signature in this task, which re-exposes their column mapping to
+  exactly the mistake the conflict path is meant to catch.
+- The pool constructor defaults to 8 connections with an accepted minimum of 4, and its doc
+  comment states plainly that the indexer's session advisory lock holds one connection for the
+  process's entire lifetime — so the usable pool is one smaller than its configured size, and
+  a minimum of 4 means 3 in practice.
 
 ## Task 4 — Indexer core: ownership, chunk loop, routing, and reorg replay · Risk: high
 
 **Delivers:** `internal/indexer` — singleton ownership, watermark management, the chunk loop
-that turns one processed range into one transaction, two-pass processing, routing of every
-decoded event to a feature ingestion handler through ports defined where they are consumed,
+that turns one processed range into one transaction, two-pass processing, the
+`chain.DecodedLog` → `ledger.*` conversion decision 6 places here (Task 3 defines the target
+types; `chain-boundary`'s strict allowlist forbids `internal/chain` from doing it itself),
+routing of every decoded event to a feature ingestion handler through ports defined where
+they are consumed,
 and the reorg path: parent-hash verification, the walk to the common ancestor, the
 single-transaction rollback and rebuild, and the finality boundary at which the indexer stops
 instead of recovering.
