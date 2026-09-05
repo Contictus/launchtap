@@ -22,26 +22,50 @@
 ## Setup
 
 ```bash
-# to be filled in
+# Contracts (Foundry 1.8.1, solc 0.8.36 pinned in foundry.toml)
+cd contracts && forge install
+
+# Backend (Go 1.26.x, tools below run pinned via `go run`, no local install needed)
+cd backend && go run github.com/go-task/task/v3/cmd/task@v3.53.1 setup
 ```
 
 ## Common commands
 
 | Purpose | Command |
 |---------|---------|
-| Setup   | _(to be filled in)_ |
-| Run     | _(to be filled in)_ |
-| Test    | _(to be filled in)_ |
-| Lint    | _(to be filled in)_ |
-| Build   | _(to be filled in)_ |
+| Setup   | `cd contracts && forge install` · `cd backend && task setup` |
+| Run     | No API/indexer runtime exists yet (that's Plan 2/3). Today's only executable entrypoint is `cd backend && task migrate -- up\|down\|status`. |
+| Test    | `cd contracts && forge test` · `cd backend && task verify` (build, unit/race, integration, lint incl. `gofmt`, migrations up/down/up, sqlc diff, deployment- and curve-vector byte-identical checks — the one reproducible gate, spec §11) |
+| Lint    | `cd backend && task lint` (golangci-lint v2.13.2) · `cd backend && task fmt-check` (gofmt) |
+| Build   | `cd backend && task build` |
+
+`task` above means `go run github.com/go-task/task/v3/cmd/task@v3.53.1` — every backend tool
+(`task`, `golangci-lint`, `sqlc`) is pinned and run via `go run`, never installed globally, so
+CI and any developer machine execute the identical pinned version.
 
 ## Code standards
 
-- _(to be filled in)_
+- Backend: Go 1.26.x, `internal/curve` and `internal/config` are strict stdlib-only
+  (depguard-enforced, see `.golangci.yml`); every on-chain amount is `*big.Int` or Postgres
+  `NUMERIC(78,0)` — never a float.
+- Contracts: Solidity 0.8.36, checked arithmetic only (`Math.tryAdd`/`tryMul`, no `unchecked`
+  outside `ceilDiv`'s already-non-negative subtraction).
+- Migrations, sqlc queries/config, and curve vectors are each single-sourced (`backend/internal/store/postgres/migrations`,
+  `backend/sqlc.yaml`, `contracts/vectors/v1/`) and copied byte-identical, never hand-edited at
+  the copy site — CI fails on drift (`task verify`).
 
 ## Don't / watch out
 
-- _(to be filled in)_
+- Don't add a JSON-schema engine (or any non-stdlib import) to `internal/curve` — it's
+  depguard-locked to `$gostd` and mirrors on-chain math, where a third-party dependency is the
+  wrong trade-off.
+- Don't run `forge fmt`/`gofmt` unscoped across the whole repo — an unscoped Foundry
+  formatter run once reformatted 183 files inside a vendored submodule by accident.
+- Don't edit `AGENTS.md` from Codex's side of the workflow; it's Claude's commit surface (see
+  "Who commits what" below).
+- Taskfile's workspace-local `GOCACHE` override only helps when the shell has no `GOCACHE` set
+  (the realistic "default cache location is inaccessible" case) — it does not override an
+  already-exported, broken `GOCACHE` value in the shell.
 
 ## Working practice — backlog & limit management
 
