@@ -149,7 +149,7 @@ contract GenerateCurveVectors is Script {
     uint16 private constant ENGINE_VERSION = 1;
     uint16 private constant TRADE_FEE_BPS = 100;
     uint16 private constant PROTOCOL_SHARE_BPS = 5000;
-    uint256 private constant CASE_COUNT = 11;
+    uint256 private constant CASE_COUNT = 13;
 
     address private constant CREATOR = address(0xC0FFEE);
     address private constant TREASURY = address(0x7000);
@@ -220,17 +220,19 @@ contract GenerateCurveVectors is Script {
         cases[0] = _buyCase("buy_normal", 1 ether);
         cases[1] = _buyCase("buy_one_wei", 1);
         cases[2] = _buyCase("buy_fee_split_dust", 100);
+        cases[3] = _buyCaseAfterBuy("buy_mid_curve", 1 ether, 0.5 ether);
+        cases[4] = _buyJustBelowGraduationCase();
 
         (, IBondingCurveV1 boundaryCurve) = _newCurve();
         BuyQuote memory boundary = _quoteBuy(boundaryCurve, 10 ether);
-        cases[3] = _buyCase("buy_final_exact", boundary.ethGross);
-        cases[4] = _buyCase("buy_final_refund_and_graduation", 10 ether);
-        cases[5] = _sellCase("sell_normal", false);
-        cases[6] = _sellCase("sell_full", true);
-        cases[7] = _invalidCase(
+        cases[5] = _buyCase("buy_final_exact", boundary.ethGross);
+        cases[6] = _buyCase("buy_final_refund_and_graduation", 10 ether);
+        cases[7] = _sellCase("sell_normal", false);
+        cases[8] = _sellCase("sell_full", true);
+        cases[9] = _invalidCase(
             "invalid_buy_zero_input", "buy", false, 0, ILaunchErrors.ZeroInput.selector, "ZeroInput"
         );
-        cases[8] = _invalidCase(
+        cases[10] = _invalidCase(
             "invalid_sell_zero_input",
             "sell",
             false,
@@ -238,10 +240,10 @@ contract GenerateCurveVectors is Script {
             ILaunchErrors.ZeroInput.selector,
             "ZeroInput"
         );
-        cases[9] = _invalidCase(
+        cases[11] = _invalidCase(
             "invalid_sell_oversell", "sell", false, 1, ILaunchErrors.Oversell.selector, "Oversell"
         );
-        cases[10] = _invalidCase(
+        cases[12] = _invalidCase(
             "invalid_sell_one_wei_zero_output",
             "sell",
             true,
@@ -260,6 +262,29 @@ contract GenerateCurveVectors is Script {
         returns (VectorCase memory vector)
     {
         (, IBondingCurveV1 curve) = _newCurve();
+        return _buyCaseOnCurve(id, curve, suppliedGross);
+    }
+
+    function _buyCaseAfterBuy(string memory id, uint256 initialGross, uint256 suppliedGross)
+        private
+        returns (VectorCase memory vector)
+    {
+        (, IBondingCurveV1 curve) = _newCurve();
+        _executeBuy(curve, initialGross);
+        return _buyCaseOnCurve(id, curve, suppliedGross);
+    }
+
+    function _buyJustBelowGraduationCase() private returns (VectorCase memory vector) {
+        (, IBondingCurveV1 curve) = _newCurve();
+        BuyQuote memory boundary = _quoteBuy(curve, 10 ether);
+        require(boundary.graduates && boundary.refund > 0, "FINAL_BOUNDARY_QUOTE_MISSING");
+        return _buyCaseOnCurve("buy_just_below_graduation", curve, boundary.ethGross - 1);
+    }
+
+    function _buyCaseOnCurve(string memory id, IBondingCurveV1 curve, uint256 suppliedGross)
+        private
+        returns (VectorCase memory vector)
+    {
         vector.id = id;
         vector.operation = "buy";
         vector.initialState = _state(curve);
@@ -447,9 +472,17 @@ contract GenerateCurveVectors is Script {
             _caseJson(cases[7])
         );
         json = string.concat(
-            json, ",", _caseJson(cases[8]), ",", _caseJson(cases[9]), ",", _caseJson(cases[10])
+            json,
+            ",",
+            _caseJson(cases[8]),
+            ",",
+            _caseJson(cases[9]),
+            ",",
+            _caseJson(cases[10]),
+            ",",
+            _caseJson(cases[11])
         );
-        return string.concat(json, "]}");
+        return string.concat(json, ",", _caseJson(cases[12]), "]}");
     }
 
     function _parametersJson() private pure returns (string memory json) {

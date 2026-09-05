@@ -22,13 +22,15 @@ func TestLoadEmbeddedVectors(t *testing.T) {
 	if artifact.Parameters.TotalSupply != "1000000000000000000000000000" {
 		t.Fatalf("TotalSupply = %q", artifact.Parameters.TotalSupply)
 	}
-	if artifact.Cases[0].Input.TokensIn != "0" {
-		t.Fatalf("first TokensIn = %q, want present zero amount", artifact.Cases[0].Input.TokensIn)
+	normalBuy := vectorCaseByID(t, artifact, "buy_normal")
+	if normalBuy.Input.TokensIn != "0" {
+		t.Fatalf("buy_normal TokensIn = %q, want present zero amount", normalBuy.Input.TokensIn)
 	}
-	if artifact.Cases[0].Output == nil || artifact.Cases[0].ExpectedRevert != nil {
-		t.Fatal("first case nullable fields were not preserved")
+	if normalBuy.Output == nil || normalBuy.ExpectedRevert != nil {
+		t.Fatal("buy_normal nullable fields were not preserved")
 	}
-	if artifact.Cases[7].Output != nil || artifact.Cases[7].ExpectedRevert == nil {
+	zeroInputBuy := vectorCaseByID(t, artifact, "invalid_buy_zero_input")
+	if zeroInputBuy.Output != nil || zeroInputBuy.ExpectedRevert == nil {
 		t.Fatal("revert case nullable fields were not preserved")
 	}
 
@@ -84,8 +86,7 @@ func TestLoadVectorsRejectsInvalidArtifacts(t *testing.T) {
 			firstCase(value)["initialState"].(map[string]any)["phase"] = "pending"
 		},
 		"malformed revert hex": func(value map[string]any) {
-			cases := value["cases"].([]any)
-			cases[7].(map[string]any)["expectedRevert"].(map[string]any)["data"] = "0xAB"
+			caseByID(value, "invalid_buy_zero_input")["expectedRevert"].(map[string]any)["data"] = "0xAB"
 		},
 		"trade fee out of range": func(value map[string]any) {
 			value["parameters"].(map[string]any)["tradeFeeBps"] = float64(10000)
@@ -149,6 +150,27 @@ func mutateJSON(t *testing.T, source string, mutate func(map[string]any)) string
 
 func firstCase(value map[string]any) map[string]any {
 	return value["cases"].([]any)[0].(map[string]any)
+}
+
+func caseByID(value map[string]any, id string) map[string]any {
+	for _, item := range value["cases"].([]any) {
+		vectorCase := item.(map[string]any)
+		if vectorCase["id"] == id {
+			return vectorCase
+		}
+	}
+	panic("vector case not found: " + id)
+}
+
+func vectorCaseByID(t *testing.T, artifact VectorArtifact, id string) Case {
+	t.Helper()
+	for _, vectorCase := range artifact.Cases {
+		if vectorCase.ID == id {
+			return vectorCase
+		}
+	}
+	t.Fatalf("vector case %q is missing", id)
+	return Case{}
 }
 
 func TestEmbeddedVectorFileExists(t *testing.T) {
