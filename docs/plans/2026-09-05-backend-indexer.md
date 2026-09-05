@@ -175,6 +175,38 @@ binding on the tasks named beside them.
    outcome, not a leak: it is what lets the creator's description and links re-attach when the
    launch re-lands at a different block.
 
+10. **Ownership and fencing (Tasks 4-5).** A dedicated `pgx.Conn` holds the session
+    advisory lock outside the application pool. Every ingestion, recovery, and aggregation
+    write uses that same connection through `WithinTx`, serialized with its liveness probe.
+    This fences writes by the PostgreSQL session itself: losing the session also aborts its
+    transaction, so a worker cannot keep writing through a different pooled connection while
+    another process owns the lock. The idle probe interval is one second with a two-second
+    timeout; transactions have a thirty-second deadline. Probe failure is fatal, never an
+    automatic reacquisition. The probe bounds detection latency, not a concurrent-writer
+    damage window. Read and notification connections cannot write canonical state.
+11. **Aggregate rollback (Tasks 4-5).** In the recovery transaction, delete affected
+    `token_stats` rows, rebuild surviving token projections, and retain their dirty markers.
+    Recompute affected UTC protocol days and all-time protocol totals from the surviving
+    ledger before committing recovery. Tokens whose launches disappeared lose their chain
+    projections and aggregates, but retain metadata. On its next calculation the token
+    aggregator seeds ATH from the maximum surviving candle high, floored at the launch
+    opening price, with the timestamp of that surviving maximum. Normal updates remain
+    monotonic; rollback deliberately resets the historical maximum. Aggregation writes and
+    claim completion share a transaction and ownership serialization with recovery, so an
+    old calculation cannot republish orphan data after recovery.
+12. **Durable work backstop (Task 5).** Commit `LISTEN`, drain the dirty snapshot, then
+    combine notification wakeups with a five-second poll of every eligible dirty row for
+    the active chain. Claims expire after a configurable lease (default thirty seconds).
+    Notifications are hints; a commit followed by a process crash before NOTIFY still gets
+    processed without another token event. Tests suppress notifications entirely and prove
+    processing and crashed-claim recovery. A notification failure is observable but does
+    not invalidate the preceding successful commit.
+13. **Failure and scope (Tasks 4-5).** Unknown transaction outcomes produce unhealthy
+    state and exit code 1, including during shutdown; only a known settled shutdown exits 0.
+    Stored candle intervals remain `1m`, `5m`, `1h`, `1d`; `6h`/`all` read composition belongs
+    to Plan 3. Anvil CI deploys the complete local contract stack using pinned Foundry,
+    explicit readiness checks and deadlines, and fails if its end-to-end test did not run.
+
 ## Task 1 — Chain operability prerequisites · Risk: high
 
 **Delivers:** measured, recorded answers to the two `backlog.md` items that gate an indexer
@@ -467,8 +499,8 @@ constructor, adapter methods, `queries/*.sql`, regenerated `sqlc/`),
   exactly the mistake the conflict path is meant to catch.
 - The pool constructor defaults to 8 connections with an accepted minimum of 4, and its doc
   comment states plainly that the indexer's session advisory lock holds one connection for the
-  process's entire lifetime — so the usable pool is one smaller than its configured size, and
-  a minimum of 4 means 3 in practice.
+  process's entire lifetime on a separate `pgx.Conn`, outside the pool. All configured pool
+  connections remain available; pool lifetime and idle policies cannot retire ownership.
 
 ## Task 4 — Indexer core: ownership, chunk loop, routing, and reorg replay · Risk: high
 
