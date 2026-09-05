@@ -243,7 +243,7 @@ trigger.
 ## Task 3 — Store completion, incremental projections, and rollback SQL · Risk: high
 
 **Delivers:** the persistence surface Backend Foundations deliberately left unbuilt because it
-had no consumer — a `pgxpool` constructor, idempotent insert wrappers for the remaining 15
+had no consumer — a `pgxpool` constructor, idempotent insert wrappers for the remaining 16
 event tables, the transactional incremental projection writer that decision 1 locks as the
 ingestion path, the differential test that proves it equivalent to
 `rebuild_token_projections()`, and the reorg SQL whose parameter shape was left for its Plan 2
@@ -257,8 +257,10 @@ consumer to fix.
 - A pool constructor returns the `*pgxpool.Pool` that `WithinTx` requires. `Open` returning
   `*sql.DB` stays as it is and remains the migration runner's entry point — the two are not
   merged, and the pool is never used to run migrations.
-- Insert queries and idempotent adapter wrappers exist for the 15 event tables that lack
-  them, each one copying the proven `trades` / `launch_pause_events` pattern verbatim in
+- Insert queries and idempotent adapter wrappers exist for the 16 event tables that lack
+  them — §5.1 defines 18 event tables and only `trades` and `launch_pause_events` are
+  covered today, `indexed_blocks` being the block ledger rather than an event table — each
+  one copying the proven `trades` / `launch_pause_events` pattern verbatim in
   shape: `ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING`, re-read on conflict,
   compare every payload column, identical is silent success, different is
   `*InvariantConflictError` (spec §2.6). No wrapper opens, commits, or rolls back a
