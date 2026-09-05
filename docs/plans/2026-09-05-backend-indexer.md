@@ -3,10 +3,11 @@
 > **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
 > and independent review. This is an implementation task list, not implementation code.
 
-**Status:** Written, not started. No task may begin before its Claude pre-flight closes the
-decisions listed under "Decisions to lock in pre-flight". Task 1 additionally gates the whole
-plan: if the active provider cannot supply a usable `safe` tag, that is a launch blocker to
-raise before Task 5's architecture, not a runtime patch (`backlog.md`, spec §4.1).
+**Status:** Written, not started. The five cross-cutting decisions under "Locked decisions"
+are closed and binding; each task still takes its own pre-flight for the criteria below it.
+Task 1 gates the whole plan: if the active provider cannot supply a usable `safe` tag, that is
+a launch blocker to raise before Task 5's architecture, not a runtime patch (`backlog.md`,
+spec §4.1).
 
 **Goal:** Turn the Backend Foundations substrate into a running chain ingestion service —
 RPC access, staged log discovery, event decoding and routing, transactional canonical writes,
@@ -72,38 +73,44 @@ integration test.
 Every task in this plan is `high`. Each one lands squarely in `AGENTS.md`'s near-mandatory
 list — indexer/reorg handling, transaction lifecycle, concurrency, critical infrastructure.
 
-## Decisions to lock in pre-flight
+## Locked decisions
 
 Backend Foundations was written after its spec sections closed, so its acceptance criteria
-were already locked. This plan is written before its pre-flights, and the spec deliberately
-left the following open — each names the task that must not start until it is decided.
+were already locked. This plan was written before its pre-flights; the five decisions the
+spec deliberately left open were resolved in the Claude↔Codex pre-flight round and are now
+binding on the tasks named beside them.
 
-1. **Projection write path (Tasks 4-7, the load-bearing one).** Spec §5.2 says projections
-   are updated transactionally alongside ingestion *and* are fully rebuildable. Read
-   literally that is two implementations of one piece of logic — an incremental writer in Go
-   and the existing `rebuild_token_projections()` in PL/pgSQL — which can drift, in precisely
-   the code path that exists to recover from failure. **Recommendation:** ingestion calls
-   `rebuild_token_projections()` once per token touched by the chunk, inside the chunk's own
-   transaction. One implementation, no drift, and `candles` come free because the function
-   already rebuilds them. The cost is a per-token full recompute per chunk; if that is ever
-   measured to be too slow, an incremental fast path can be added later with the existing
-   recompute as its test oracle. Rejecting this recommendation means Task 4 must instead
-   specify how the two implementations are proven equivalent.
-2. **Event ABI copy location and drift-gate name (Task 2).** Which directory under `backend/`
-   holds the byte-identical `contracts/abi/v1/**` copy, and what the Taskfile target is
-   called, following the `curve-vectors-diff` / `deployments-diff` precedents.
-3. **Reorg identity (Task 6).** Spec §12 requires a "reorg id" in structured logs and "last
-   reorg depth/time" in health, but defines no table or column. Decide: process-local
-   identifier plus in-memory last-reorg summary, or a persisted reorg table. A persisted
-   table is the only option that survives a restart, and health is read by an operator after
-   exactly the kind of incident that restarts the process.
-4. **Address-filter partition configuration (Task 3).** Spec §10 says this value is
-   "introduced with the indexer plan" but does not name it. Its default comes from Task 1's
-   measurement, not from a guess.
-5. **`RPC_URL` scheme allowlist (Task 3).** `internal/config` accepts only `http`/`https`
-   today, so a WebSocket subscription is currently unreachable. Decide whether this plan polls
-   over HTTP only — in which case the allowlist stays as is and the poll interval becomes a
-   new config value — or admits `ws`/`wss`.
+1. **Projection write path — transactional incremental writer (Tasks 4-7).** Ingestion writes
+   projections incrementally inside the chunk transaction. `rebuild_token_projections()` is
+   *not* the ingestion path; it stays the reorg-recovery primitive, the reconciliation sweep's
+   worker, and the differential-test oracle that keeps the incremental writer honest.
+   Claude's initial recommendation — call the rebuild per touched token per chunk, buying
+   single-implementation safety — was **rejected on the merits by Codex and the rejection is
+   correct**: the function deletes and rebuilds a token's entire `holder_balances` from its
+   full transfer history and its entire `candles` set from its full `market_trades` history
+   (a four-interval `CROSS JOIN` over a view that itself laterally joins `pool_syncs`). A hot
+   token touched in every chunk therefore costs H₁ + H₂ + … + Hₙ — quadratic in its own
+   history — and, because the rebuild sits inside the chunk transaction, the observed
+   watermark cannot advance until it finishes, so ingestion lag grows independently of RPC
+   speed. The repeated DELETE/INSERT churn also costs WAL volume, dead tuples, and autovacuum
+   pressure. This is a structural property of the function as written, not a hypothetical
+   that "measure it first" can defer. Equivalence is therefore bought by test rather than by
+   construction — see Task 4.
+2. **Event ABI copy location and drift gate (Task 2).** The byte-identical copy of
+   `contracts/abi/v1/**` lives at `backend/internal/chain/abi/v1/`, with Taskfile targets
+   `event-abis-sync` and `event-abis-diff`, matching the `curve-vectors-sync` /
+   `curve-vectors-diff` pair.
+3. **Reorg identity — persisted (Task 6).** A durable `indexer_reorgs` table, not a
+   process-local identifier. The detection record is persisted **before** the recovery
+   transaction opens, so a rollback or rebuild that itself fails does not also lose its own
+   audit record — which is exactly the incident an operator reads health after. This is the
+   one piece of new schema Plan 2 adds (migration `00005`).
+4. **Address-filter partition configuration (Task 3).** `INDEXER_LOG_ADDRESS_BATCH_SIZE`. Its
+   default comes from Task 1's measurement, not from a guess.
+5. **`RPC_URL` scheme allowlist — unchanged (Task 3).** `http`/`https` only. Head tracking
+   polls; WebSocket reconnect and subscription lifecycle are error surface this plan does not
+   need. A subscription may be added later as a *latency hint only* — never as a finality
+   source, which stays the `safe`/`finalized` tag reads.
 
 ## Task 1 — Chain operability prerequisites · Risk: high
 
@@ -162,9 +169,10 @@ payload columns.
   contracts side — the repo has none today, and `IUniswapV2Pair.sol` is a function-only
   interface. It is generated or transcribed once, reviewed, and then treated exactly like
   `ILaunchEvents.json`: authoritative, and never re-derived at decode time.
-- `contracts/abi/v1/**` is copied byte-identical into `backend/`, with a Taskfile target that
-  fails on any difference, folded into `task verify` alongside the existing
-  `curve-vectors-diff` and `deployments-diff` checks. The copy is never hand-edited.
+- `contracts/abi/v1/**` is copied byte-identical into `backend/internal/chain/abi/v1/` by
+  `task event-abis-sync`, and `task event-abis-diff` fails on any difference, folded into
+  `task verify` alongside the existing `curve-vectors-diff` and `deployments-diff` checks.
+  The copy is never hand-edited.
 - Decoders exist for the 13 `ILaunchEvents` events, ERC-20 `Transfer`, and the four pair
   events, and each one's output fields correspond exactly to its ledger table's payload
   columns as listed in spec §5.1 — a decoder that produces a field the table has no column
@@ -214,7 +222,8 @@ verification), `backend/internal/config/` (the new indexer runtime values).
 - The address filter set is dynamic and grows by three addresses per launch. Neither the
   token nor the curve address is CREATE2-derivable — both use plain `CREATE` — so discovery
   is the only way they are learned, and no code path attempts to precompute them.
-- Chunk size and address-filter partition size come from configuration seeded by Task 1's
+- Chunk size (`INDEXER_CHUNK_SIZE`) and address-filter partition size
+  (`INDEXER_LOG_ADDRESS_BATCH_SIZE`, new) come from configuration seeded by Task 1's
   measurements, never from hard-coded provider numbers. Adaptive shrinking handles range and
   response-size errors, and a test proves the final routed log order is identical whether or
   not shrinking occurred — shrinking changes request shape, never event order (spec §4.3).
@@ -226,10 +235,12 @@ verification), `backend/internal/config/` (the new indexer runtime values).
   validated only their shape and performed no RPC call; this is where that check becomes real.
 - CREATE2 pair-address reproduction from `PairInitCodeHash`, `UniV2Factory`, and the sorted
   `(token, weth)` pair matches what the chain reports, and a mismatch is fatal (spec §3.3).
-- The new configuration values — poll interval, RPC timeout and retry policy, address-filter
-  partition size, and the indexer worker identifier — are validated in `internal/config` under
-  its existing stdlib-only, no-`os` constraint, with `RequireIndexer()` mirroring the existing
-  `RequireAPI()`.
+- The new configuration values — poll interval, RPC timeout and retry policy,
+  `INDEXER_LOG_ADDRESS_BATCH_SIZE`, and the indexer worker identifier — are validated in
+  `internal/config` under its existing stdlib-only, no-`os` constraint, with
+  `RequireIndexer()` mirroring the existing `RequireAPI()`. `RPC_URL`'s scheme allowlist stays
+  `http`/`https`: head tracking polls, and a WebSocket subscription is deliberately out of
+  scope for this plan.
 - Tests run against a fake RPC server, not a live provider, so the suite stays hermetic; the
   live provider is exercised only in Task 8's acceptance run.
 
@@ -237,7 +248,10 @@ verification), `backend/internal/config/` (the new indexer runtime values).
 
 **Delivers:** the persistence surface Backend Foundations deliberately left unbuilt because it
 had no consumer — a `pgxpool` constructor, idempotent insert wrappers for the remaining 15
-event tables, and the reorg SQL whose parameter shape was left for its Plan 2 consumer to fix.
+event tables, the transactional incremental projection writer that decision 1 locks as the
+ingestion path, the differential test that proves it equivalent to
+`rebuild_token_projections()`, and the reorg SQL whose parameter shape was left for its Plan 2
+consumer to fix.
 
 **Depends on:** Task 1.
 
@@ -258,6 +272,37 @@ event tables, and the reorg SQL whose parameter shape was left for its Plan 2 co
 - `sqlc diff` is clean, and every new query's generated params struct is field-identical to
   the hand-written adapter type it converts from, so a future column reordering breaks the
   build rather than silently mismapping.
+- Every idempotent insert wrapper **reports whether it actually inserted a row**, not just
+  whether it errored. Today's wrappers have the `:execrows` count in hand and discard it,
+  returning bare `error` (`adapter.go`, `InsertTrade`). The incremental writer's correctness
+  depends on that distinction, so it becomes part of the wrapper's signature rather than
+  something a caller re-derives.
+- The incremental projection writer applies a change **only when the event insert genuinely
+  added a row**. An idempotent conflict — the identical-payload replay path — must never
+  apply a projection delta a second time. This is the single most likely way a replay after
+  an ambiguous commit outcome (spec §2.4) silently corrupts a balance, and it is tested
+  directly, not left to inspection.
+- `holder_balances.first_acquired_block_number` follows spec §5.2 under incremental
+  application: set on a `0 → nonzero` transition, left unchanged across nonzero-to-nonzero
+  transfers, and reset to `NULL` when the balance returns to `0`. It is the field most likely
+  to diverge from the SQL rebuild's windowed fold, so the differential test's coverage of it
+  is explicit rather than incidental.
+- `token_reserves` stays one latest-only row per token, and the incremental writer resolves
+  "latest" by the same `(block_number, transaction_index, log_index)` ordering the rebuild
+  uses, across both `reserve_source` legs — a `Trade`'s reserves for `'curve'`, a
+  `pool_syncs` row's mapped through `tokens.token_is_token0` for `'pair'` (spec §5.2).
+- A differential test proves the incremental writer and `rebuild_token_projections()` agree:
+  the same canonical event sequence is driven through the incremental path; after each chunk,
+  `tokens`, `token_reserves`, `holder_balances`, and `candles` are snapshotted; the rebuild is
+  then run for the same token; and the two snapshots must be identical row-for-row in a
+  deterministic order, nullable columns included. `aggregation_dirty.generation` is excluded
+  from the comparison and asserted separately — it is drawn from a global sequence, so the
+  two paths can never produce equal values, only equal dirtiness.
+- That differential test covers, at minimum: different chunk boundary splits over the same
+  event sequence; duplicate replay and ambiguous-commit repetition; graduation; post-graduation
+  pair activity; and the ledger history that survives a reorg. Passing on one tidy sequence is
+  not sufficient — the writer must agree with the oracle under the splits and repeats
+  production will actually produce.
 - The reorg primitives exist as raw SQL designed with this plan's consumer, as spec §2.6
   said they would be: a common-ancestor walk over `indexed_blocks` driven by the candidate
   hashes the detector actually holds, deletion of canonical event rows above the ancestor,
@@ -333,7 +378,8 @@ the finality boundary at which the indexer stops instead of recovering.
 **Depends on:** Task 5.
 
 **Files:** `backend/internal/indexer/` (detector and replay), `backend/internal/chain/`
-(header walk support), `backend/internal/store/postgres/postgrestest/`.
+(header walk support), `backend/internal/store/postgres/migrations/00005_indexer_reorgs.sql`
+(new), `backend/internal/store/postgres/postgrestest/`.
 
 **Acceptance criteria:**
 
@@ -358,8 +404,17 @@ the finality boundary at which the indexer stops instead of recovering.
 - Safe and finalized promotion first verifies that the node-reported hashes match
   `indexed_blocks`, and a promotion whose hash disagrees is treated as a reorg signal rather
   than written through (spec §4.2).
-- The reorg identity decided in pre-flight is emitted in structured logs and surfaced in
-  health as last reorg depth and time (spec §12).
+- Migration `00005` adds a durable `indexer_reorgs` table — the only new schema in this plan.
+  The detection record is written and **committed before the recovery transaction opens**, so
+  a rollback or rebuild that itself fails cannot also erase its own audit record. Each row
+  carries enough to reconstruct the incident without the logs: chain and deployment, the
+  detected tip and the common ancestor, the resulting depth, detection time, and an outcome
+  that distinguishes recovered from still-open. A row left un-outcomed after a restart is a
+  signal an operator must see, not a bug in the writer.
+- The reorg id, depth, and time are emitted in structured logs and surfaced in health as last
+  reorg depth and time, read from that table so they survive the restart the incident may
+  well have caused (spec §12).
+- Migrations still run up/down/up cleanly with the new file, and `sqlc diff` stays clean.
 - Tests cover a shallow reorg above the safe head, a deep multi-block reorg, a reorg whose
   ancestor lies at the safe boundary, and finality promotion — four of the seven indexer
   dimensions spec §11 names, with the remaining three covered by Tasks 3 and 8.
@@ -400,10 +455,11 @@ crashed-worker recovery, the computation of `token_stats`, `protocol_daily`, and
 - `protocol_daily` is keyed by a UTC-anchored `DATE` — one row per calendar day, never an
   intraday bucket — and `protocol_stats` holds one row per chain with `trades_all_time` as
   `BIGINT` (spec §5.5).
-- Candles are read from the `market_trades` view using `execution_price_wad`, never
-  `spot_price_wad`; `6h` and `all` are computed on read from the stored `1h`/`1d` rows and are
-  never stored (spec §5.3, §5.5). Full candle recomputation already lives in
-  `rebuild_token_projections()` and is reused rather than reimplemented.
+- Candles use `execution_price_wad`, never `spot_price_wad`; `6h` and `all` are computed on
+  read from the stored `1h`/`1d` rows and are never stored (spec §5.3, §5.5). Live candle
+  rows are written by Task 4's incremental writer during ingestion; this task's reconciliation
+  sweep repairs them through `rebuild_token_projections()` rather than reimplementing the
+  recomputation.
 - The periodic reconciliation sweep rebuilds recent buckets and any projection a reorg
   touched, so a lost notification or a crash mid-aggregation self-heals without operator
   action (spec §6).
