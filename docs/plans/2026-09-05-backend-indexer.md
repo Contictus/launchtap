@@ -6,7 +6,7 @@
 **Status:** Written, not started. The five cross-cutting decisions under "Locked decisions"
 are closed and binding; each task still takes its own pre-flight for the criteria below it.
 Task 1 gates the whole plan: if the active provider cannot supply a usable `safe` tag, that is
-a launch blocker to raise before Task 5's architecture, not a runtime patch (`backlog.md`,
+a launch blocker to raise before Task 4's architecture, not a runtime patch (`backlog.md`,
 spec §4.1).
 
 **Goal:** Turn the Backend Foundations substrate into a running chain ingestion service —
@@ -29,6 +29,13 @@ golangci-lint v2.13.2, testcontainers-go, `postgres:18.6-alpine`), plus go-ether
 `ethclient` and `accounts/abi` — already a direct dependency, so far used only for
 `common.Address`/`common.Hash` value types — and Foundry 1.8.1 Anvil for the end-to-end
 integration test.
+
+**Granularity:** five deliberately coarse tasks. Tasks 4 and 5 each carry enough change that
+`AGENTS.md`'s `task/<slug>` short-lived branch — reserved for a high-risk task whose change is
+large or uncertain — is the expected path for them rather than the exception. Coarse tasks do
+not mean coarse review: each still takes a full pre-flight and a full independent commit
+review, and a task may be split during its pre-flight if the review surface turns out larger
+than the criteria below suggest.
 
 ## Global constraints
 
@@ -80,7 +87,7 @@ were already locked. This plan was written before its pre-flights; the five deci
 spec deliberately left open were resolved in the Claude↔Codex pre-flight round and are now
 binding on the tasks named beside them.
 
-1. **Projection write path — transactional incremental writer (Tasks 4-7).** Ingestion writes
+1. **Projection write path — transactional incremental writer (Tasks 3-5).** Ingestion writes
    projections incrementally inside the chunk transaction. `rebuild_token_projections()` is
    *not* the ingestion path; it stays the reorg-recovery primitive, the reconciliation sweep's
    worker, and the differential-test oracle that keeps the incremental writer honest.
@@ -95,19 +102,19 @@ binding on the tasks named beside them.
    speed. The repeated DELETE/INSERT churn also costs WAL volume, dead tuples, and autovacuum
    pressure. This is a structural property of the function as written, not a hypothetical
    that "measure it first" can defer. Equivalence is therefore bought by test rather than by
-   construction — see Task 4.
+   construction — see Task 3.
 2. **Event ABI copy location and drift gate (Task 2).** The byte-identical copy of
    `contracts/abi/v1/**` lives at `backend/internal/chain/abi/v1/`, with Taskfile targets
    `event-abis-sync` and `event-abis-diff`, matching the `curve-vectors-sync` /
    `curve-vectors-diff` pair.
-3. **Reorg identity — persisted (Task 6).** A durable `indexer_reorgs` table, not a
+3. **Reorg identity — persisted (Task 4).** A durable `indexer_reorgs` table, not a
    process-local identifier. The detection record is persisted **before** the recovery
    transaction opens, so a rollback or rebuild that itself fails does not also lose its own
    audit record — which is exactly the incident an operator reads health after. This is the
    one piece of new schema Plan 2 adds (migration `00005`).
-4. **Address-filter partition configuration (Task 3).** `INDEXER_LOG_ADDRESS_BATCH_SIZE`. Its
+4. **Address-filter partition configuration (Task 2).** `INDEXER_LOG_ADDRESS_BATCH_SIZE`. Its
    default comes from Task 1's measurement, not from a guess.
-5. **`RPC_URL` scheme allowlist — unchanged (Task 3).** `http`/`https` only. Head tracking
+5. **`RPC_URL` scheme allowlist — unchanged (Task 2).** `http`/`https` only. Head tracking
    polls; WebSocket reconnect and subscription lifecycle are error surface this plan does not
    need. A subscription may be added later as a *latency hint only* — never as a finality
    source, which stays the `safe`/`finalized` tag reads.
@@ -131,11 +138,11 @@ chain-46630 deployment manifest that replaces today's fail-closed disabled marke
   max addresses per filter. Measured numbers are committed to the operations note with the
   date and provider they were taken against; they are never embedded in code as provider
   constants (spec §4.3).
-- Those measurements set the defaults for `INDEXER_CHUNK_SIZE`, the address-filter partition
-  size, the runtime finality configuration, and the health lag thresholds — each default
-  traceable to a specific measured number rather than chosen by feel.
+- Those measurements set the defaults for `INDEXER_CHUNK_SIZE`,
+  `INDEXER_LOG_ADDRESS_BATCH_SIZE`, the runtime finality configuration, and the health lag
+  thresholds — each default traceable to a specific measured number rather than chosen by feel.
 - A provider that cannot supply a usable `safe` tag stops this plan and is escalated as a
-  launch blocker before Task 5 is designed. Falling back to a fixed confirmation count on a
+  launch blocker before Task 4 is designed. Falling back to a fixed confirmation count on a
   non-`local` deployment is not an acceptable resolution (`backlog.md`, spec §4.1).
 - The testnet manifest names a verified official WETH + Uniswap v2 stack on chain 46630,
   or a project-owned one deployed for this purpose; mainnet addresses are never substituted,
@@ -147,21 +154,25 @@ chain-46630 deployment manifest that replaces today's fail-closed disabled marke
   `ErrDeploymentDisabled`, and the backend copy passes `task deployments-diff`.
 - Both `backlog.md` items are updated to name this task as their owner and are moved to
   `Done` only when the manifest is committed and the probe note is written — not before.
-- Tasks 2-7 depend only on the probe half of this task. Only Task 8's testnet acceptance run
-  depends on the manifest half, so a slow external deployment does not block backend work.
+- Only the probe half gates other work: Task 2 needs its measured defaults, and Task 3 needs
+  nothing from this task at all. Only Task 5's testnet acceptance run depends on the manifest
+  half, so a slow external deployment never blocks backend implementation.
 
-## Task 2 — Event ABI artifacts and log decoding · Risk: high
+## Task 2 — Chain access: event ABIs, decoding, and staged log discovery · Risk: high
 
-**Delivers:** a single-sourced event ABI artifact set covering every log the indexer must
-read, and the pure decoding half of `internal/chain` — topic-to-typed-value decoders for all
-18 event types, producing Go values that map one-to-one onto the canonical ledger tables'
-payload columns.
+**Delivers:** the whole of `internal/chain` — a single-sourced event ABI artifact set,
+topic-to-typed-value decoders for all 18 event types, a typed RPC client over go-ethereum's
+`ethclient` covering headers, code, and logs, the three finality head reads, the five-stage
+per-chunk log discovery sequence with adaptive shrinking and address-filter partitioning, and
+the two startup verification helpers spec §3.3 explicitly deferred to indexer startup.
 
-**Depends on:** Task 1.
+**Depends on:** Task 1's probe half.
 
-**Files:** `contracts/abi/v1/` (a new pair-event artifact),
-`backend/internal/chain/` (new package: ABI registry and decoders, plus their testdata copy),
-`backend/Taskfile.yml`, `.github/workflows/backend.yml` if the gate needs a path trigger.
+**Files:** `contracts/abi/v1/` (a new pair-event artifact), `backend/internal/chain/` (new
+package: ABI registry, decoders, RPC client, head reads, log discovery, startup verification,
+plus the byte-identical ABI copy), `backend/internal/config/` (the new indexer runtime
+values), `backend/Taskfile.yml`, `.github/workflows/backend.yml` if the gate needs a path
+trigger.
 
 **Acceptance criteria:**
 
@@ -195,21 +206,6 @@ payload columns.
 - Every decode test fixture originates from Foundry output. No human-, Claude-, or
   Codex-authored log payload is accepted as an authoritative fixture, matching the rule
   Backend Foundations Task 10 established for curve vectors.
-
-## Task 3 — RPC client, head tracking, and staged log discovery · Risk: high
-
-**Delivers:** the network half of `internal/chain` — a typed RPC client over go-ethereum's
-`ethclient` covering headers, code, and logs; the three finality head reads; the five-stage
-per-chunk log discovery sequence with adaptive shrinking and address-filter partitioning; and
-the two startup verification helpers spec §3.3 explicitly deferred to indexer startup.
-
-**Depends on:** Task 1.
-
-**Files:** `backend/internal/chain/` (client, head reads, log discovery, startup
-verification), `backend/internal/config/` (the new indexer runtime values).
-
-**Acceptance criteria:**
-
 - The client reads headers by number and by the `latest`, `safe`, and `finalized` tags, and
   reports a provider's lack of `safe`/`finalized` support as a typed error the runtime can
   fail startup on, rather than silently degrading (spec §4.1).
@@ -242,9 +238,9 @@ verification), `backend/internal/config/` (the new indexer runtime values).
   `http`/`https`: head tracking polls, and a WebSocket subscription is deliberately out of
   scope for this plan.
 - Tests run against a fake RPC server, not a live provider, so the suite stays hermetic; the
-  live provider is exercised only in Task 8's acceptance run.
+  live provider is exercised only in Task 5's acceptance run.
 
-## Task 4 — Store completion for ingestion and rollback · Risk: high
+## Task 3 — Store completion, incremental projections, and rollback SQL · Risk: high
 
 **Delivers:** the persistence surface Backend Foundations deliberately left unbuilt because it
 had no consumer — a `pgxpool` constructor, idempotent insert wrappers for the remaining 15
@@ -252,8 +248,6 @@ event tables, the transactional incremental projection writer that decision 1 lo
 ingestion path, the differential test that proves it equivalent to
 `rebuild_token_projections()`, and the reorg SQL whose parameter shape was left for its Plan 2
 consumer to fix.
-
-**Depends on:** Task 1.
 
 **Files:** `backend/internal/store/postgres/` (pool constructor, adapter methods,
 `queries/*.sql`, regenerated `sqlc/`), `backend/internal/store/postgres/postgrestest/`.
@@ -319,17 +313,22 @@ consumer to fix.
   the rows deliberately left intact — `token_metadata` in particular is never touched by a
   rollback (spec §5.2).
 
-## Task 5 — Indexer core: ownership, chunk loop, and event routing · Risk: high
+## Task 4 — Indexer core: ownership, chunk loop, routing, and reorg replay · Risk: high
 
 **Delivers:** `internal/indexer` — singleton ownership, watermark management, the chunk loop
-that turns one processed range into one transaction, two-pass processing, and routing of every
-decoded event to a feature ingestion handler through ports defined where they are consumed.
+that turns one processed range into one transaction, two-pass processing, routing of every
+decoded event to a feature ingestion handler through ports defined where they are consumed,
+and the reorg path: parent-hash verification, the walk to the common ancestor, the
+single-transaction rollback and rebuild, and the finality boundary at which the indexer stops
+instead of recovering.
 
-**Depends on:** Tasks 2, 3, and 4.
+**Depends on:** Tasks 2 and 3.
 
 **Files:** `backend/internal/indexer/` (new), `backend/internal/launch/`,
 `backend/internal/trading/`, `backend/internal/holder/`, `backend/internal/token/` (ingestion
-ports and handlers), `backend/internal/store/postgres/` (port implementations).
+ports and handlers), `backend/internal/store/postgres/` (port implementations),
+`backend/internal/store/postgres/migrations/00005_indexer_reorgs.sql` (new),
+`backend/internal/store/postgres/postgrestest/`.
 
 **Acceptance criteria:**
 
@@ -368,21 +367,6 @@ ports and handlers), `backend/internal/store/postgres/` (port implementations).
   parameter snapshot could change it (spec §4.3).
 - Startup with an `engine_version` the ABI registry does not know fails fatally rather than
   decoding on a best-effort basis (spec §4.4).
-
-## Task 6 — Reorg detection and replay · Risk: high
-
-**Delivers:** the running counterpart to Backend Foundations' rollback primitives — parent-hash
-verification, the walk to the common ancestor, the single-transaction rollback and rebuild, and
-the finality boundary at which the indexer stops instead of recovering.
-
-**Depends on:** Task 5.
-
-**Files:** `backend/internal/indexer/` (detector and replay), `backend/internal/chain/`
-(header walk support), `backend/internal/store/postgres/migrations/00005_indexer_reorgs.sql`
-(new), `backend/internal/store/postgres/postgrestest/`.
-
-**Acceptance criteria:**
-
 - Before extending the observed chain, the new header's parent hash is verified against the
   stored tip. On mismatch the indexer walks stored block hashes and RPC headers backward to
   the common ancestor; the walk terminates when no stored row matches a given hash, which is
@@ -392,8 +376,9 @@ the finality boundary at which the indexer stops instead of recovering.
   projections are rebuilt from surviving canonical events, then every affected watermark is
   reset. A partial rollback is never committed (spec §4.2).
 - Rebuild is a full recompute of an affected token's projections from its complete surviving
-  event history, never an incremental undo — the failure path is the worst place to run the
-  more failure-prone algorithm (spec §5.2).
+  event history via `rebuild_token_projections()`, never an incremental undo — the failure
+  path is the worst place to run the more failure-prone algorithm (spec §5.2). This is the
+  primitive's purpose; it is deliberately not the ingestion path (decision 1).
 - Mutable state is proven to roll back, not just event rows: a test drives a reorg that
   changes `tokens.phase`, `token_reserves`, `holder_balances`, and `candles`, and asserts each
   returns to the value implied by the surviving ledger. `token_metadata` is asserted unchanged
@@ -411,24 +396,25 @@ the finality boundary at which the indexer stops instead of recovering.
   detected tip and the common ancestor, the resulting depth, detection time, and an outcome
   that distinguishes recovered from still-open. A row left un-outcomed after a restart is a
   signal an operator must see, not a bug in the writer.
-- The reorg id, depth, and time are emitted in structured logs and surfaced in health as last
-  reorg depth and time, read from that table so they survive the restart the incident may
-  well have caused (spec §12).
 - Migrations still run up/down/up cleanly with the new file, and `sqlc diff` stays clean.
 - Tests cover a shallow reorg above the safe head, a deep multi-block reorg, a reorg whose
   ancestor lies at the safe boundary, and finality promotion — four of the seven indexer
-  dimensions spec §11 names, with the remaining three covered by Tasks 3 and 8.
+  dimensions spec §11 names, with the remaining three covered by Tasks 2 and 5.
 
-## Task 7 — Aggregation workers and derived market state · Risk: high
+## Task 5 — Aggregation, runtime, observability, and verification gate · Risk: high
 
-**Delivers:** the aggregation half of `cmd/indexer` — the durable dirty-work loop, its
+**Delivers:** the rest of the running process — the durable dirty-work loop with its
 crashed-worker recovery, the computation of `token_stats`, `protocol_daily`, and
-`protocol_stats`, and the periodic reconciliation sweep.
+`protocol_stats`, the periodic reconciliation sweep, `cmd/indexer` itself, the health and
+logging surface spec §12 mandates, an Anvil-backed end-to-end test covering every indexer
+dimension spec §11 names, and the real Robinhood testnet acceptance run that closes this
+milestone.
 
-**Depends on:** Task 5.
+**Depends on:** Tasks 1 and 4.
 
 **Files:** `backend/internal/candle/`, `backend/internal/stats/`, `backend/internal/indexer/`
-(worker orchestration), `backend/internal/store/postgres/`.
+(worker orchestration), `backend/internal/store/postgres/`, `backend/cmd/indexer/` (new),
+`backend/Taskfile.yml`, `.github/workflows/backend.yml`.
 
 **Acceptance criteria:**
 
@@ -457,7 +443,7 @@ crashed-worker recovery, the computation of `token_stats`, `protocol_daily`, and
   `BIGINT` (spec §5.5).
 - Candles use `execution_price_wad`, never `spot_price_wad`; `6h` and `all` are computed on
   read from the stored `1h`/`1d` rows and are never stored (spec §5.3, §5.5). Live candle
-  rows are written by Task 4's incremental writer during ingestion; this task's reconciliation
+  rows are written by Task 3's incremental writer during ingestion; this task's reconciliation
   sweep repairs them through `rebuild_token_projections()` rather than reimplementing the
   recomputation.
 - The periodic reconciliation sweep rebuilds recent buckets and any projection a reorg
@@ -471,17 +457,6 @@ crashed-worker recovery, the computation of `token_stats`, `protocol_daily`, and
 - USD columns remain NULL. The ETH/USD source is a separate, non-blocking backlog item, and
   its absence must not affect indexing, list correctness, or any ETH-denominated value
   (spec §5.4, `backlog.md`).
-
-## Task 8 — Indexer runtime, observability, and verification gate · Risk: high
-
-**Delivers:** `cmd/indexer` as a running process, the health and logging surface spec §12
-mandates, an Anvil-backed end-to-end test covering every indexer dimension spec §11 names, and
-the real Robinhood testnet acceptance run that closes this milestone.
-
-**Depends on:** Tasks 1, 6, and 7.
-
-**Acceptance criteria:**
-
 - `cmd/indexer` starts by loading configuration, resolving the `(CHAIN_ID, DEPLOYMENT_ID)`
   manifest and reconciling it — a chain-id mismatch or an `INDEXER_CONFIRMATIONS` override on
   a non-`local` environment is fatal — then verifies bytecode hashes and reproduces the pair
@@ -498,7 +473,7 @@ the real Robinhood testnet acceptance run that closes this milestone.
   deployment, block number and hash, transaction hash, and reorg id.
 - An Anvil-backed integration test indexes a real deployment end to end — launch, developer
   buy, ordinary trades, graduation, and post-graduation pair activity — and asserts the
-  canonical ledger, projections, and aggregates that result. Together with Tasks 3 and 6 it
+  canonical ledger, projections, and aggregates that result. Together with Tasks 2 and 4 it
   covers all seven dimensions spec §11 names: staged discovery, duplicate logs, provider
   partitioning, same-transaction events, shallow and deep reorg, mutable projection rollback,
   and finality promotion.

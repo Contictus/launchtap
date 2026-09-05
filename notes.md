@@ -328,7 +328,8 @@ These do not change contract or backend correctness and are fail-closed or nulla
      `curve/` math (differential test) + `store/` (schema + migration + sqlc + UoW).
      **12 tasks, complete and merged to `main` (tag `v0.2.0`).**
   2. `docs/plans/2026-09-05-backend-indexer.md` — chain infra + sync loop + feature
-     ingestion + aggregation. **8 tasks, written, not started; pre-flight decisions open.**
+     ingestion + aggregation. **5 tasks, written, not started; cross-cutting decisions
+     locked, per-task pre-flights pending.**
   3. API (apiserver + Privy auth + read endpoints + SSE) — to write.
 
 ## Sub-project A — economy & contract parameters (DESIGN CLOSED)
