@@ -326,8 +326,9 @@ These do not change contract or backend correctness and are fail-closed or nulla
 - The backend is split into 3 sequential plans after/alongside the contract foundation:
   1. `docs/plans/2026-09-01-backend-foundations.md` — scaffold + config/registry +
      `curve/` math (differential test) + `store/` (schema + migration + sqlc + UoW).
-     **12 tasks, rewritten after design closure, awaiting authorization and pre-flight.**
-  2. Indexer (chain infra + sync loop + feature ingestion + aggregation) — to write.
+     **12 tasks, complete and merged to `main` (tag `v0.2.0`).**
+  2. `docs/plans/2026-09-05-backend-indexer.md` — chain infra + sync loop + feature
+     ingestion + aggregation. **8 tasks, written, not started; pre-flight decisions open.**
   3. API (apiserver + Privy auth + read endpoints + SSE) — to write.
 
 ## Sub-project A — economy & contract parameters (DESIGN CLOSED)

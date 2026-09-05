@@ -22,8 +22,10 @@
 - **Where it stopped:** Backend Foundations design assumes usable `safe`/`finalized` block
   tags and unspecified `eth_getLogs` limits on Robinhood Chain (Arbitrum Nitro/Orbit).
   Neither has been measured against the real providers.
+- **Owner:** Backend Plan 2 Task 1 (`docs/plans/2026-09-05-backend-indexer.md`). Tasks 2-7 of
+  that plan depend on this probe; it is no longer unowned.
 - **Related files:** `docs/specs/2026-09-01-backend-core-design.md` (§4.1, §4.3, §10),
-  `docs/plans/2026-09-01-backend-foundations.md`
+  `docs/plans/2026-09-05-backend-indexer.md`
 - **Resume (next step):** Before implementing the indexer runtime, run a read-only probe
   against the Robinhood mainnet provider and the chosen testnet provider and record:
   `latest`/`safe`/`finalized` tag support, tag monotonicity over time,
@@ -40,8 +42,11 @@
 - **Reason:** external deployment prerequisite
 - **Where it stopped:** Mainnet WETH/Uniswap addresses are verified. Live checks showed the
   same addresses have no code on testnet, so they cannot be reused.
+- **Owner:** Backend Plan 2 Task 1 (`docs/plans/2026-09-05-backend-indexer.md`). Only that
+  plan's Task 8 testnet acceptance depends on it, so it does not block backend Tasks 2-7.
 - **Related files:** `docs/specs/2026-09-01-contract-core-design.md`,
-  `docs/specs/2026-09-01-backend-core-design.md`
+  `docs/specs/2026-09-01-backend-core-design.md`,
+  `docs/plans/2026-09-05-backend-indexer.md`
 - **Resume (next step):** Before testnet graduation integration, identify a verified
   official testnet deployment or deploy a project-owned WETH + Uniswap v2 test stack, then
   produce and review the chain-46630 deployment manifest.
