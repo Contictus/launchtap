@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadParsesCompleteConfiguration(t *testing.T) {
@@ -16,6 +17,12 @@ func TestLoadParsesCompleteConfiguration(t *testing.T) {
 	env["LOG_LEVEL"] = "debug"
 	env["API_ADDR"] = "127.0.0.1:9090"
 	env["INDEXER_CHUNK_SIZE"] = "2500"
+	env["INDEXER_LOG_ADDRESS_BATCH_SIZE"] = "750"
+	env["INDEXER_POLL_INTERVAL"] = "2s"
+	env["RPC_TIMEOUT"] = "15s"
+	env["RPC_MAX_RETRIES"] = "5"
+	env["RPC_RETRY_BACKOFF"] = "400ms"
+	env["INDEXER_WORKER_ID"] = " worker-a "
 	env["INDEXER_CONFIRMATIONS"] = "12"
 	env["ETH_USD_SOURCE"] = " unconfigured-source "
 
@@ -26,17 +33,23 @@ func TestLoadParsesCompleteConfiguration(t *testing.T) {
 
 	wantConfirmations := uint64(12)
 	want := Config{
-		ChainID:              4663,
-		DeploymentID:         "robinhood-mainnet-v1",
-		RPCURL:               "https://rpc.example.test/v2/key",
-		DatabaseURL:          "postgresql://user:pass@db.example.test:5432/launchpad",
-		PrivyAppID:           "app-id",
-		PrivyVerificationKey: "verification-key",
-		LogLevel:             "debug",
-		APIAddr:              "127.0.0.1:9090",
-		IndexerChunkSize:     2500,
-		IndexerConfirmations: &wantConfirmations,
-		ETHUSDSource:         "unconfigured-source",
+		ChainID:                    4663,
+		DeploymentID:               "robinhood-mainnet-v1",
+		RPCURL:                     "https://rpc.example.test/v2/key",
+		DatabaseURL:                "postgresql://user:pass@db.example.test:5432/launchpad",
+		PrivyAppID:                 "app-id",
+		PrivyVerificationKey:       "verification-key",
+		LogLevel:                   "debug",
+		APIAddr:                    "127.0.0.1:9090",
+		IndexerChunkSize:           2500,
+		IndexerLogAddressBatchSize: 750,
+		IndexerPollInterval:        2 * time.Second,
+		RPCTimeout:                 15 * time.Second,
+		RPCMaxRetries:              5,
+		RPCRetryBackoff:            400 * time.Millisecond,
+		IndexerWorkerID:            "worker-a",
+		IndexerConfirmations:       &wantConfirmations,
+		ETHUSDSource:               "unconfigured-source",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
@@ -47,17 +60,23 @@ func TestConfigEnvironmentMapping(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]string{
-		"ChainID":              "CHAIN_ID",
-		"DeploymentID":         "DEPLOYMENT_ID",
-		"RPCURL":               "RPC_URL",
-		"DatabaseURL":          "DATABASE_URL",
-		"PrivyAppID":           "PRIVY_APP_ID",
-		"PrivyVerificationKey": "PRIVY_VERIFICATION_KEY",
-		"LogLevel":             "LOG_LEVEL",
-		"APIAddr":              "API_ADDR",
-		"IndexerChunkSize":     "INDEXER_CHUNK_SIZE",
-		"IndexerConfirmations": "INDEXER_CONFIRMATIONS",
-		"ETHUSDSource":         "ETH_USD_SOURCE",
+		"ChainID":                    "CHAIN_ID",
+		"DeploymentID":               "DEPLOYMENT_ID",
+		"RPCURL":                     "RPC_URL",
+		"DatabaseURL":                "DATABASE_URL",
+		"PrivyAppID":                 "PRIVY_APP_ID",
+		"PrivyVerificationKey":       "PRIVY_VERIFICATION_KEY",
+		"LogLevel":                   "LOG_LEVEL",
+		"APIAddr":                    "API_ADDR",
+		"IndexerChunkSize":           "INDEXER_CHUNK_SIZE",
+		"IndexerLogAddressBatchSize": "INDEXER_LOG_ADDRESS_BATCH_SIZE",
+		"IndexerPollInterval":        "INDEXER_POLL_INTERVAL",
+		"RPCTimeout":                 "RPC_TIMEOUT",
+		"RPCMaxRetries":              "RPC_MAX_RETRIES",
+		"RPCRetryBackoff":            "RPC_RETRY_BACKOFF",
+		"IndexerWorkerID":            "INDEXER_WORKER_ID",
+		"IndexerConfirmations":       "INDEXER_CONFIRMATIONS",
+		"ETHUSDSource":               "ETH_USD_SOURCE",
 	}
 
 	typeOfConfig := reflect.TypeFor[Config]()
@@ -86,8 +105,23 @@ func TestLoadUsesBoundedDefaults(t *testing.T) {
 	if got.APIAddr != ":8080" {
 		t.Errorf("APIAddr = %q, want :8080", got.APIAddr)
 	}
-	if got.IndexerChunkSize != 1000 {
-		t.Errorf("IndexerChunkSize = %d, want 1000", got.IndexerChunkSize)
+	if got.IndexerChunkSize != 100 {
+		t.Errorf("IndexerChunkSize = %d, want 100", got.IndexerChunkSize)
+	}
+	if got.IndexerLogAddressBatchSize != 500 {
+		t.Errorf("IndexerLogAddressBatchSize = %d, want 500", got.IndexerLogAddressBatchSize)
+	}
+	if got.IndexerPollInterval != time.Second {
+		t.Errorf("IndexerPollInterval = %v, want 1s", got.IndexerPollInterval)
+	}
+	if got.RPCTimeout != 10*time.Second {
+		t.Errorf("RPCTimeout = %v, want 10s", got.RPCTimeout)
+	}
+	if got.RPCMaxRetries != 3 {
+		t.Errorf("RPCMaxRetries = %d, want 3", got.RPCMaxRetries)
+	}
+	if got.RPCRetryBackoff != 250*time.Millisecond {
+		t.Errorf("RPCRetryBackoff = %v, want 250ms", got.RPCRetryBackoff)
 	}
 	if got.IndexerConfirmations != nil {
 		t.Errorf("IndexerConfirmations = %v, want nil", got.IndexerConfirmations)
@@ -213,6 +247,12 @@ func TestLoadRejectsInvalidBoundedSettings(t *testing.T) {
 		{name: "port overflow", field: "API_ADDR", value: ":65536"},
 		{name: "zero chunk", field: "INDEXER_CHUNK_SIZE", value: "0"},
 		{name: "chunk above provisional maximum", field: "INDEXER_CHUNK_SIZE", value: "10001"},
+		{name: "zero address batch", field: "INDEXER_LOG_ADDRESS_BATCH_SIZE", value: "0"},
+		{name: "address batch above provider maximum", field: "INDEXER_LOG_ADDRESS_BATCH_SIZE", value: "2001"},
+		{name: "zero poll interval", field: "INDEXER_POLL_INTERVAL", value: "0s"},
+		{name: "invalid RPC timeout", field: "RPC_TIMEOUT", value: "soon"},
+		{name: "too many retries", field: "RPC_MAX_RETRIES", value: "21"},
+		{name: "negative retry backoff", field: "RPC_RETRY_BACKOFF", value: "-1s"},
 		{name: "negative confirmations", field: "INDEXER_CONFIRMATIONS", value: "-1"},
 	}
 
@@ -314,6 +354,14 @@ func TestRequireAPI(t *testing.T) {
 			assertError(t, err, test.wantField, ErrMissing)
 		})
 	}
+}
+
+func TestRequireIndexer(t *testing.T) {
+	t.Parallel()
+	if err := (Config{IndexerWorkerID: "worker-a"}).RequireIndexer(); err != nil {
+		t.Fatalf("RequireIndexer() error = %v", err)
+	}
+	assertError(t, (Config{}).RequireIndexer(), "INDEXER_WORKER_ID", ErrMissing)
 }
 
 func TestLoadDatabaseUsesReducedSurface(t *testing.T) {

@@ -59,6 +59,16 @@ tasks:
     cmds:
       - go run ./cmd/sync-curve-vectors --check
 
+  event-abis-sync:
+    desc: Copy the authoritative Solidity event ABIs and Foundry fixtures into the backend chain package.
+    cmds:
+      - go run ./cmd/sync-event-abis
+
+  event-abis-diff:
+    desc: Fail when backend event ABIs or Foundry fixtures differ from their contracts sources.
+    cmds:
+      - go run ./cmd/sync-event-abis --check
+
   deployments-diff:
     desc: Fail when the backend deployment-manifest copy differs from the contracts source.
     cmds:
@@ -74,4 +84,5 @@ tasks:
       - fmt-check
       - sqlc-diff
       - curve-vectors-diff
+      - event-abis-diff
       - deployments-diff

@@ -8,13 +8,20 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
 	defaultLogLevel         = "info"
 	defaultAPIAddr          = ":8080"
-	defaultIndexerChunkSize = uint64(1000)
+	defaultIndexerChunkSize = uint64(100)
 	maxIndexerChunkSize     = uint64(10000)
+	defaultLogAddressBatch  = uint64(500)
+	maxLogAddressBatch      = uint64(2000)
+	defaultPollInterval     = time.Second
+	defaultRPCTimeout       = 10 * time.Second
+	defaultRPCMaxRetries    = uint64(3)
+	defaultRPCRetryBackoff  = 250 * time.Millisecond
 )
 
 var (
@@ -42,17 +49,23 @@ func (e *FieldError) Unwrap() error {
 // are trimmed before validation. IndexerConfirmations is nil when the local-only
 // override is absent; deployment validation decides whether it is permitted.
 type Config struct {
-	ChainID              uint64  `env:"CHAIN_ID"`
-	DeploymentID         string  `env:"DEPLOYMENT_ID"`
-	RPCURL               string  `env:"RPC_URL"`
-	DatabaseURL          string  `env:"DATABASE_URL"`
-	PrivyAppID           string  `env:"PRIVY_APP_ID"`
-	PrivyVerificationKey string  `env:"PRIVY_VERIFICATION_KEY"`
-	LogLevel             string  `env:"LOG_LEVEL"`
-	APIAddr              string  `env:"API_ADDR"`
-	IndexerChunkSize     uint64  `env:"INDEXER_CHUNK_SIZE"`
-	IndexerConfirmations *uint64 `env:"INDEXER_CONFIRMATIONS"`
-	ETHUSDSource         string  `env:"ETH_USD_SOURCE"`
+	ChainID                    uint64        `env:"CHAIN_ID"`
+	DeploymentID               string        `env:"DEPLOYMENT_ID"`
+	RPCURL                     string        `env:"RPC_URL"`
+	DatabaseURL                string        `env:"DATABASE_URL"`
+	PrivyAppID                 string        `env:"PRIVY_APP_ID"`
+	PrivyVerificationKey       string        `env:"PRIVY_VERIFICATION_KEY"`
+	LogLevel                   string        `env:"LOG_LEVEL"`
+	APIAddr                    string        `env:"API_ADDR"`
+	IndexerChunkSize           uint64        `env:"INDEXER_CHUNK_SIZE"`
+	IndexerLogAddressBatchSize uint64        `env:"INDEXER_LOG_ADDRESS_BATCH_SIZE"`
+	IndexerPollInterval        time.Duration `env:"INDEXER_POLL_INTERVAL"`
+	RPCTimeout                 time.Duration `env:"RPC_TIMEOUT"`
+	RPCMaxRetries              uint64        `env:"RPC_MAX_RETRIES"`
+	RPCRetryBackoff            time.Duration `env:"RPC_RETRY_BACKOFF"`
+	IndexerWorkerID            string        `env:"INDEXER_WORKER_ID"`
+	IndexerConfirmations       *uint64       `env:"INDEXER_CONFIRMATIONS"`
+	ETHUSDSource               string        `env:"ETH_USD_SOURCE"`
 }
 
 // DatabaseConfig is the reduced configuration surface used by migration-only
@@ -71,6 +84,29 @@ func Load(getenv func(string) string) (Config, error) {
 	values := readEnvironment(getenv)
 
 	chainID, err := requiredPositiveUint64("CHAIN_ID", values.chainID)
+	if err != nil {
+		return Config{}, err
+	}
+	addressBatchSize, err := optionalBoundedUint64(
+		"INDEXER_LOG_ADDRESS_BATCH_SIZE", values.indexerLogAddressBatchSize,
+		defaultLogAddressBatch, 1, maxLogAddressBatch,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	pollInterval, err := optionalPositiveDuration("INDEXER_POLL_INTERVAL", values.indexerPollInterval, defaultPollInterval)
+	if err != nil {
+		return Config{}, err
+	}
+	rpcTimeout, err := optionalPositiveDuration("RPC_TIMEOUT", values.rpcTimeout, defaultRPCTimeout)
+	if err != nil {
+		return Config{}, err
+	}
+	rpcMaxRetries, err := optionalBoundedUint64("RPC_MAX_RETRIES", values.rpcMaxRetries, defaultRPCMaxRetries, 0, 20)
+	if err != nil {
+		return Config{}, err
+	}
+	rpcRetryBackoff, err := optionalPositiveDuration("RPC_RETRY_BACKOFF", values.rpcRetryBackoff, defaultRPCRetryBackoff)
 	if err != nil {
 		return Config{}, err
 	}
@@ -108,17 +144,23 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	return Config{
-		ChainID:              chainID,
-		DeploymentID:         values.deploymentID,
-		RPCURL:               values.rpcURL,
-		DatabaseURL:          values.databaseURL,
-		PrivyAppID:           values.privyAppID,
-		PrivyVerificationKey: values.privyVerificationKey,
-		LogLevel:             logLevel,
-		APIAddr:              apiAddr,
-		IndexerChunkSize:     chunkSize,
-		IndexerConfirmations: confirmations,
-		ETHUSDSource:         values.ethUSDSource,
+		ChainID:                    chainID,
+		DeploymentID:               values.deploymentID,
+		RPCURL:                     values.rpcURL,
+		DatabaseURL:                values.databaseURL,
+		PrivyAppID:                 values.privyAppID,
+		PrivyVerificationKey:       values.privyVerificationKey,
+		LogLevel:                   logLevel,
+		APIAddr:                    apiAddr,
+		IndexerChunkSize:           chunkSize,
+		IndexerLogAddressBatchSize: addressBatchSize,
+		IndexerPollInterval:        pollInterval,
+		RPCTimeout:                 rpcTimeout,
+		RPCMaxRetries:              rpcMaxRetries,
+		RPCRetryBackoff:            rpcRetryBackoff,
+		IndexerWorkerID:            values.indexerWorkerID,
+		IndexerConfirmations:       confirmations,
+		ETHUSDSource:               values.ethUSDSource,
 	}, nil
 }
 
@@ -148,34 +190,65 @@ func (c Config) RequireAPI() error {
 	return nil
 }
 
+// RequireIndexer validates settings that identify a running indexer worker.
+func (c Config) RequireIndexer() error {
+	if strings.TrimSpace(c.IndexerWorkerID) == "" {
+		return &FieldError{Field: "INDEXER_WORKER_ID", Err: ErrMissing}
+	}
+	return nil
+}
+
 type environmentValues struct {
-	chainID              string
-	deploymentID         string
-	rpcURL               string
-	databaseURL          string
-	privyAppID           string
-	privyVerificationKey string
-	logLevel             string
-	apiAddr              string
-	indexerChunkSize     string
-	indexerConfirmations string
-	ethUSDSource         string
+	chainID                    string
+	deploymentID               string
+	rpcURL                     string
+	databaseURL                string
+	privyAppID                 string
+	privyVerificationKey       string
+	logLevel                   string
+	apiAddr                    string
+	indexerChunkSize           string
+	indexerLogAddressBatchSize string
+	indexerPollInterval        string
+	rpcTimeout                 string
+	rpcMaxRetries              string
+	rpcRetryBackoff            string
+	indexerWorkerID            string
+	indexerConfirmations       string
+	ethUSDSource               string
 }
 
 func readEnvironment(getenv func(string) string) environmentValues {
 	return environmentValues{
-		chainID:              strings.TrimSpace(getenv("CHAIN_ID")),
-		deploymentID:         strings.TrimSpace(getenv("DEPLOYMENT_ID")),
-		rpcURL:               strings.TrimSpace(getenv("RPC_URL")),
-		databaseURL:          strings.TrimSpace(getenv("DATABASE_URL")),
-		privyAppID:           strings.TrimSpace(getenv("PRIVY_APP_ID")),
-		privyVerificationKey: strings.TrimSpace(getenv("PRIVY_VERIFICATION_KEY")),
-		logLevel:             strings.TrimSpace(getenv("LOG_LEVEL")),
-		apiAddr:              strings.TrimSpace(getenv("API_ADDR")),
-		indexerChunkSize:     strings.TrimSpace(getenv("INDEXER_CHUNK_SIZE")),
-		indexerConfirmations: strings.TrimSpace(getenv("INDEXER_CONFIRMATIONS")),
-		ethUSDSource:         strings.TrimSpace(getenv("ETH_USD_SOURCE")),
+		chainID:                    strings.TrimSpace(getenv("CHAIN_ID")),
+		deploymentID:               strings.TrimSpace(getenv("DEPLOYMENT_ID")),
+		rpcURL:                     strings.TrimSpace(getenv("RPC_URL")),
+		databaseURL:                strings.TrimSpace(getenv("DATABASE_URL")),
+		privyAppID:                 strings.TrimSpace(getenv("PRIVY_APP_ID")),
+		privyVerificationKey:       strings.TrimSpace(getenv("PRIVY_VERIFICATION_KEY")),
+		logLevel:                   strings.TrimSpace(getenv("LOG_LEVEL")),
+		apiAddr:                    strings.TrimSpace(getenv("API_ADDR")),
+		indexerChunkSize:           strings.TrimSpace(getenv("INDEXER_CHUNK_SIZE")),
+		indexerLogAddressBatchSize: strings.TrimSpace(getenv("INDEXER_LOG_ADDRESS_BATCH_SIZE")),
+		indexerPollInterval:        strings.TrimSpace(getenv("INDEXER_POLL_INTERVAL")),
+		rpcTimeout:                 strings.TrimSpace(getenv("RPC_TIMEOUT")),
+		rpcMaxRetries:              strings.TrimSpace(getenv("RPC_MAX_RETRIES")),
+		rpcRetryBackoff:            strings.TrimSpace(getenv("RPC_RETRY_BACKOFF")),
+		indexerWorkerID:            strings.TrimSpace(getenv("INDEXER_WORKER_ID")),
+		indexerConfirmations:       strings.TrimSpace(getenv("INDEXER_CONFIRMATIONS")),
+		ethUSDSource:               strings.TrimSpace(getenv("ETH_USD_SOURCE")),
 	}
+}
+
+func optionalPositiveDuration(field, value string, defaultValue time.Duration) (time.Duration, error) {
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		return 0, &FieldError{Field: field, Err: ErrInvalid}
+	}
+	return parsed, nil
 }
 
 func requiredPositiveUint64(field, value string) (uint64, error) {
