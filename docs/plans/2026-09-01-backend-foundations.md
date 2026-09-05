@@ -3,11 +3,10 @@
 > **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
 > and independent review. This is an implementation task list, not implementation code.
 
-**Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/` (now 13 cases). Tasks 1-11 are implemented and on
-`dev`. Task 12's high-risk pre-flight is complete and its acceptance criteria are locked (see
-the task and spec §11, "Testing and delivery gates"). Once Task 12 lands and its independent
-review closes, Backend Foundations is complete and ready for its milestone `dev`→`main` PR.
+**Status:** Design closed and implemented. All 12 tasks are on `dev` (commit `ca27eb6`), CI is
+green (`task verify` is the one reproducible gate, spec §11), and `AGENTS.md`'s command/tool
+tables are filled in. Backend Foundations is complete and ready for its milestone `dev`→`main`
+PR.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
