@@ -26,15 +26,15 @@ var (
 // Amount fields intentionally remain decimal strings until the arithmetic
 // mirror consumes them.
 type VectorArtifact struct {
-	Schema         string     `json:"$schema"`
-	SchemaVersion  int        `json:"schemaVersion"`
-	EngineVersion  int        `json:"engineVersion"`
-	AmountEncoding string     `json:"amountEncoding"`
-	Parameters     Parameters `json:"parameters"`
-	Cases          []Case     `json:"cases"`
+	Schema         string           `json:"$schema"`
+	SchemaVersion  int              `json:"schemaVersion"`
+	EngineVersion  int              `json:"engineVersion"`
+	AmountEncoding string           `json:"amountEncoding"`
+	Parameters     VectorParameters `json:"parameters"`
+	Cases          []VectorCase     `json:"cases"`
 }
 
-type Parameters struct {
+type VectorParameters struct {
 	TotalSupply         string `json:"totalSupply"`
 	CurveTokens         string `json:"curveTokens"`
 	LPTokens            string `json:"lpTokens"`
@@ -45,7 +45,7 @@ type Parameters struct {
 	ProtocolShareBPS    int    `json:"protocolShareBps"`
 }
 
-type State struct {
+type VectorState struct {
 	Phase        string `json:"phase"`
 	VirtualETH   string `json:"virtualEth"`
 	VirtualToken string `json:"virtualToken"`
@@ -55,12 +55,12 @@ type State struct {
 	CreatorFees  string `json:"creatorFees"`
 }
 
-type Input struct {
+type VectorInput struct {
 	ETHGross string `json:"ethGross"`
 	TokensIn string `json:"tokensIn"`
 }
 
-type Output struct {
+type VectorOutput struct {
 	ETHGross    string `json:"ethGross"`
 	ETHRefund   string `json:"ethRefund"`
 	ETHOut      string `json:"ethOut"`
@@ -70,19 +70,19 @@ type Output struct {
 	Graduates   bool   `json:"graduates"`
 }
 
-type Revert struct {
+type VectorRevert struct {
 	Name string `json:"name"`
 	Data string `json:"data"`
 }
 
-type Case struct {
-	ID             string  `json:"id"`
-	Operation      string  `json:"operation"`
-	InitialState   State   `json:"initialState"`
-	Input          Input   `json:"input"`
-	Output         *Output `json:"output"`
-	NextState      State   `json:"nextState"`
-	ExpectedRevert *Revert `json:"expectedRevert"`
+type VectorCase struct {
+	ID             string        `json:"id"`
+	Operation      string        `json:"operation"`
+	InitialState   VectorState   `json:"initialState"`
+	Input          VectorInput   `json:"input"`
+	Output         *VectorOutput `json:"output"`
+	NextState      VectorState   `json:"nextState"`
+	ExpectedRevert *VectorRevert `json:"expectedRevert"`
 }
 
 // LoadEmbeddedVectors loads the committed backend copy of the Solidity vectors.
@@ -210,7 +210,7 @@ func (raw rawArtifact) validate() (VectorArtifact, error) {
 	if len(*raw.Cases) < 11 {
 		return VectorArtifact{}, fmt.Errorf("cases must contain at least 11 entries, got %d", len(*raw.Cases))
 	}
-	cases := make([]Case, len(*raw.Cases))
+	cases := make([]VectorCase, len(*raw.Cases))
 	for index, rawCase := range *raw.Cases {
 		parsed, parseErr := rawCase.validate()
 		if parseErr != nil {
@@ -228,7 +228,7 @@ func (raw rawArtifact) validate() (VectorArtifact, error) {
 	}, nil
 }
 
-func (raw rawParameters) validate() (Parameters, error) {
+func (raw rawParameters) validate() (VectorParameters, error) {
 	amounts := []struct {
 		name  string
 		value *string
@@ -242,16 +242,16 @@ func (raw rawParameters) validate() (Parameters, error) {
 	}
 	for _, amount := range amounts {
 		if err := requirePattern(amount.name, amount.value, amountPattern); err != nil {
-			return Parameters{}, err
+			return VectorParameters{}, err
 		}
 	}
 	if err := requireRange("tradeFeeBps", raw.TradeFeeBPS, 0, 9999); err != nil {
-		return Parameters{}, err
+		return VectorParameters{}, err
 	}
 	if err := requireRange("protocolShareBps", raw.ProtocolShareBPS, 0, 10000); err != nil {
-		return Parameters{}, err
+		return VectorParameters{}, err
 	}
-	return Parameters{
+	return VectorParameters{
 		TotalSupply:         *raw.TotalSupply,
 		CurveTokens:         *raw.CurveTokens,
 		LPTokens:            *raw.LPTokens,
@@ -263,47 +263,47 @@ func (raw rawParameters) validate() (Parameters, error) {
 	}, nil
 }
 
-func (raw rawCase) validate() (Case, error) {
+func (raw rawCase) validate() (VectorCase, error) {
 	if err := requirePattern("id", raw.ID, caseIDPattern); err != nil {
-		return Case{}, err
+		return VectorCase{}, err
 	}
 	if err := requireEnum("operation", raw.Operation, "buy", "sell"); err != nil {
-		return Case{}, err
+		return VectorCase{}, err
 	}
 	if raw.InitialState == nil {
-		return Case{}, errors.New("initialState is required and must be an object")
+		return VectorCase{}, errors.New("initialState is required and must be an object")
 	}
 	initialState, err := raw.InitialState.validate("initialState")
 	if err != nil {
-		return Case{}, err
+		return VectorCase{}, err
 	}
 	if raw.Input == nil {
-		return Case{}, errors.New("input is required and must be an object")
+		return VectorCase{}, errors.New("input is required and must be an object")
 	}
 	input, err := raw.Input.validate()
 	if err != nil {
-		return Case{}, err
+		return VectorCase{}, err
 	}
-	output, err := decodeNullable[rawOutput, Output]("output", raw.Output, func(value rawOutput) (Output, error) {
+	output, err := decodeNullable[rawOutput, VectorOutput]("output", raw.Output, func(value rawOutput) (VectorOutput, error) {
 		return value.validate()
 	})
 	if err != nil {
-		return Case{}, err
+		return VectorCase{}, err
 	}
 	if raw.NextState == nil {
-		return Case{}, errors.New("nextState is required and must be an object")
+		return VectorCase{}, errors.New("nextState is required and must be an object")
 	}
 	nextState, err := raw.NextState.validate("nextState")
 	if err != nil {
-		return Case{}, err
+		return VectorCase{}, err
 	}
-	expectedRevert, err := decodeNullable[rawRevert, Revert]("expectedRevert", raw.ExpectedRevert, func(value rawRevert) (Revert, error) {
+	expectedRevert, err := decodeNullable[rawRevert, VectorRevert]("expectedRevert", raw.ExpectedRevert, func(value rawRevert) (VectorRevert, error) {
 		return value.validate()
 	})
 	if err != nil {
-		return Case{}, err
+		return VectorCase{}, err
 	}
-	return Case{
+	return VectorCase{
 		ID:             *raw.ID,
 		Operation:      *raw.Operation,
 		InitialState:   initialState,
@@ -314,9 +314,9 @@ func (raw rawCase) validate() (Case, error) {
 	}, nil
 }
 
-func (raw rawState) validate(name string) (State, error) {
+func (raw rawState) validate(name string) (VectorState, error) {
 	if err := requireEnum(name+".phase", raw.Phase, "curve", "graduated"); err != nil {
-		return State{}, err
+		return VectorState{}, err
 	}
 	amounts := []struct {
 		name  string
@@ -331,10 +331,10 @@ func (raw rawState) validate(name string) (State, error) {
 	}
 	for _, amount := range amounts {
 		if err := requirePattern(name+"."+amount.name, amount.value, amountPattern); err != nil {
-			return State{}, err
+			return VectorState{}, err
 		}
 	}
-	return State{
+	return VectorState{
 		Phase:        *raw.Phase,
 		VirtualETH:   *raw.VirtualETH,
 		VirtualToken: *raw.VirtualToken,
@@ -345,17 +345,17 @@ func (raw rawState) validate(name string) (State, error) {
 	}, nil
 }
 
-func (raw rawInput) validate() (Input, error) {
+func (raw rawInput) validate() (VectorInput, error) {
 	if err := requirePattern("input.ethGross", raw.ETHGross, amountPattern); err != nil {
-		return Input{}, err
+		return VectorInput{}, err
 	}
 	if err := requirePattern("input.tokensIn", raw.TokensIn, amountPattern); err != nil {
-		return Input{}, err
+		return VectorInput{}, err
 	}
-	return Input{ETHGross: *raw.ETHGross, TokensIn: *raw.TokensIn}, nil
+	return VectorInput{ETHGross: *raw.ETHGross, TokensIn: *raw.TokensIn}, nil
 }
 
-func (raw rawOutput) validate() (Output, error) {
+func (raw rawOutput) validate() (VectorOutput, error) {
 	amounts := []struct {
 		name  string
 		value *string
@@ -369,13 +369,13 @@ func (raw rawOutput) validate() (Output, error) {
 	}
 	for _, amount := range amounts {
 		if err := requirePattern("output."+amount.name, amount.value, amountPattern); err != nil {
-			return Output{}, err
+			return VectorOutput{}, err
 		}
 	}
 	if raw.Graduates == nil {
-		return Output{}, errors.New("output.graduates is required and must be a boolean")
+		return VectorOutput{}, errors.New("output.graduates is required and must be a boolean")
 	}
-	return Output{
+	return VectorOutput{
 		ETHGross:    *raw.ETHGross,
 		ETHRefund:   *raw.ETHRefund,
 		ETHOut:      *raw.ETHOut,
@@ -386,14 +386,14 @@ func (raw rawOutput) validate() (Output, error) {
 	}, nil
 }
 
-func (raw rawRevert) validate() (Revert, error) {
+func (raw rawRevert) validate() (VectorRevert, error) {
 	if raw.Name == nil || *raw.Name == "" {
-		return Revert{}, errors.New("expectedRevert.name is required and must not be empty")
+		return VectorRevert{}, errors.New("expectedRevert.name is required and must not be empty")
 	}
 	if err := requirePattern("expectedRevert.data", raw.Data, revertPattern); err != nil {
-		return Revert{}, err
+		return VectorRevert{}, err
 	}
-	return Revert{Name: *raw.Name, Data: *raw.Data}, nil
+	return VectorRevert{Name: *raw.Name, Data: *raw.Data}, nil
 }
 
 func decodeNullable[Raw any, Value any](name string, body json.RawMessage, validate func(Raw) (Value, error)) (*Value, error) {

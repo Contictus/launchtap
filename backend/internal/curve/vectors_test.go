@@ -38,6 +38,8 @@ func TestLoadEmbeddedVectors(t *testing.T) {
 		"buy_normal":                       false,
 		"buy_one_wei":                      false,
 		"buy_fee_split_dust":               false,
+		"buy_mid_curve":                    false,
+		"buy_just_below_graduation":        false,
 		"buy_final_exact":                  false,
 		"buy_final_refund_and_graduation":  false,
 		"sell_normal":                      false,
@@ -162,7 +164,7 @@ func caseByID(value map[string]any, id string) map[string]any {
 	panic("vector case not found: " + id)
 }
 
-func vectorCaseByID(t *testing.T, artifact VectorArtifact, id string) Case {
+func vectorCaseByID(t *testing.T, artifact VectorArtifact, id string) VectorCase {
 	t.Helper()
 	for _, vectorCase := range artifact.Cases {
 		if vectorCase.ID == id {
@@ -170,7 +172,7 @@ func vectorCaseByID(t *testing.T, artifact VectorArtifact, id string) Case {
 		}
 	}
 	t.Fatalf("vector case %q is missing", id)
-	return Case{}
+	return VectorCase{}
 }
 
 func TestEmbeddedVectorFileExists(t *testing.T) {
