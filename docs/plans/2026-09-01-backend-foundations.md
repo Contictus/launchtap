@@ -4,11 +4,8 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-10 are implemented and on `dev`. Task 11's
-high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
-spec §7.2, "Buy/sell quote mirror"), including a required prerequisite commit (the two
-additional Foundry buy vectors, resynced into the backend copy) before the real
-implementation starts. Task 12 still requires its high-risk pre-flight.
+artifact exists at `contracts/vectors/v1/` (now 13 cases). Tasks 1-11 are implemented and on
+`dev`. Task 12 still requires its high-risk pre-flight before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
