@@ -4,10 +4,8 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-9 are implemented and on `dev`. Task 10's
-high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
-spec §7.1, "Vector artifact consumption"). Tasks 11-12 still require their high-risk
-pre-flight before implementation.
+artifact exists at `contracts/vectors/v1/`. Tasks 1-10 are implemented and on `dev`. Tasks
+11-12 still require their high-risk pre-flight before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
