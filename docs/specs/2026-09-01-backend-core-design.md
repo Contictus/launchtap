@@ -1220,6 +1220,146 @@ returns `asOfBlock`, `finality`, `informational=true`, and no transaction-ready 
 The frontend must call the curve contract's view quote against current RPC state before
 building a transaction, and the transaction must enforce `minOut` and `deadline` on-chain.
 
+### 7.2 Buy/sell quote mirror
+
+The Go mirror's control flow is transcribed directly from `contracts/src/libraries/CurveMath.sol`
+and `contracts/src/interfaces/ILaunchErrors.sol` — not re-derived from the prose in §4 above,
+which is a correct but lossy summary. Where the two disagree in a corner case, the Solidity
+source is authoritative.
+
+**Naming.** Task 10's JSON-fidelity vector types are renamed to a `Vector`-prefixed family
+(`VectorParameters`, `VectorState`, `VectorInput`, `VectorOutput`, `VectorCase`,
+`VectorRevert`; `VectorArtifact` is unchanged) as part of Task 11, freeing `Parameters` and
+`State` for this task's runtime, `*big.Int`-based types.
+
+**Buy quote — exact order of operations**, mirroring `CurveMath.quoteBuy`:
+
+1. `suppliedGross == 0` → `ErrZeroInput`.
+2. Split fees from the *full supplied* amount: `(totalFee, protocolFee, creatorFee) =
+   splitFees(suppliedGross, feeBps, protocolShareBps)`, `effectiveEth = suppliedGross -
+   totalFee`.
+3. `candidateVirtualEth = virtualEth + effectiveEth` (checked add).
+4. `candidateVirtualToken = ceilDiv(K, candidateVirtualEth)`.
+5. `finalVirtualEth = ceilDiv(K, finalVirtualToken)` (i.e. `xFinal`, re-derived here, not
+   read from a stored field).
+6. `candidateVirtualToken >= virtualToken` → `ErrZeroOutput` (sanity: the ordinary formula
+   must actually reduce the token reserve).
+7. **Branch on ETH space, not token space:** if `candidateVirtualEth > finalVirtualEth`
+   (strict) — not `candidateVirtualToken <= finalVirtualToken` — take the closed-form path:
+   - `netNeeded = finalVirtualEth - virtualEth`
+   - `ethGrossUsed = exactGrossForNet(netNeeded, feeBps)` (§7.2's closed-form helper, below)
+   - **re-split fees from `ethGrossUsed`**, discarding the step-2 split computed from the
+     full supplied amount — the two are different numbers whenever a refund is nonzero, and
+     only the re-split values are correct.
+   - `newVirtualEth = finalVirtualEth`, `newVirtualToken = finalVirtualToken`
+   - `refund = suppliedGross - ethGrossUsed`, `graduates = true`
+   - else (including the boundary-equal case, `candidateVirtualEth == finalVirtualEth`):
+   - `ethGrossUsed = suppliedGross`, `newVirtualEth = candidateVirtualEth`,
+     `newVirtualToken = candidateVirtualToken`, `refund = 0`
+   - `graduates = (newVirtualToken == finalVirtualToken)` — true whenever the ordinary
+     formula happens to land exactly on the boundary, without ever entering the closed-form
+     branch. This is the case the existing `buy_final_exact` vector actually exercises:
+     its supplied gross makes `candidateVirtualEth == finalVirtualEth` exactly, so it takes
+     this ordinary branch (not the closed-form one) and still reports `ethRefund = 0` and
+     `graduates = true`. An earlier draft of this task's pre-flight proposed branching on
+     `candidateVirtualToken <= finalVirtualToken` instead; that produces the same *outputs*
+     for the two vectors that currently exist but does not reflect which branch the contract
+     actually executes (in particular, it would re-split fees from `ethGrossUsed` even on
+     the ordinary path, which the contract never does) — rejected in favor of the exact
+     transcription above.
+8. `tokensOut = virtualToken - newVirtualToken`; `tokensOut == 0` → `ErrZeroOutput`.
+9. Result fees are whichever `(protocolFee, creatorFee)` pair the taken branch produced (the
+   step-2 split on the ordinary path; the step-7 re-split on the closed-form path).
+
+**Sell quote**, mirroring `CurveMath.quoteSell`:
+
+1. `tokensIn == 0` → `ErrZeroInput`.
+2. `tokensIn > tokensSold` → `ErrOversell{Attempted: tokensIn, Sold: tokensSold}`.
+3. `newVirtualToken = virtualToken + tokensIn` (checked add).
+4. `newVirtualEth = ceilDiv(K, newVirtualToken)`.
+5. `ethGross = virtualEth - newVirtualEth`; `ethGross == 0` → `ErrZeroOutput`.
+6. `(totalFee, protocolFee, creatorFee) = splitFees(ethGross, feeBps, protocolShareBps)`,
+   `ethOut = ethGross - totalFee`; `ethOut == 0` → `ErrZeroOutput`.
+
+**Phase gate.** Both `Buy` and `Sell` check phase *before* any of the steps above — mirroring
+`BondingCurveV1._requireCurvePhase`, which runs before `_quoteBuy`/`_quoteSell` are ever
+called. A `State` whose `Phase != Curve` returns
+`ErrWrongPhase{Expected: PhaseCurve, Actual: state.Phase}` immediately; there is no separate
+`ErrAlreadyGraduated` sentinel, since the real contract's own quote path only ever raises
+`WrongPhase(expected, actual)` here (`WrongPhase` is a real `ILaunchErrors` member;
+`AlreadyGraduated` exists in the interface but is not what the quote path raises, so the Go
+mirror does not use it either). `Phase` is a small enum type mirroring
+`LaunchTypes.Phase` (`Curve = 0`, `Graduated = 1`).
+
+**Typed errors.** `ErrZeroInput`, `ErrOversell` (carrying `Attempted`/`Sold`), `ErrZeroOutput`,
+and `ErrWrongPhase` (carrying `Expected`/`Actual`) are matched via `errors.Is`/`errors.As` in
+the vector-consumption test, keyed off each vector case's `expectedRevert.name`. This is a
+semantic match against the named Solidity error, not a byte-for-byte match against
+`expectedRevert.data`'s ABI encoding — decoding that payload stays out of scope, per Task 10's
+locked scope boundary.
+
+**Parameter construction**, mirroring `CurveMath.validateParameters` — a `NewParameters`
+constructor fails closed (typed error, never a panic) unless all hold, in this order:
+1. `totalSupply == curveTokens + lpTokens` (checked add), else `ErrInvalidSupplyAllocation`.
+2. `lpTokens != 0 && curveTokens > lpTokens`, else `ErrInvalidCurveAllocation`.
+3. `graduationEth != 0`, else `ErrInvalidGraduationEth`.
+4. `initialVirtualEth != 0 && initialVirtualToken > curveTokens`, else
+   `ErrInvalidVirtualReserves`.
+5. `tradeFeeBps < 10_000`, else `ErrInvalidTradeFeeBps`.
+6. `protocolShareBps <= 10_000`, else `ErrInvalidProtocolShareBps`.
+7. Derive `K = initialVirtualEth * initialVirtualToken` (checked mul), `yFinal =
+   initialVirtualToken - curveTokens`, `xFinal = initialVirtualEth + graduationEth` (checked
+   add); require `ceilDiv(K, yFinal) == xFinal && ceilDiv(K, xFinal) == yFinal`, else
+   `ErrInvalidCurveBoundary`.
+
+`K`, `yFinal`, and `xFinal` are always derived inside the constructor, never accepted as
+caller-supplied fields — a caller cannot construct an internally inconsistent `Parameters`.
+Every amount field, in every constructor and every quote result, is range-checked to
+`0 <= value <= 2^256-1`; every add/sub/mul (including the closed-form helper's full-precision
+`mulDiv`) fails closed on overflow/underflow, matching `Math.tryAdd`/`Math.tryMul` and
+`ceilDiv`'s own zero-denominator guard in the Solidity source.
+
+**Copy discipline.** `Parameters` and `State` hold unexported `*big.Int` fields. Every
+constructor calls `new(big.Int).Set(x)` on every `*big.Int` argument before storing it; every
+accessor and every quote/next-state result returns freshly-allocated `*big.Int` values, never
+an internal pointer. `Buy` and `Sell` are pure functions of `(State, Parameters, input)` —
+neither mutates its receiver; each returns a new `State`.
+
+**Price and supply**, mirroring `CurveMath.spotPriceWad`/`tokensSold`/`realCurveEth` exactly
+(checked/full-precision arithmetic, no scaling left to implementation judgment):
+
+- `SpotPriceWad = floor(virtualEth * 1e18 / virtualToken)`, via full-precision `mulDiv` — not
+  `virtualEth * 1e18` computed as a separate, possibly-overflowing intermediate step.
+- `TokensSold = initialVirtualToken - virtualToken`.
+- `RealCurveETH = virtualEth - initialVirtualEth`.
+
+Circulating supply is not a curve-package helper — it stays a projection-layer concern (§5.2),
+not part of this package's surface.
+
+**Closed-form helper test.** `exactGrossForNet` (mirroring `CurveMath.exactGrossForNet`) is
+tested over the full supported fee range `feeBps ∈ [0, 9999]`: for every tested `(net,
+feeBps)` pair, the returned `gross` must satisfy `gross - floor(gross*feeBps/10_000) ==
+net` exactly.
+
+**Property tests stay stdlib-only.** `internal/curve`'s strict depguard rule
+(`allow: [$gostd]`, §2.3) matches every `.go` file under the directory by path regardless of
+`package curve` vs. `package curve_test`, so property tests use `math/rand` with a
+deterministic seed and boundary-focused inputs (or stdlib's `testing/quick`) — no
+third-party property-testing library.
+
+**Defensive invariant.** The closed-form path's `netNeeded - 1` term (inside
+`exactGrossForNet`) assumes `netNeeded > 0`. This holds as long as the phase gate runs first
+(a `Curve`-phase state always has `virtualEth < xFinal`), but a computed `netNeeded <= 0` at
+this point returns a typed internal-invariant error rather than computing a nonsensical
+result.
+
+**Implementation precondition.** This task's implementation does not start against the
+current 11-case vector artifact. The two additional buy vectors (a mid-curve buy from a
+non-genesis `tokensSold` state, and a buy landing just below the graduation boundary without
+graduating) must land first via a Foundry-regenerated contracts-side commit, with the backend
+copy re-synced (`task curve-vectors-sync`) in the same commit so CI's byte-identical check
+stays green — reviewed independently before the real Task 11 math implementation begins.
+
 ## 8. Privy authentication and authorization
 
 Privy session authentication and linked-wallet proof are separate:

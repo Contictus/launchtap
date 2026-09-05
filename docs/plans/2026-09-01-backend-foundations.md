@@ -4,8 +4,11 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-10 are implemented and on `dev`. Tasks
-11-12 still require their high-risk pre-flight before implementation.
+artifact exists at `contracts/vectors/v1/`. Tasks 1-10 are implemented and on `dev`. Task 11's
+high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
+spec §7.2, "Buy/sell quote mirror"), including a required prerequisite commit (the two
+additional Foundry buy vectors, resynced into the backend copy) before the real
+implementation starts. Task 12 still requires its high-risk pre-flight.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -520,22 +523,59 @@ and validator under `internal/curve` (new), `.github/workflows/backend.yml` (pat
 ## Task 11 — Pure Go curve mirror · Risk: high
 
 **Delivers:** state, checked arithmetic helpers, buy/sell/final-buy quotes, prices, supply,
-and domain errors.
+and domain errors, transcribed directly from `contracts/src/libraries/CurveMath.sol` and
+`contracts/src/interfaces/ILaunchErrors.sol` (spec §7.2 is the authoritative order of
+operations, resolved against the real Solidity source, not the prose in spec §4).
 
 **Depends on:** Tasks 1 and 10
 
+**Prerequisite (before implementation starts):** a small contracts-side Foundry commit adds
+the two additional buy vectors (a mid-curve buy from a non-genesis `tokensSold` state, and a
+buy landing just below the graduation boundary without graduating) and resyncs the backend
+copy (`task curve-vectors-sync`) in the same commit, reviewed independently before this
+task's real implementation begins.
+
 **Acceptance criteria:**
 
-- Package uses `*big.Int`, does not alias caller values, and imports only stdlib.
-- Operation order and rounding match the contract spec and every Foundry vector byte-for-byte.
-- Sell validation uses `tokensIn <= tokensSold`; it never exposes virtual ETH.
-- Final buy consumes the exact gross amount, reports refund, lands on `yFinal`, and does not
-  silently cross `G`.
-- The exact-gross helper implements the contract spec's closed formula and proves the
-  resulting net amount equals the requested net amount over the supported fee range.
-- Invalid public input returns a typed error rather than panicking.
+- Task 10's JSON-fidelity vector types are renamed to `VectorParameters`, `VectorState`,
+  `VectorInput`, `VectorOutput`, `VectorCase`, `VectorRevert` (`VectorArtifact` unchanged),
+  freeing `Parameters` and `State` for this task's runtime types.
+- `Parameters` and `State` hold unexported `*big.Int` fields; every constructor copies every
+  `*big.Int` input via `new(big.Int).Set`, and every accessor/quote/next-state result returns
+  a freshly-allocated value — never an internal pointer. `Buy`/`Sell` are pure functions that
+  do not mutate their receiver. The package imports only stdlib.
+- `Buy`'s control flow matches spec §7.2 exactly: fees are split from the full supplied
+  amount first; the closed-form branch triggers on `candidateVirtualEth > finalVirtualEth`
+  (ETH-space, strict) — not a token-space comparison — and re-splits fees from
+  `ethGrossUsed`, discarding the first split; the boundary-equal case
+  (`candidateVirtualEth == finalVirtualEth`) takes the ordinary branch, with
+  `graduates := (newVirtualToken == finalVirtualToken)`, exactly reproducing the existing
+  `buy_final_exact` vector.
+- `Sell` validation uses `tokensIn <= tokensSold`; it never exposes virtual ETH.
+- Both `Buy` and `Sell` check `State.Phase == Curve` before any other step, returning
+  `ErrWrongPhase{Expected, Actual}` immediately on a `Graduated` state (mirroring
+  `_requireCurvePhase`) — not a no-argument "already graduated" sentinel.
+- `ErrZeroInput`, `ErrOversell{Attempted, Sold}`, `ErrZeroOutput`, and `ErrWrongPhase` are
+  matched via `errors.Is`/`errors.As` in the vector-consumption test, keyed off each vector
+  case's `expectedRevert.name` — a semantic match, not a byte-for-byte match against
+  `expectedRevert.data`'s ABI encoding (still out of scope).
+- `NewParameters` validates every `CurveMath.validateParameters` condition (supply
+  allocation, curve/LP allocation, graduation ETH, virtual reserves, fee bounds, and the
+  `ceilDiv` round-trip boundary check) and fails closed with a typed error — never a panic.
+  `K`, `yFinal`, and `xFinal` are always derived inside the constructor, never accepted as
+  caller-supplied fields.
+- The exact-gross helper (`exactGrossForNet`) is tested over the full supported fee range
+  `feeBps ∈ [0, 9999]`, proving `gross - floor(gross*feeBps/10_000) == net` for every tested
+  pair.
+- `SpotPriceWad`, `TokensSold`, and `RealCurveETH` implement the exact formulas in spec §7.2
+  (full-precision `mulDiv` for price, no separate overflowing intermediate step). Circulating
+  supply is not part of this package.
+- A computed `netNeeded <= 0` inside the closed-form path returns a typed internal-invariant
+  error rather than computing a nonsensical result.
 - Property tests cover monotonic price, `x*y >= K`, bounded inventory, fee conservation,
-  round-trip loss, and graduation at most once.
+  round-trip loss, and graduation at most once — written with stdlib only (`math/rand` with a
+  deterministic seed, or `testing/quick`), since the existing strict `internal/curve`
+  depguard rule covers every file under the package regardless of test-package clause.
 
 ## Task 12 — Foundation verification gate · Risk: high
 
