@@ -4,10 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-8 are implemented and on `dev`. Task 9's
+artifact exists at `contracts/vectors/v1/`. Tasks 1-9 are implemented and on `dev`. Task 10's
 high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
-spec §2.4, "Transaction boundary"). Tasks 10-12 still require their high-risk pre-flight
-before implementation.
+spec §7.1, "Vector artifact consumption"). Tasks 11-12 still require their high-risk
+pre-flight before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -482,20 +482,40 @@ byte-identical to that source. The backend adds no second generator.
 
 **Depends on:** Task 1. The contract vector artifact and its Foundry generator already exist.
 
+**Files:** `backend/internal/curve/testdata/curve-v1.json` (copy, new),
+`backend/internal/curve/testdata/curve.schema.json` (copy, new), a stdlib-only vector loader
+and validator under `internal/curve` (new), `.github/workflows/backend.yml` (path filters).
+
 **Acceptance criteria:**
 
 - A task step copies `contracts/vectors/v1/` into `backend/internal/curve/testdata/`; CI
-  fails if the copy is not byte-identical to the source artifact.
-- The copied artifact is schema-validated on load against `curve.schema.json`.
+  fails if the copy is not byte-identical to the source artifact. `backend.yml`'s `push` and
+  `pull_request` path filters include `contracts/vectors/**`, alongside the existing
+  `contracts/deployments/**` entry, so a contracts-only vector commit still triggers the
+  check.
+- The copied artifact is schema-validated on load against the locked `curve.schema.json`,
+  entirely with stdlib (`encoding/json` with `DisallowUnknownFields` plus a manual
+  validator) — no JSON-schema engine dependency and no depguard exception for
+  `internal/curve`, matching this task's own "imports only stdlib" requirement (below) and
+  spec §7.1. The manual validator covers required-field presence (tracked independently of
+  Go zero values), the schema's `const` fields, `cases` length `>= 11` (never `== 11`), the
+  amount and case-id regex patterns, the `operation`/`phase` enums, the bps bounds, the
+  revert `data` hex pattern, and the nullable `output`/`expectedRevert` fields. Amount
+  fields stay raw strings at this layer; `*big.Int` conversion is Task 11's concern.
+- Negative-path tests cover at minimum: an unknown field, a missing required field, a
+  malformed amount/id/enum/hex value, an out-of-range bps value, and a `cases` array with
+  fewer than 11 entries.
 - The consumed cases already cover normal/final buy, the one-wei buy boundary, final-buy
   refund with graduation, normal/max sell, invalid zero-input buy and sell, invalid
   oversell, sell one-wei zero-output, and fee-split dust.
 - Two additional buy vectors — a mid-curve buy from a non-genesis `tokensSold` state and a
   buy that lands just below the graduation boundary without graduating — are added by a
-  small contracts-side follow-up commit before Task 11.
+  small contracts-side follow-up commit before Task 11, not as part of this task.
 - A buy-side zero-output revert vector is added only if it is first proven reachable under
   the locked V1 parameters. An unreachable defensive branch is not given a synthetic
   fixture presented as a production vector.
+- `expectedRevert.data` is validated only structurally (the hex pattern); decoding it
+  against a real Solidity custom-error ABI signature is out of scope for this task.
 - No human-, Claude-, or Codex-authored expected amount is accepted as an authoritative
   contract fixture; Foundry regeneration stays the only source and is gated in contracts CI.
 

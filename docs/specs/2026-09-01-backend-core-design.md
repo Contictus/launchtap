@@ -1159,6 +1159,62 @@ The package includes the exact-gross-for-net helper used by the final buy. Found
 versioned JSON vectors from deployed Solidity behavior; Go consumes those files unchanged.
 Hand-calculated or model-supplied values are not authoritative fixtures.
 
+### 7.1 Vector artifact consumption
+
+`backend/internal/curve/testdata/` holds a byte-identical copy of `contracts/vectors/v1/`
+(both `curve-v1.json` and `curve.schema.json`). A dedicated CI step compares the two
+directories recursively and fails on any difference; this copy step is not a second
+generator — the backend never derives or edits vector content, only mirrors it.
+`.github/workflows/backend.yml`'s `push` and `pull_request` path filters include
+`contracts/vectors/**` alongside the existing `contracts/deployments/**` entry, so a
+contracts-only vector-regeneration commit still triggers the drift check.
+
+**Loader and validation stay stdlib-only.** `internal/curve`'s depguard rule
+(`list-mode: strict, allow: [$gostd]`) covers every file under it, including any vector
+loader — no JSON-schema engine (not even `santhosh-tekuri/jsonschema/v6`, already adopted
+for the analogous deployments case) is imported here, and no depguard exception is added.
+The copied `curve-v1.json` is decoded with `json.NewDecoder(...).DisallowUnknownFields()`
+into typed Go structs, followed by an EOF check after the single top-level JSON value to
+reject trailing content. `DisallowUnknownFields` alone enforces every
+`"additionalProperties": false` in the schema. A manual validator, written directly against
+the locked `curve.schema.json`, additionally enforces:
+
+- every `required` field's presence — tracked independently of Go's struct zero values (a
+  present-but-zero amount like `"0"` must not be indistinguishable from an absent field), by
+  decoding into a form that can detect field presence (e.g. `map[string]json.RawMessage` at
+  each level, or pointer-typed fields) rather than trusting zero-value structs alone
+- the `const` fields (`$schema`, `schemaVersion`, `engineVersion`, `amountEncoding`)
+- `cases` has at least 11 entries — a floor, never asserted as exactly 11: the plan's own
+  follow-up contracts commit (§ below) adds more before Task 11 starts
+- the `amount` pattern `^(0|[1-9][0-9]*)$` on every amount field
+- the case `id` pattern `^[a-z0-9_]+$` and the `operation`/`phase` enums
+- `tradeFeeBps`/`protocolShareBps` bounds (0-9999 / 0-10000)
+- the `expectedRevert.data` hex pattern `^0x[0-9a-f]+$`
+- the nullable `output`/`expectedRevert` fields (each is exactly one of a populated object or
+  `null`, per the schema's `oneOf`)
+
+This validator is a static, hand-written enforcement of the one locked schema version — not
+a general-purpose runtime JSON-schema engine — so it stays in scope for a stdlib-only
+package.
+
+**Amounts stay strings at this layer.** The loader's Go structs keep every amount field
+(`totalSupply`, `ethGross`, `tokenAmount`, …) as the raw JSON string, matching
+`amountEncoding: "uint256-decimal-string"`. Converting to `*big.Int` is Task 11's concern,
+when the values are actually consumed for quote assertions — Task 10 does not duplicate
+that parsing.
+
+**Scope boundary.** `expectedRevert.data` is validated only structurally (the hex pattern
+above); decoding it against a Solidity custom error's real ABI signature is out of scope
+here and deferred to whenever the backend surfaces revert reasons to a caller (Plan 2/3).
+The two additional buy vectors (a mid-curve buy from a non-genesis `tokensSold` state, and a
+buy landing just below the graduation boundary without graduating) are not part of this
+task's implementation — they land in a small contracts-side Foundry-regenerated follow-up
+commit before Task 11 starts, per the plan.
+
+**Negative-path test coverage.** The validator's tests include, at minimum: an unknown
+field, a missing required field, a malformed amount/id/enum/hex value, an out-of-range bps
+value, and a `cases` array with fewer than 11 entries — each must be rejected.
+
 The backend quote endpoint is informational because its indexed reserves can be stale. It
 returns `asOfBlock`, `finality`, `informational=true`, and no transaction-ready guarantee.
 The frontend must call the curve contract's view quote against current RPC state before
