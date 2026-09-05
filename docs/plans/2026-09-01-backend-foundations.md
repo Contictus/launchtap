@@ -4,10 +4,10 @@
 > and independent review. This is an implementation task list, not implementation code.
 
 **Status:** Design closed. The contracts milestone (Plan 1) is complete and the curve vector
-artifact exists at `contracts/vectors/v1/`. Tasks 1-7 are implemented and on `dev`. Task 8's
+artifact exists at `contracts/vectors/v1/`. Tasks 1-8 are implemented and on `dev`. Task 9's
 high-risk pre-flight is complete and its acceptance criteria are locked (see the task and
-spec §2.6, "Generated persistence layer"). Tasks 9-12 still require their high-risk
-pre-flight before implementation.
+spec §2.4, "Transaction boundary"). Tasks 10-12 still require their high-risk pre-flight
+before implementation.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and
@@ -436,16 +436,39 @@ diff` step), `backend/internal/store/postgres/postgrestest/*_test.go` (or equiva
 
 ## Task 9 — Store transaction primitive · Risk: high
 
-**Delivers:** store-internal `WithinTx` using sqlc bound to pgx transactions.
+**Delivers:** store-internal `WithinTx(ctx, pool, fn func(ctx, *Adapter) error) error`,
+backed by a `pgx.Tx` opened with explicit `pgx.ReadCommitted` isolation, whose callback
+receives an `*Adapter` (Task 8) over that same transaction — never a raw `pgx.Tx` or
+generated `sqlc.Queries`.
 
 **Depends on:** Task 8
 
+**Files:** `backend/internal/store/postgres/tx.go` (new),
+`backend/internal/store/postgres/postgrestest/withintx_integration_test.go` (new).
+
 **Acceptance criteria:**
 
-- Success commits; returned error rolls back; panic rolls back and re-panics.
-- Context cancellation does not report success and leaves no partial event/checkpoint writes.
-- A test commits block, event, projection, dirty marker, and watermark atomically.
-- A failure at each stage proves all five categories roll back.
+- Success commits; a returned error rolls back; a panic rolls back and re-panics with the
+  original recovered value unchanged, even if the rollback call itself also errors.
+- After `fn` returns `nil`, `ctx.Err()` is re-checked before COMMIT is issued — cancellation
+  is never reported as success. Rollback runs on a cleanup context independent of the
+  caller's (possibly already-canceled) context, bounded by its own timeout.
+- On the error path, a rollback failure is attached as additional context but never
+  displaces the original error — the original error remains reachable via
+  `errors.Is`/`errors.As`.
+- A single atomicity test commits block, event, projection (via
+  `rebuild_token_projections`), aggregation-dirty marker, and watermark together, then
+  proves rollback by injecting a genuine constraint-violation failure at five points: the
+  block insert, the event insert, the `rebuild_token_projections` call, the watermark
+  upsert, and COMMIT itself (a deferred constraint violation that only fires at commit,
+  after every callback statement already succeeded — proving a `nil`-returning callback is
+  not sufficient for reported success). Each induced failure asserts all five row
+  categories are unchanged from their pre-attempt state (fixture rows may legitimately
+  exist beforehand); `ON CONFLICT DO NOTHING` duplicate inserts do not error and are not a
+  valid injection mechanism.
+- No nested-transaction/savepoint support: calling `WithinTx` again inside a callback opens
+  an independent transaction against the pool, explicitly outside the outer transaction's
+  atomicity guarantee.
 - pgx and generated query types appear in no public domain/application signature.
 - The feature-level repository bundle is explicitly deferred to Plan 2, where consumer
   interfaces exist.

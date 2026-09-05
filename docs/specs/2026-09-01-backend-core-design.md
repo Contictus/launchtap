@@ -79,10 +79,72 @@ One processed block chunk is one database transaction: block ledger rows, canoni
 rows, chain projections, aggregation-dirty markers, and the observed watermark commit or
 roll back together.
 
-The foundation exposes a store-internal `WithinTx` primitive backed by `pgx.Tx` and sqlc's
-`DBTX`. The feature-level `IndexerUnitOfWork` and its narrow repository bundle are defined
-with Plan 2 feature ports; Plan 1 must not freeze repository interfaces before their
-consumers exist.
+**Signature.** The foundation exposes a store-internal primitive:
+
+```go
+func WithinTx(
+    ctx context.Context,
+    pool *pgxpool.Pool,
+    fn func(ctx context.Context, adapter *Adapter) error,
+) error
+```
+
+The callback receives an `*Adapter` (Task 8) constructed over the same `pgx.Tx` that backs
+the transaction — never a raw `pgx.Tx` or generated `sqlc.Queries` — so every write issued
+inside the callback keeps Task 8's idempotent-insert and invariant-conflict behavior. This
+signature is the only thing a caller sees; pgx and generated query types appear in no
+public domain/application signature. The feature-level `IndexerUnitOfWork` and its narrow
+repository bundle are defined with Plan 2 feature ports; Plan 1 must not freeze repository
+interfaces before their consumers exist. `WithinTx` takes a concrete `*pgxpool.Pool`, and is
+exercised only against real PostgreSQL (§2.5) — never a mocked driver.
+
+**Isolation.** The transaction is opened with an explicit `pgx.TxOptions{IsoLevel:
+pgx.ReadCommitted}` — READ COMMITTED is chosen, not left to the server default. No automatic
+retry on serialization/conflict errors is performed. This isolation choice does not by
+itself resolve concurrent-transaction races; those are handled by the explicit mechanisms
+already built in Tasks 6-7 (`FOR UPDATE SKIP LOCKED` dirty-work claims, `DEFERRABLE
+INITIALLY DEFERRED` constraint triggers), not by the isolation level.
+
+**Commit path.** After `fn` returns `nil`, `WithinTx` re-checks `ctx.Err()` before issuing
+COMMIT — a callback that swallows a context cancellation and returns `nil` anyway must not
+cause a reported success. Only once COMMIT itself has actually succeeded does `WithinTx`
+return `nil`; a callback returning `nil` is necessary but not sufficient. In particular, a
+`DEFERRABLE INITIALLY DEFERRED` constraint (Tasks 6-7) that only fires at COMMIT can still
+fail the transaction after every callback-issued statement succeeded — this is a required
+failure-injection scenario for the atomicity test below.
+
+**Rollback path.** On a returned error, a failed COMMIT, or a panic, `WithinTx` rolls back
+using a cleanup context independent of the (possibly already-canceled) caller context —
+bounded by its own short timeout, not tied to `ctx`. On the error path, a rollback failure
+is attached as additional context and must never displace the original error: the original
+error stays reachable via `errors.Is`/`errors.As`. On the panic path, the recovered value is
+always re-raised unchanged, regardless of whether the rollback call itself also errors; a
+rollback error encountered while unwinding a panic is logged separately, never substituted
+for the panic.
+
+**Ambiguous-outcome boundary.** If the network connection breaks after COMMIT is sent but
+before the client receives acknowledgement, the actual server-side outcome is ambiguous.
+`WithinTx` never reports success in that case — it returns the network error — but a
+returned error does not guarantee the commit did not take effect server-side, and no
+automatic retry is performed. Callers depend on Task 8's idempotent-insert semantics to
+tolerate this ambiguity, not on `WithinTx` resolving it.
+
+**Nesting.** Calling `WithinTx` again from inside a callback opens an independent
+transaction against the pool — it is not a savepoint and is not covered by the outer
+transaction's atomicity guarantee. Nested/savepoint transactions are out of scope for this
+primitive.
+
+**Atomicity test shape.** A single test proves atomicity across five row categories — block
+ledger, canonical event, chain projection rows (via `rebuild_token_projections`),
+aggregation-dirty marker, and sync watermark — by injecting a failure at each of five
+points: the block insert, the event insert, the `rebuild_token_projections` call, the
+watermark upsert, and COMMIT itself (via a deferred constraint violation that only surfaces
+at commit, per the commit-path paragraph above). Fixture rows that exist before the
+transaction attempt (e.g. a parent block, a token launch row) are expected; the assertion
+after each induced failure is that all five categories are unchanged from their
+pre-attempt state, not that the relevant tables are empty. An ordinary duplicate insert
+caught by `ON CONFLICT DO NOTHING` does not error and is not a valid failure-injection
+mechanism for this test — each induced failure must be a genuine constraint violation.
 
 ### 2.5 Migrations and test database provisioning
 
