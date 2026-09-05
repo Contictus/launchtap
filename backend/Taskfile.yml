@@ -29,6 +29,11 @@ tasks:
     cmds:
       - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run --build-tags=integration
 
+  fmt-check:
+    desc: Fail when Go source is not gofmt-formatted.
+    cmds:
+      - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 fmt -d
+
   migrate:
     desc: Run the embedded migration command; pass up, down, or status after --.
     cmds:
@@ -54,11 +59,19 @@ tasks:
     cmds:
       - go run ./cmd/sync-curve-vectors --check
 
+  deployments-diff:
+    desc: Fail when the backend deployment-manifest copy differs from the contracts source.
+    cmds:
+      - diff --recursive --brief --exclude=.generated ../contracts/deployments deployments/testdata
+
   verify:
-    desc: Run the complete Backend Foundations Task 1 gate.
+    desc: Run the full backend gate -- format, build, test, integration, lint, and drift checks.
     deps:
       - build
       - test
       - integration
       - lint
+      - fmt-check
+      - sqlc-diff
       - curve-vectors-diff
+      - deployments-diff

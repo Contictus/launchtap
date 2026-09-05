@@ -64,15 +64,6 @@ jobs:
           go-version-file: backend/go.mod
           cache: false
 
-      - name: Verify deployment artifact copy
-        run: diff --recursive --brief --exclude=.generated ../contracts/deployments deployments/testdata
-
-      - name: Verify curve-vector artifact copy
-        run: go run ./cmd/sync-curve-vectors --check
-
-      - name: Verify sqlc generated code
-        run: go run github.com/go-task/task/v3/cmd/task@v3.53.1 sqlc-diff
-
       - name: Run backend gate
         run: go run github.com/go-task/task/v3/cmd/task@v3.53.1 verify
 
