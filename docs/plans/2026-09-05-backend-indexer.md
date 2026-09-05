@@ -30,12 +30,26 @@ golangci-lint v2.13.2, testcontainers-go, `postgres:18.6-alpine`), plus go-ether
 `common.Address`/`common.Hash` value types — and Foundry 1.8.1 Anvil for the end-to-end
 integration test.
 
-**Granularity:** five deliberately coarse tasks. Tasks 4 and 5 each carry enough change that
-`AGENTS.md`'s `task/<slug>` short-lived branch — reserved for a high-risk task whose change is
-large or uncertain — is the expected path for them rather than the exception. Coarse tasks do
-not mean coarse review: each still takes a full pre-flight and a full independent commit
-review, and a task may be split during its pre-flight if the review surface turns out larger
-than the criteria below suggest.
+**Granularity:** five deliberately coarse tasks. Tasks 1-3 each take a full pre-flight and a
+full independent commit review. **Tasks 4 and 5 ship as a single delivery unit** by the
+product owner's decision: one pre-flight before Task 4 begins, no report or review between
+them, one independent review over the whole range at the end. `AGENTS.md`'s `task/<slug>`
+short-lived branch is the expected path for that unit rather than the exception.
+
+That decision trades the checkpoint that would otherwise sit between the riskiest code in the
+plan — Task 4's advisory-lock lifecycle, watermark promotion, chunk transaction, and reorg
+rollback — and everything Task 5 builds on top of it. Two things keep the end review tractable
+in exchange, and both are binding:
+
+- **Commits stay separated by concern inside the unit.** Ownership and the chunk loop, event
+  routing, the reorg path, aggregation workers, `cmd/indexer` wiring, and the verification
+  gate are distinct commits, so a finding against the reorg path can be reviewed and fixed
+  without untangling aggregation code written after it. One squashed "indexer" commit makes
+  the end review materially worse and is not acceptable here.
+- **The unit's own tests gate its internal seam.** Task 4's reorg and watermark tests must
+  pass before Task 5's aggregation work begins, because a reorg bug discovered after the
+  aggregators are written is a rewrite rather than a fix. Codex does not report at that
+  point; it simply does not proceed past a red seam.
 
 ## Global constraints
 
@@ -429,6 +443,10 @@ instead of recovering.
 
 **Depends on:** Tasks 2 and 3.
 
+**Delivery:** first half of the merged Tasks 4+5 unit — see *Granularity*. No report and no
+review at this boundary; the seam is enforced by this task's own tests passing before Task 5's
+work starts.
+
 **Files:** `backend/internal/indexer/` (new), `backend/internal/launch/`,
 `backend/internal/trading/`, `backend/internal/holder/`, `backend/internal/token/` (ingestion
 ports and handlers), `backend/internal/store/postgres/` (port implementations),
@@ -515,7 +533,11 @@ logging surface spec §12 mandates, an Anvil-backed end-to-end test covering eve
 dimension spec §11 names, and the real Robinhood testnet acceptance run that closes this
 milestone.
 
-**Depends on:** Tasks 1 and 4.
+**Depends on:** Task 1. Task 4 is no longer an external dependency — it is the first half of
+the same delivery unit.
+
+**Delivery:** second half of the merged Tasks 4+5 unit. The single independent review covers
+the whole `task/<slug>` range at the end.
 
 **Files:** `backend/internal/candle/`, `backend/internal/stats/`, `backend/internal/indexer/`
 (worker orchestration), `backend/internal/store/postgres/`, `backend/cmd/indexer/` (new),
@@ -590,6 +612,20 @@ milestone.
   and graduation, and records the observed→safe→finalized progression actually seen. Its
   result is written up with the commit and CI run that produced it; a green local suite is not
   accepted as evidence of testnet operation.
+- **That testnet criterion is gated on Task 1's manifest half, which is not done.** If the
+  manifest is still missing when the rest of this unit is complete, the criterion is deferred
+  to a named `backlog.md` item and the completion report says so explicitly — it is never
+  quietly marked satisfied by the Anvil run, and the unit is not reported as closing the
+  milestone. Every other criterion here is reachable without it.
+- The runtime's tuning values stop being guesses. `internal/config` currently ships
+  `defaultIndexerChunkSize = 100`, `defaultLogAddressBatch = 500`, `defaultPollInterval = 1s`,
+  `maxIndexerChunkSize = 10000`, and `maxLogAddressBatch = 2000` — all authored in Backend
+  Foundations before anything was measured, and decision 4 binds them to Task 1's probe
+  instead. The health lag thresholds in particular must be derived from the measured
+  observed→safe→finalized distribution on chain 46630, not from Ethereum-mainnet intuition:
+  the two chains differ by more than an order of magnitude in block time, so a threshold that
+  is reasonable on one is meaningless on the other. Any value left at its Foundations default
+  is justified against the probe's numbers rather than left unexamined.
 - Codex's completion report states the exact verified tool versions and commands the new gate
   exercises; Claude records them into `AGENTS.md` in a separate commit — Codex does not edit
   `AGENTS.md` directly.
