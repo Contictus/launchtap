@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Contictus/launchtap/contracts/vectors/v1/curve.schema.json",
+  "title": "Launchpad V1 curve differential vectors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "engineVersion",
+    "amountEncoding",
+    "parameters",
+    "cases"
+  ],
+  "properties": {
+    "$schema": { "const": "./curve.schema.json" },
+    "schemaVersion": { "const": 1 },
+    "engineVersion": { "const": 1 },
+    "amountEncoding": { "const": "uint256-decimal-string" },
+    "parameters": { "$ref": "#/$defs/parameters" },
+    "cases": {
+      "type": "array",
+      "minItems": 11,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "amount": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalSupply",
+        "curveTokens",
+        "lpTokens",
+        "graduationEth",
+        "initialVirtualEth",
+        "initialVirtualToken",
+        "tradeFeeBps",
+        "protocolShareBps"
+      ],
+      "properties": {
+        "totalSupply": { "$ref": "#/$defs/amount" },
+        "curveTokens": { "$ref": "#/$defs/amount" },
+        "lpTokens": { "$ref": "#/$defs/amount" },
+        "graduationEth": { "$ref": "#/$defs/amount" },
+        "initialVirtualEth": { "$ref": "#/$defs/amount" },
+        "initialVirtualToken": { "$ref": "#/$defs/amount" },
+        "tradeFeeBps": { "type": "integer", "minimum": 0, "maximum": 9999 },
+        "protocolShareBps": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "virtualEth",
+        "virtualToken",
+        "tokensSold",
+        "realCurveEth",
+        "protocolFees",
+        "creatorFees"
+      ],
+      "properties": {
+        "phase": { "enum": ["curve", "graduated"] },
+        "virtualEth": { "$ref": "#/$defs/amount" },
+        "virtualToken": { "$ref": "#/$defs/amount" },
+        "tokensSold": { "$ref": "#/$defs/amount" },
+        "realCurveEth": { "$ref": "#/$defs/amount" },
+        "protocolFees": { "$ref": "#/$defs/amount" },
+        "creatorFees": { "$ref": "#/$defs/amount" }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ethGross", "tokensIn"],
+      "properties": {
+        "ethGross": { "$ref": "#/$defs/amount" },
+        "tokensIn": { "$ref": "#/$defs/amount" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ethGross",
+        "ethRefund",
+        "ethOut",
+        "tokenAmount",
+        "protocolFee",
+        "creatorFee",
+        "graduates"
+      ],
+      "properties": {
+        "ethGross": { "$ref": "#/$defs/amount" },
+        "ethRefund": { "$ref": "#/$defs/amount" },
+        "ethOut": { "$ref": "#/$defs/amount" },
+        "tokenAmount": { "$ref": "#/$defs/amount" },
+        "protocolFee": { "$ref": "#/$defs/amount" },
+        "creatorFee": { "$ref": "#/$defs/amount" },
+        "graduates": { "type": "boolean" }
+      }
+    },
+    "revert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "data"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "data": { "type": "string", "pattern": "^0x[0-9a-f]+$" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "operation",
+        "initialState",
+        "input",
+        "output",
+        "nextState",
+        "expectedRevert"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "operation": { "enum": ["buy", "sell"] },
+        "initialState": { "$ref": "#/$defs/state" },
+        "input": { "$ref": "#/$defs/input" },
+        "output": {
+          "oneOf": [
+            { "$ref": "#/$defs/output" },
+            { "type": "null" }
+          ]
+        },
+        "nextState": { "$ref": "#/$defs/state" },
+        "expectedRevert": {
+          "oneOf": [
+            { "$ref": "#/$defs/revert" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchtap.local/schemas/chain-disabled-v1.json",
+  "title": "LaunchTap disabled chain marker",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "target", "chainId", "enabled", "reason"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "target": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$" },
+    "chainId": { "type": "integer", "minimum": 1 },
+    "enabled": { "const": false },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 500 }
+  }
+}

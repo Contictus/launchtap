@@ -87,6 +87,8 @@ try {
         "buy_normal",
         "buy_one_wei",
         "buy_fee_split_dust",
+        "buy_mid_curve",
+        "buy_just_below_graduation",
         "buy_final_exact",
         "buy_final_refund_and_graduation",
         "sell_normal",
@@ -175,6 +177,23 @@ try {
     $finalRefundInvalid = $finalRefundInvalid -or $finalRefund.nextState.phase -ne "graduated"
     if ($finalRefundInvalid) {
         Fail "buy_final_refund_and_graduation must refund and enter the graduated phase"
+    }
+    $midCurve = $artifact.cases | Where-Object id -eq "buy_mid_curve"
+    if ((To-Amount $midCurve.initialState.tokensSold) -le 0) {
+        Fail "buy_mid_curve must start from a non-genesis sold-token state"
+    }
+    $nearGraduation = $artifact.cases | Where-Object id -eq "buy_just_below_graduation"
+    $nearGraduationInvalid = $nearGraduation.output.graduates
+    $nearGraduationInvalid = $nearGraduationInvalid -or $nearGraduation.nextState.phase -ne "curve"
+    $nearGraduationInvalid = $nearGraduationInvalid -or (To-Amount $nearGraduation.output.ethRefund) -ne 0
+    $nearGraduationInvalid = $nearGraduationInvalid -or (
+        (To-Amount $nearGraduation.nextState.tokensSold) -ge (To-Amount $artifact.parameters.curveTokens)
+    )
+    $nearGraduationInvalid = $nearGraduationInvalid -or (
+        (To-Amount $nearGraduation.input.ethGross) + 1 -ne (To-Amount $finalExact.input.ethGross)
+    )
+    if ($nearGraduationInvalid) {
+        Fail "buy_just_below_graduation must remain one gross wei below the graduation boundary"
     }
     $fullSell = $artifact.cases | Where-Object id -eq "sell_full"
     if ((To-Amount $fullSell.nextState.tokensSold) -ne 0) {
