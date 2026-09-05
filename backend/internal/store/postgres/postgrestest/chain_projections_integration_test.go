@@ -41,7 +41,7 @@ func TestChainProjectionsSchema(t *testing.T) {
 			"aggregation_dirty_pkey", "aggregation_dirty_claim_together",
 			"aggregation_dirty_claim_not_ahead", "aggregation_dirty_token_fk",
 		},
-		"token_metadata": {"token_metadata_pkey", "token_metadata_token_launch_fk"},
+		"token_metadata": {"token_metadata_pkey"},
 		"candles":        {"candles_pkey", "candles_interval_valid", "candles_token_fk"},
 		"token_stats":    {"token_stats_pkey", "token_stats_token_fk"},
 		"protocol_daily": {"protocol_daily_pkey", "protocol_daily_volume_eth_nonnegative"},
@@ -219,7 +219,9 @@ func testProjectionConstraintRejections(t *testing.T, ctx context.Context, datab
 		INSERT INTO token_metadata (chain_id, token_address, updated_at)
 		VALUES ($1, $2, now())
 	`, chainID, addressBytes(0x61))
-	assertPostgresConstraint(t, err, "23503", "token_metadata_token_launch_fk")
+	if err != nil {
+		t.Fatalf("metadata without canonical launch: %v", err)
+	}
 
 	_, err = database.ExecContext(ctx, `
 		INSERT INTO candles (
@@ -293,7 +295,9 @@ func testUnknownProjectionAddresses(t testing.TB, ctx context.Context, database 
 	assertPostgresConstraint(t, err, "23503", "aggregation_dirty_token_fk")
 
 	_, err = database.ExecContext(ctx, `INSERT INTO token_metadata (chain_id, token_address, updated_at) VALUES ($1, $2, now())`, chainID, unknown)
-	assertPostgresConstraint(t, err, "23503", "token_metadata_token_launch_fk")
+	if err != nil {
+		t.Fatalf("orphan metadata: %v", err)
+	}
 
 	_, err = database.ExecContext(ctx, `
 		INSERT INTO candles (

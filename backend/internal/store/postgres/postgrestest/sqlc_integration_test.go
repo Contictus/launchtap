@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/ledger"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -52,24 +54,22 @@ func testIdempotentTrade(
 		token: token, curve: addressBytes(0x44), pair: addressBytes(0x45), weth: addressBytes(0x46),
 	})
 
-	trade := storepostgres.Trade{
-		ChainID: chainID, BlockNumber: 400, BlockHash: fixedHash(0x41),
-		BlockTime:        pgtype.Timestamptz{Time: blockTime, Valid: true},
-		TransactionIndex: 1, TxHash: fixedHash(0x47), LogIndex: 2,
-		TokenAddress: fixedAddress(token), Trader: fixedAddress(addressBytes(0x48)), IsBuy: true,
-		EthGross: uint256Byte(100), TokenAmount: uint256Byte(200),
-		ProtocolFee: uint256Byte(1), CreatorFee: uint256Byte(2),
-		NewEthReserve: uint256Byte(110), NewTokenReserve: uint256Byte(199),
+	trade := ledger.Trade{
+		EventCoordinates: ledger.EventCoordinates{ChainID: chainID, BlockNumber: 400, BlockHash: common.Hash(fixedHash(0x41)), BlockTime: blockTime, TransactionIndex: 1, TxHash: common.Hash(fixedHash(0x47)), LogIndex: 2},
+		Token:            common.Address(fixedAddress(token)), Trader: common.Address(fixedAddress(addressBytes(0x48))), IsBuy: true,
+		ETHGross: uint256Byte(100).BigInt(), ETHRefund: uint256Byte(0).BigInt(), TokenAmount: uint256Byte(200).BigInt(),
+		ProtocolFee: uint256Byte(1).BigInt(), CreatorFee: uint256Byte(2).BigInt(),
+		NewETHReserve: uint256Byte(110).BigInt(), NewTokenReserve: uint256Byte(199).BigInt(),
 	}
 	adapter := storepostgres.NewAdapter(pool)
-	if err := adapter.InsertTrade(ctx, trade); err != nil {
+	if _, err := adapter.InsertTrade(ctx, trade); err != nil {
 		t.Fatalf("insert trade: %v", err)
 	}
-	if err := adapter.InsertTrade(ctx, trade); err != nil {
+	if _, err := adapter.InsertTrade(ctx, trade); err != nil {
 		t.Fatalf("replay identical trade: %v", err)
 	}
-	trade.CreatorFee = uint256Byte(3)
-	err := adapter.InsertTrade(ctx, trade)
+	trade.CreatorFee = uint256Byte(3).BigInt()
+	_, err := adapter.InsertTrade(ctx, trade)
 	var conflict *storepostgres.InvariantConflictError
 	if !errors.As(err, &conflict) {
 		t.Fatalf("divergent trade error = %T %v, want InvariantConflictError", err, err)
@@ -79,16 +79,16 @@ func testIdempotentTrade(
 func testSQLCDBTX(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 	const chainID int64 = 49001
-	blockTime := pgtype.Timestamptz{Time: time.Date(2026, 9, 4, 18, 0, 0, 0, time.UTC), Valid: true}
+	blockTime := time.Date(2026, 9, 4, 18, 0, 0, 0, time.UTC)
 	blockHash := fixedHash(0x11)
 	parentHash := fixedHash(0x10)
 
 	adapter := storepostgres.NewAdapter(pool)
-	block := storepostgres.IndexedBlock{
-		ChainID: chainID, BlockNumber: 100, BlockHash: blockHash, ParentHash: parentHash,
+	block := ledger.IndexedBlock{
+		ChainID: chainID, BlockNumber: 100, BlockHash: common.Hash(blockHash), ParentHash: common.Hash(parentHash),
 		BlockTime: blockTime, FinalityStatus: "observed",
 	}
-	if err := adapter.UpsertIndexedBlock(ctx, block); err != nil {
+	if _, err := adapter.UpsertIndexedBlock(ctx, block); err != nil {
 		t.Fatalf("insert block through pool DBTX: %v", err)
 	}
 
@@ -96,11 +96,11 @@ func testSQLCDBTX(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	if err != nil {
 		t.Fatalf("get block by number: %v", err)
 	}
-	byHash, err := adapter.GetIndexedBlockByHash(ctx, chainID, blockHash)
+	byHash, err := adapter.GetIndexedBlockByHash(ctx, chainID, common.Hash(blockHash))
 	if err != nil {
 		t.Fatalf("get block by hash: %v", err)
 	}
-	if byNumber.BlockHash != blockHash || byHash.BlockNumber != 100 {
+	if byNumber.BlockHash != common.Hash(blockHash) || byHash.BlockNumber != 100 {
 		t.Fatalf("link lookups returned inconsistent blocks: by_number=%+v by_hash=%+v", byNumber, byHash)
 	}
 
@@ -108,7 +108,7 @@ func testSQLCDBTX(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		ChainID: chainID, DeploymentID: "sqlc-foundation-test",
 		ObservedNumber: pgtype.Int8{Int64: 100, Valid: true},
 		ObservedHash:   &blockHash,
-		ObservedAt:     blockTime,
+		ObservedAt:     pgtype.Timestamptz{Time: blockTime, Valid: true},
 	}
 	storedState, err := adapter.UpsertSyncState(ctx, syncState)
 	if err != nil {
@@ -129,15 +129,15 @@ func testSQLCDBTX(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		t.Fatalf("begin transaction: %v", err)
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
-	if err := storepostgres.NewAdapter(transaction).UpsertIndexedBlock(ctx, block); err != nil {
+	if _, err := storepostgres.NewAdapter(transaction).UpsertIndexedBlock(ctx, block); err != nil {
 		t.Fatalf("update finality through pgx.Tx DBTX: %v", err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
 		t.Fatalf("commit caller-owned transaction: %v", err)
 	}
 
-	block.ParentHash = fixedHash(0xff)
-	err = adapter.UpsertIndexedBlock(ctx, block)
+	block.ParentHash = common.Hash(fixedHash(0xff))
+	_, err = adapter.UpsertIndexedBlock(ctx, block)
 	var conflict *storepostgres.InvariantConflictError
 	if !errors.As(err, &conflict) {
 		t.Fatalf("divergent block error = %T %v, want InvariantConflictError", err, err)
@@ -147,28 +147,27 @@ func testSQLCDBTX(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 func testIdempotentLaunchPauseEvent(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 	const chainID int64 = 49002
-	blockTime := pgtype.Timestamptz{Time: time.Date(2026, 9, 4, 18, 1, 0, 123456789, time.UTC), Valid: true}
+	blockTime := time.Date(2026, 9, 4, 18, 1, 0, 123456789, time.UTC)
 	adapter := storepostgres.NewAdapter(pool)
-	if err := adapter.UpsertIndexedBlock(ctx, storepostgres.IndexedBlock{
-		ChainID: chainID, BlockNumber: 200, BlockHash: fixedHash(0x21), ParentHash: fixedHash(0x20),
+	if _, err := adapter.UpsertIndexedBlock(ctx, ledger.IndexedBlock{
+		ChainID: chainID, BlockNumber: 200, BlockHash: common.Hash(fixedHash(0x21)), ParentHash: common.Hash(fixedHash(0x20)),
 		BlockTime: blockTime, FinalityStatus: "observed",
 	}); err != nil {
 		t.Fatalf("insert event block: %v", err)
 	}
 
-	event := storepostgres.LaunchPauseEvent{
-		ChainID: chainID, BlockNumber: 200, BlockHash: fixedHash(0x21), BlockTime: blockTime,
-		TransactionIndex: 0, TxHash: fixedHash(0x22), LogIndex: 1, Paused: true,
+	event := ledger.LaunchPauseEvent{
+		EventCoordinates: ledger.EventCoordinates{ChainID: chainID, BlockNumber: 200, BlockHash: common.Hash(fixedHash(0x21)), BlockTime: blockTime, TransactionIndex: 0, TxHash: common.Hash(fixedHash(0x22)), LogIndex: 1}, Paused: true,
 	}
-	if err := adapter.InsertLaunchPauseEvent(ctx, event); err != nil {
+	if _, err := adapter.InsertLaunchPauseEvent(ctx, event); err != nil {
 		t.Fatalf("insert launch pause event: %v", err)
 	}
-	if err := adapter.InsertLaunchPauseEvent(ctx, event); err != nil {
+	if _, err := adapter.InsertLaunchPauseEvent(ctx, event); err != nil {
 		t.Fatalf("replay identical launch pause event: %v", err)
 	}
 
 	event.Paused = false
-	err := adapter.InsertLaunchPauseEvent(ctx, event)
+	_, err := adapter.InsertLaunchPauseEvent(ctx, event)
 	var conflict *storepostgres.InvariantConflictError
 	if !errors.As(err, &conflict) {
 		t.Fatalf("divergent replay error = %T %v, want InvariantConflictError", err, err)
@@ -192,12 +191,12 @@ func testDirtyCompletionRace(
 	})
 
 	adapter := storepostgres.NewAdapter(pool)
-	if err := adapter.RebuildTokenProjections(ctx, chainID, fixedAddress(token)); err != nil {
+	if err := adapter.RebuildTokenProjections(ctx, chainID, common.Address(fixedAddress(token))); err != nil {
 		t.Fatalf("initial projection rebuild: %v", err)
 	}
 	claimA := claimOne(t, ctx, adapter, "worker-a")
 
-	if err := adapter.RebuildTokenProjections(ctx, chainID, fixedAddress(token)); err != nil {
+	if err := adapter.RebuildTokenProjections(ctx, chainID, common.Address(fixedAddress(token))); err != nil {
 		t.Fatalf("second projection rebuild: %v", err)
 	}
 	claimB := claimOne(t, ctx, adapter, "worker-b")

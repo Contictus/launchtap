@@ -72,7 +72,7 @@ tasks:
   deployments-diff:
     desc: Fail when the backend deployment-manifest copy differs from the contracts source.
     cmds:
-      - diff --recursive --brief --exclude=.generated ../contracts/deployments deployments/testdata
+      - go run ./cmd/check-deployments
 
   verify:
     desc: Run the full backend gate -- format, build, test, integration, lint, and drift checks.

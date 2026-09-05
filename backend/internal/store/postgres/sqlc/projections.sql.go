@@ -11,6 +11,174 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const applyGraduationProjection = `-- name: ApplyGraduationProjection :exec
+UPDATE tokens SET phase = 'graduated', graduation_block_number = graduation.block_number,
+    graduation_block_hash = graduation.block_hash, graduation_block_time = graduation.block_time,
+    graduation_tx_hash = graduation.tx_hash, graduation_log_index = graduation.log_index
+FROM graduations AS graduation
+WHERE graduation.chain_id = $1 AND graduation.tx_hash = $2 AND graduation.log_index = $3
+  AND tokens.chain_id = graduation.chain_id AND tokens.token_address = graduation.token_address
+`
+
+type ApplyGraduationProjectionParams struct {
+	ChainID  int64
+	TxHash   Hash
+	LogIndex int32
+}
+
+func (q *Queries) ApplyGraduationProjection(ctx context.Context, arg ApplyGraduationProjectionParams) error {
+	_, err := q.db.Exec(ctx, applyGraduationProjection, arg.ChainID, arg.TxHash, arg.LogIndex)
+	return err
+}
+
+const applyMarketTradeCandles = `-- name: ApplyMarketTradeCandles :exec
+WITH bucketed AS (
+    SELECT market.chain_id, market.token_address, market.block_number, market.block_time, market.transaction_index, market.tx_hash, market.log_index, market.source, market.side_buy, market.trader, market.execution_price_wad, market.spot_price_wad, market.gross_eth_volume, market.token_volume, market.finality, '1m'::text AS bucket_interval, date_trunc('minute', market.block_time) AS bucket_start_time
+    FROM market_trades AS market WHERE market.chain_id=$1 AND market.tx_hash=$2 AND market.log_index=$3 AND market.execution_price_wad IS NOT NULL
+    UNION ALL
+    SELECT market.chain_id, market.token_address, market.block_number, market.block_time, market.transaction_index, market.tx_hash, market.log_index, market.source, market.side_buy, market.trader, market.execution_price_wad, market.spot_price_wad, market.gross_eth_volume, market.token_volume, market.finality, '5m'::text, date_trunc('hour', market.block_time) + floor(extract(minute FROM market.block_time) / 5) * interval '5 minutes'
+    FROM market_trades AS market WHERE market.chain_id=$1 AND market.tx_hash=$2 AND market.log_index=$3 AND market.execution_price_wad IS NOT NULL
+    UNION ALL
+    SELECT market.chain_id, market.token_address, market.block_number, market.block_time, market.transaction_index, market.tx_hash, market.log_index, market.source, market.side_buy, market.trader, market.execution_price_wad, market.spot_price_wad, market.gross_eth_volume, market.token_volume, market.finality, '1h'::text, date_trunc('hour', market.block_time)
+    FROM market_trades AS market WHERE market.chain_id=$1 AND market.tx_hash=$2 AND market.log_index=$3 AND market.execution_price_wad IS NOT NULL
+    UNION ALL
+    SELECT market.chain_id, market.token_address, market.block_number, market.block_time, market.transaction_index, market.tx_hash, market.log_index, market.source, market.side_buy, market.trader, market.execution_price_wad, market.spot_price_wad, market.gross_eth_volume, market.token_volume, market.finality, '1d'::text, date_trunc('day', market.block_time)
+    FROM market_trades AS market WHERE market.chain_id=$1 AND market.tx_hash=$2 AND market.log_index=$3 AND market.execution_price_wad IS NOT NULL
+)
+INSERT INTO candles (chain_id, token_address, interval, bucket_start_time, open_price_wad, high_price_wad, low_price_wad, close_price_wad, gross_eth_volume, token_volume, trade_count)
+SELECT chain_id, token_address, bucket_interval, bucket_start_time, execution_price_wad, execution_price_wad, execution_price_wad, execution_price_wad, gross_eth_volume, token_volume, 1 FROM bucketed
+ON CONFLICT (chain_id, token_address, interval, bucket_start_time) DO UPDATE SET high_price_wad=greatest(candles.high_price_wad,EXCLUDED.high_price_wad), low_price_wad=least(candles.low_price_wad,EXCLUDED.low_price_wad), close_price_wad=EXCLUDED.close_price_wad, gross_eth_volume=candles.gross_eth_volume+EXCLUDED.gross_eth_volume, token_volume=candles.token_volume+EXCLUDED.token_volume, trade_count=candles.trade_count+1
+`
+
+type ApplyMarketTradeCandlesParams struct {
+	ChainID  int64
+	TxHash   Hash
+	LogIndex int32
+}
+
+func (q *Queries) ApplyMarketTradeCandles(ctx context.Context, arg ApplyMarketTradeCandlesParams) error {
+	_, err := q.db.Exec(ctx, applyMarketTradeCandles, arg.ChainID, arg.TxHash, arg.LogIndex)
+	return err
+}
+
+const applyPoolSyncReserveProjection = `-- name: ApplyPoolSyncReserveProjection :exec
+INSERT INTO token_reserves (chain_id, token_address, reserve_source, eth_reserve, token_reserve, source_block_number, source_block_hash, source_block_time, source_tx_hash, source_log_index)
+SELECT sync.chain_id, token.token_address, 'pair', CASE WHEN token.token_is_token0 THEN sync.reserve1 ELSE sync.reserve0 END, CASE WHEN token.token_is_token0 THEN sync.reserve0 ELSE sync.reserve1 END, sync.block_number, sync.block_hash, sync.block_time, sync.tx_hash, sync.log_index
+FROM pool_syncs AS sync JOIN tokens AS token ON token.chain_id=sync.chain_id AND token.lp_pair=sync.pair_address AND token.phase='graduated'
+WHERE sync.chain_id=$1 AND sync.tx_hash=$2 AND sync.log_index=$3
+ON CONFLICT (chain_id, token_address) DO UPDATE SET reserve_source=EXCLUDED.reserve_source, eth_reserve=EXCLUDED.eth_reserve, token_reserve=EXCLUDED.token_reserve, source_block_number=EXCLUDED.source_block_number, source_block_hash=EXCLUDED.source_block_hash, source_block_time=EXCLUDED.source_block_time, source_tx_hash=EXCLUDED.source_tx_hash, source_log_index=EXCLUDED.source_log_index
+WHERE (EXCLUDED.source_block_number, (SELECT transaction_index FROM pool_syncs WHERE chain_id=$1 AND tx_hash=$2 AND log_index=$3), EXCLUDED.source_log_index) > (token_reserves.source_block_number, COALESCE(CASE token_reserves.reserve_source WHEN 'curve' THEN (SELECT transaction_index FROM trades WHERE chain_id=token_reserves.chain_id AND tx_hash=token_reserves.source_tx_hash AND log_index=token_reserves.source_log_index) ELSE (SELECT transaction_index FROM pool_syncs WHERE chain_id=token_reserves.chain_id AND tx_hash=token_reserves.source_tx_hash AND log_index=token_reserves.source_log_index) END, -1), token_reserves.source_log_index)
+`
+
+type ApplyPoolSyncReserveProjectionParams struct {
+	ChainID  int64
+	TxHash   Hash
+	LogIndex int32
+}
+
+func (q *Queries) ApplyPoolSyncReserveProjection(ctx context.Context, arg ApplyPoolSyncReserveProjectionParams) error {
+	_, err := q.db.Exec(ctx, applyPoolSyncReserveProjection, arg.ChainID, arg.TxHash, arg.LogIndex)
+	return err
+}
+
+const applyTokenLaunchProjection = `-- name: ApplyTokenLaunchProjection :exec
+INSERT INTO tokens (
+    chain_id, token_address, curve_address, lp_pair, weth, creator, protocol_treasury,
+    engine_version, name, symbol, total_supply, initial_virtual_eth, initial_virtual_token,
+    curve_tokens, lp_tokens, graduation_eth, trade_fee_bps, protocol_share_bps,
+    launch_block_number, launch_block_hash, launch_block_time, launch_tx_hash, launch_log_index
+) SELECT launch.chain_id, launch.token_address, launch.curve_address, launch.lp_pair, launch.weth, launch.creator, launch.protocol_treasury,
+    launch.engine_version, launch.name, launch.symbol, launch.total_supply, launch.virtual_eth, launch.virtual_token, launch.curve_tokens,
+    launch.lp_tokens, launch.graduation_eth, launch.trade_fee_bps, launch.protocol_share_bps, launch.block_number, launch.block_hash,
+    launch.block_time, launch.tx_hash, launch.log_index
+FROM token_launches AS launch WHERE launch.chain_id = $1 AND launch.tx_hash = $2 AND launch.log_index = $3
+ON CONFLICT (chain_id, token_address) DO NOTHING
+`
+
+type ApplyTokenLaunchProjectionParams struct {
+	ChainID  int64
+	TxHash   Hash
+	LogIndex int32
+}
+
+func (q *Queries) ApplyTokenLaunchProjection(ctx context.Context, arg ApplyTokenLaunchProjectionParams) error {
+	_, err := q.db.Exec(ctx, applyTokenLaunchProjection, arg.ChainID, arg.TxHash, arg.LogIndex)
+	return err
+}
+
+const applyTradeReserveProjection = `-- name: ApplyTradeReserveProjection :exec
+INSERT INTO token_reserves (chain_id, token_address, reserve_source, eth_reserve, token_reserve, source_block_number, source_block_hash, source_block_time, source_tx_hash, source_log_index)
+SELECT trade.chain_id, trade.token_address, 'curve', trade.new_eth_reserve, trade.new_token_reserve, trade.block_number, trade.block_hash, trade.block_time, trade.tx_hash, trade.log_index
+FROM trades AS trade WHERE trade.chain_id = $1 AND trade.tx_hash = $2 AND trade.log_index = $3
+ON CONFLICT (chain_id, token_address) DO UPDATE SET reserve_source=EXCLUDED.reserve_source, eth_reserve=EXCLUDED.eth_reserve, token_reserve=EXCLUDED.token_reserve, source_block_number=EXCLUDED.source_block_number, source_block_hash=EXCLUDED.source_block_hash, source_block_time=EXCLUDED.source_block_time, source_tx_hash=EXCLUDED.source_tx_hash, source_log_index=EXCLUDED.source_log_index
+WHERE (EXCLUDED.source_block_number, (SELECT transaction_index FROM trades WHERE chain_id=$1 AND tx_hash=$2 AND log_index=$3), EXCLUDED.source_log_index) > (token_reserves.source_block_number, COALESCE(CASE token_reserves.reserve_source WHEN 'curve' THEN (SELECT transaction_index FROM trades WHERE chain_id=token_reserves.chain_id AND tx_hash=token_reserves.source_tx_hash AND log_index=token_reserves.source_log_index) ELSE (SELECT transaction_index FROM pool_syncs WHERE chain_id=token_reserves.chain_id AND tx_hash=token_reserves.source_tx_hash AND log_index=token_reserves.source_log_index) END, -1), token_reserves.source_log_index)
+`
+
+type ApplyTradeReserveProjectionParams struct {
+	ChainID  int64
+	TxHash   Hash
+	LogIndex int32
+}
+
+func (q *Queries) ApplyTradeReserveProjection(ctx context.Context, arg ApplyTradeReserveProjectionParams) error {
+	_, err := q.db.Exec(ctx, applyTradeReserveProjection, arg.ChainID, arg.TxHash, arg.LogIndex)
+	return err
+}
+
+const applyTransferProjection = `-- name: ApplyTransferProjection :one
+WITH deltas AS (
+    SELECT holder, sum(delta) AS delta FROM (
+        SELECT $3::bytea AS holder, -$4::numeric AS delta
+        WHERE $3::bytea <> decode(repeat('00',20),'hex')
+        UNION ALL SELECT $5::bytea AS holder, $4::numeric AS delta
+    ) AS legs GROUP BY holder
+), valid AS (
+    SELECT NOT EXISTS (
+        SELECT 1 FROM deltas LEFT JOIN holder_balances AS existing
+        ON existing.chain_id=$1 AND existing.token_address=$2 AND existing.holder_address=deltas.holder
+        WHERE coalesce(existing.balance,0)+deltas.delta < 0
+    ) AS ok
+), applied AS (
+    INSERT INTO holder_balances (chain_id, token_address, holder_address, balance, first_acquired_block_number)
+    SELECT $1 AS chain_id, $2 AS token_address, deltas.holder AS holder_address, coalesce(existing.balance,0)+deltas.delta AS balance,
+        CASE WHEN coalesce(existing.balance,0)+deltas.delta=0 THEN NULL
+             WHEN coalesce(existing.balance,0)=0 THEN $6 ELSE existing.first_acquired_block_number END AS first_acquired_block_number
+    FROM deltas LEFT JOIN holder_balances AS existing
+        ON existing.chain_id=$1 AND existing.token_address=$2 AND existing.holder_address=deltas.holder
+    WHERE (SELECT ok FROM valid)
+    ON CONFLICT (chain_id, token_address, holder_address) DO UPDATE SET
+        balance = holder_balances.balance + (SELECT delta FROM deltas WHERE holder=EXCLUDED.holder_address),
+        first_acquired_block_number = CASE
+            WHEN holder_balances.balance + (SELECT delta FROM deltas WHERE holder=EXCLUDED.holder_address)=0 THEN NULL
+            WHEN holder_balances.balance=0 THEN $6 ELSE holder_balances.first_acquired_block_number END
+    RETURNING 1
+)
+SELECT (SELECT ok FROM valid) AND EXISTS (SELECT 1 FROM applied) AS applied
+`
+
+type ApplyTransferProjectionParams struct {
+	ChainID                  int64
+	TokenAddress             Address
+	Column3                  []byte
+	Column4                  pgtype.Numeric
+	Column5                  []byte
+	FirstAcquiredBlockNumber pgtype.Int8
+}
+
+func (q *Queries) ApplyTransferProjection(ctx context.Context, arg ApplyTransferProjectionParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, applyTransferProjection,
+		arg.ChainID,
+		arg.TokenAddress,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.FirstAcquiredBlockNumber,
+	)
+	var applied pgtype.Bool
+	err := row.Scan(&applied)
+	return applied, err
+}
+
 const claimAggregationDirty = `-- name: ClaimAggregationDirty :many
 WITH candidate AS (
     SELECT chain_id, token_address
@@ -61,6 +229,25 @@ func (q *Queries) ClaimAggregationDirty(ctx context.Context, arg ClaimAggregatio
 	return items, nil
 }
 
+const clearOrphanProjections = `-- name: ClearOrphanProjections :exec
+WITH reserves AS (DELETE FROM token_reserves WHERE token_reserves.chain_id=$1 AND token_reserves.token_address=$2),
+holders AS (DELETE FROM holder_balances WHERE holder_balances.chain_id=$1 AND holder_balances.token_address=$2),
+buckets AS (DELETE FROM candles WHERE candles.chain_id=$1 AND candles.token_address=$2),
+stats AS (DELETE FROM token_stats WHERE token_stats.chain_id=$1 AND token_stats.token_address=$2),
+dirty AS (DELETE FROM aggregation_dirty WHERE aggregation_dirty.chain_id=$1 AND aggregation_dirty.token_address=$2)
+DELETE FROM tokens WHERE tokens.chain_id=$1 AND tokens.token_address=$2
+`
+
+type ClearOrphanProjectionsParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+func (q *Queries) ClearOrphanProjections(ctx context.Context, arg ClearOrphanProjectionsParams) error {
+	_, err := q.db.Exec(ctx, clearOrphanProjections, arg.ChainID, arg.TokenAddress)
+	return err
+}
+
 const completeAggregationDirty = `-- name: CompleteAggregationDirty :execrows
 DELETE FROM aggregation_dirty
 WHERE chain_id = $1
@@ -88,6 +275,53 @@ func (q *Queries) CompleteAggregationDirty(ctx context.Context, arg CompleteAggr
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const hasCanonicalLaunch = `-- name: HasCanonicalLaunch :one
+SELECT EXISTS(SELECT 1 FROM token_launches WHERE chain_id=$1 AND token_address=$2)
+`
+
+type HasCanonicalLaunchParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+func (q *Queries) HasCanonicalLaunch(ctx context.Context, arg HasCanonicalLaunchParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasCanonicalLaunch, arg.ChainID, arg.TokenAddress)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const markPairTokenDirty = `-- name: MarkPairTokenDirty :exec
+INSERT INTO aggregation_dirty (chain_id, token_address, generation)
+SELECT token.chain_id, token.token_address, nextval('aggregation_dirty_generation_seq') FROM tokens AS token WHERE token.chain_id=$1 AND token.lp_pair=$2
+ON CONFLICT (chain_id, token_address) DO UPDATE SET generation=nextval('aggregation_dirty_generation_seq')
+`
+
+type MarkPairTokenDirtyParams struct {
+	ChainID int64
+	LpPair  Address
+}
+
+func (q *Queries) MarkPairTokenDirty(ctx context.Context, arg MarkPairTokenDirtyParams) error {
+	_, err := q.db.Exec(ctx, markPairTokenDirty, arg.ChainID, arg.LpPair)
+	return err
+}
+
+const markTokenDirty = `-- name: MarkTokenDirty :exec
+INSERT INTO aggregation_dirty (chain_id, token_address, generation) VALUES ($1, $2, nextval('aggregation_dirty_generation_seq'))
+ON CONFLICT (chain_id, token_address) DO UPDATE SET generation=nextval('aggregation_dirty_generation_seq')
+`
+
+type MarkTokenDirtyParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+func (q *Queries) MarkTokenDirty(ctx context.Context, arg MarkTokenDirtyParams) error {
+	_, err := q.db.Exec(ctx, markTokenDirty, arg.ChainID, arg.TokenAddress)
+	return err
 }
 
 const rebuildTokenProjections = `-- name: RebuildTokenProjections :exec

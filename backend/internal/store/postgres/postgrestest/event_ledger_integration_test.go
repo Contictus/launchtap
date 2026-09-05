@@ -149,8 +149,8 @@ func testSharedEventConstraintsAndIndexes(t *testing.T, ctx context.Context, dat
 	`).Scan(&tokenFKs); err != nil {
 		t.Fatalf("count deferred token foreign keys: %v", err)
 	}
-	if tokenFKs != 9 { // Seven event links plus tokens and token_metadata.
-		t.Fatalf("deferred no-action token foreign keys = %d, want 9", tokenFKs)
+	if tokenFKs != 8 { // Seven event links plus tokens; metadata survives orphan launches.
+		t.Fatalf("deferred no-action token foreign keys = %d, want 8", tokenFKs)
 	}
 
 	for _, index := range []string{"pool_swaps_reserve_lookup_idx", "pool_syncs_reserve_lookup_idx"} {

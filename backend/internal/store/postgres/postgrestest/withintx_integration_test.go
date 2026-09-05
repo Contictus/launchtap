@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/ledger"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -98,7 +100,7 @@ func TestWithinTxLifecycleFailures(t *testing.T) {
 		prepareAtomicFixture(t, ctx, database.DB, fixture, false)
 		sentinel := errors.New("callback failed")
 		err := storepostgres.WithinTx(ctx, pool, func(ctx context.Context, adapter *storepostgres.Adapter) error {
-			if err := adapter.UpsertIndexedBlock(ctx, fixture.block()); err != nil {
+			if _, err := adapter.UpsertIndexedBlock(ctx, fixture.block()); err != nil {
 				return err
 			}
 			return sentinel
@@ -114,7 +116,7 @@ func TestWithinTxLifecycleFailures(t *testing.T) {
 		prepareAtomicFixture(t, ctx, database.DB, fixture, false)
 		canceledCtx, cancelTransaction := context.WithCancel(ctx)
 		err := storepostgres.WithinTx(canceledCtx, pool, func(ctx context.Context, adapter *storepostgres.Adapter) error {
-			if err := adapter.UpsertIndexedBlock(ctx, fixture.block()); err != nil {
+			if _, err := adapter.UpsertIndexedBlock(ctx, fixture.block()); err != nil {
 				return err
 			}
 			cancelTransaction()
@@ -132,7 +134,7 @@ func TestWithinTxLifecycleFailures(t *testing.T) {
 		panicValue := &struct{ message string }{message: "original panic"}
 		recovered := capturePanic(func() {
 			_ = storepostgres.WithinTx(ctx, pool, func(ctx context.Context, adapter *storepostgres.Adapter) error {
-				if err := adapter.UpsertIndexedBlock(ctx, fixture.block()); err != nil {
+				if _, err := adapter.UpsertIndexedBlock(ctx, fixture.block()); err != nil {
 					return err
 				}
 				panic(panicValue)
@@ -168,24 +170,22 @@ func newAtomicFixture(chainID int64) atomicFixture {
 	}
 }
 
-func (fixture atomicFixture) block() storepostgres.IndexedBlock {
-	return storepostgres.IndexedBlock{
-		ChainID: fixture.chainID, BlockNumber: 2, BlockHash: fixture.targetHash,
-		ParentHash:     fixture.launchHash,
-		BlockTime:      pgtype.Timestamptz{Time: fixture.targetTime, Valid: true},
+func (fixture atomicFixture) block() ledger.IndexedBlock {
+	return ledger.IndexedBlock{
+		ChainID: fixture.chainID, BlockNumber: 2, BlockHash: common.Hash(fixture.targetHash),
+		ParentHash:     common.Hash(fixture.launchHash),
+		BlockTime:      fixture.targetTime,
 		FinalityStatus: "observed",
 	}
 }
 
-func (fixture atomicFixture) trade() storepostgres.Trade {
-	return storepostgres.Trade{
-		ChainID: fixture.chainID, BlockNumber: 2, BlockHash: fixture.targetHash,
-		BlockTime:        pgtype.Timestamptz{Time: fixture.targetTime, Valid: true},
-		TransactionIndex: 0, TxHash: fixture.transactionID, LogIndex: 0,
-		TokenAddress: fixture.token, Trader: fixedAddress(addressBytes(0x71)), IsBuy: true,
-		EthGross: uint256Byte(20), TokenAmount: uint256Byte(10),
-		ProtocolFee: uint256Byte(1), CreatorFee: uint256Byte(1),
-		NewEthReserve: uint256Byte(30), NewTokenReserve: uint256Byte(90),
+func (fixture atomicFixture) trade() ledger.Trade {
+	return ledger.Trade{
+		EventCoordinates: ledger.EventCoordinates{ChainID: fixture.chainID, BlockNumber: 2, BlockHash: common.Hash(fixture.targetHash), BlockTime: fixture.targetTime, TransactionIndex: 0, TxHash: common.Hash(fixture.transactionID), LogIndex: 0},
+		Token:            common.Address(fixture.token), Trader: common.Address(fixedAddress(addressBytes(0x71))), IsBuy: true,
+		ETHGross: uint256Byte(20).BigInt(), ETHRefund: uint256Byte(0).BigInt(), TokenAmount: uint256Byte(10).BigInt(),
+		ProtocolFee: uint256Byte(1).BigInt(), CreatorFee: uint256Byte(1).BigInt(),
+		NewETHReserve: uint256Byte(30).BigInt(), NewTokenReserve: uint256Byte(90).BigInt(),
 	}
 }
 
@@ -226,7 +226,7 @@ func runAtomicWorkflow(
 	if failurePoint == "block" {
 		block.FinalityStatus = "invalid"
 	}
-	if err := adapter.UpsertIndexedBlock(ctx, block); err != nil {
+	if _, err := adapter.UpsertIndexedBlock(ctx, block); err != nil {
 		return err
 	}
 
@@ -235,13 +235,13 @@ func runAtomicWorkflow(
 		trade.TransactionIndex = -1
 	}
 	if failurePoint == "commit" {
-		trade.BlockHash = fixedHash(0xfe)
+		trade.BlockHash = common.Hash(fixedHash(0xfe))
 	}
-	if err := adapter.InsertTrade(ctx, trade); err != nil {
+	if _, err := adapter.InsertTrade(ctx, trade); err != nil {
 		return err
 	}
 
-	if err := adapter.RebuildTokenProjections(ctx, fixture.chainID, fixture.token); err != nil {
+	if err := adapter.RebuildTokenProjections(ctx, fixture.chainID, common.Address(fixture.token)); err != nil {
 		return err
 	}
 
