@@ -44,6 +44,16 @@ tasks:
     cmds:
       - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 diff
 
+  curve-vectors-sync:
+    desc: Copy the authoritative Solidity curve vectors into backend testdata.
+    cmds:
+      - go run ./cmd/sync-curve-vectors
+
+  curve-vectors-diff:
+    desc: Fail when the backend curve-vector copy differs from the Solidity source.
+    cmds:
+      - go run ./cmd/sync-curve-vectors --check
+
   verify:
     desc: Run the complete Backend Foundations Task 1 gate.
     deps:
@@ -51,3 +61,4 @@ tasks:
       - test
       - integration
       - lint
+      - curve-vectors-diff
