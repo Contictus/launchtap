@@ -124,8 +124,10 @@ binding on the tasks named beside them.
 3. **Reorg identity — persisted (Task 4).** A durable `indexer_reorgs` table, not a
    process-local identifier. The detection record is persisted **before** the recovery
    transaction opens, so a rollback or rebuild that itself fails does not also lose its own
-   audit record — which is exactly the incident an operator reads health after. This is the
-   one piece of new schema Plan 2 adds (migration `00005`).
+   audit record — which is exactly the incident an operator reads health after. This lands as
+   migration `00006_indexer_reorgs.sql`; `00005` belongs to Task 3 under decision 9, and the
+   two are numbered up front because Tasks 4-5 run as one unit and would otherwise collide
+   with Task 3's migration in review.
 4. **Address-filter partition configuration (Task 2).** `INDEXER_LOG_ADDRESS_BATCH_SIZE`. Its
    default comes from Task 1's measurement, not from a guess.
 5. **`RPC_URL` scheme allowlist — unchanged (Task 2).** `http`/`https` only. Head tracking
@@ -158,6 +160,20 @@ binding on the tasks named beside them.
    requires both to move in one statement. The adapter orchestrates: it inspects the event
    insert result first and runs the projection statement only when `Inserted` is true. No
    wrapper opens a transaction; all of it runs inside the `WithinTx` boundary Task 4 owns.
+9. **`token_metadata`'s launch FK is dropped (Task 3).** `00004` gives `token_metadata` a
+   `token_metadata_token_launch_fk` referencing `token_launches` with no `ON DELETE` action,
+   which makes two locked requirements mutually unsatisfiable: spec §5.2 says metadata
+   "survives chain replay" and "a reorg never touches it", while the FK makes deleting a
+   rolled-back `token_launches` row fail for as long as any metadata row points at it. A reorg
+   that unwinds a launch block is not hypothetical — automatic rollback only ever touches
+   blocks at or above the safe head, and on chain 46630 the observed→safe window is minutes
+   wide, comfortably long enough for a creator to have saved metadata against a launch that
+   then reorgs out. Codex found this by running Task 3's rollback tests, which is where it
+   should have been found. The constraint is dropped in a **new** migration,
+   `00005_token_metadata_launch_fk.sql`; `00004` is not edited, per the repo's rule that an
+   applied migration is never rewritten in place. An orphaned metadata row is the intended
+   outcome, not a leak: it is what lets the creator's description and links re-attach when the
+   launch re-lands at a different block.
 
 ## Task 1 — Chain operability prerequisites · Risk: high
 
@@ -175,9 +191,22 @@ chain-46630 deployment manifest that replaces today's fail-closed disabled marke
   (`46630`): `latest`/`safe`/`finalized` tag support, tag monotonicity observed over time,
   the observed→safe→finalized lag distribution, block-hash consistency across repeated reads
   of the same height, and `eth_getLogs` capacity — max block range, max response size, and
-  max addresses per filter. Measured numbers are committed to the operations note with the
-  date and provider they were taken against; they are never embedded in code as provider
-  constants (spec §4.3).
+  max addresses per filter. Each record carries the UTC timestamp, provider endpoint, block
+  number, block hash and block timestamp, sampling duration, the exact request filter, and the
+  response size and latency it produced — enough for a later reader to tell a real change in
+  the chain from a change in how it was measured. Measured numbers are never embedded in code
+  as provider constants (spec §4.3).
+- The `eth_getLogs` capacity probe uses a filter that **actually matches logs**. A wide range
+  that returns nothing proves only that the node accepted the range; it says nothing about the
+  response-size ceiling that is the real binding constraint, and reporting it as "no range
+  limit" overstates it. The note states the matched-filter result and the zero-match result
+  separately, and the `INDEXER_CHUNK_SIZE` / `INDEXER_LOG_ADDRESS_BATCH_SIZE` defaults are
+  traceable to the matched one.
+- Block time is recorded as a **direct** measurement — `latest` sampled over a known wall-clock
+  interval — alongside the two rates the lag legs imply (observed→safe and safe→finalized, each
+  as blocks ÷ seconds). If the three disagree, the note says so rather than picking one; a
+  disagreement means the sampling window was too short or the chain was not in steady state,
+  and that is exactly what a later reader needs to know.
 - Those measurements set the defaults for `INDEXER_CHUNK_SIZE`,
   `INDEXER_LOG_ADDRESS_BATCH_SIZE`, the runtime finality configuration, and the health lag
   thresholds — each default traceable to a specific measured number rather than chosen by feel.
@@ -358,6 +387,18 @@ constructor, adapter methods, `queries/*.sql`, regenerated `sqlc/`),
   the same pattern Backend Foundations Tasks 5-7 used, and assert both the rows removed and
   the rows deliberately left intact — `token_metadata` in particular is never touched by a
   rollback (spec §5.2).
+- Migration `00005_token_metadata_launch_fk.sql` drops
+  `token_metadata_token_launch_fk` (decision 9) and its `down` recreates it, so
+  `task migrate -- up/down/up` still round-trips. `00004` is untouched.
+- The rollback test that decision 9 came out of is explicit: a launch block is rolled back
+  while its token **has** a `token_metadata` row, the rollback succeeds, and the metadata row
+  is still there afterwards with its columns unchanged. Before this migration that test fails
+  on the FK — which is the point of keeping it.
+- An orphaned `token_metadata` row — one whose `token_launches` row is gone — is never
+  surfaced as a token by any read path. Lists and detail reads are driven by `tokens`, which
+  is rebuilt from surviving canonical events, so an orphan is invisible rather than a phantom
+  listing. A test asserts that, so the FK's removal does not quietly become a way to invent
+  tokens that never launched.
 - `internal/ledger` exists and is **governed**, not merely created. `.golangci.yml` gains a
   strict `ledger-boundary` rule allowing `$gostd` and `github.com/ethereum/go-ethereum/common`
   and nothing else, so the package cannot quietly acquire `pgx`, `sqlc`, `internal/chain`,
@@ -450,7 +491,7 @@ work starts.
 **Files:** `backend/internal/indexer/` (new), `backend/internal/launch/`,
 `backend/internal/trading/`, `backend/internal/holder/`, `backend/internal/token/` (ingestion
 ports and handlers), `backend/internal/store/postgres/` (port implementations),
-`backend/internal/store/postgres/migrations/00005_indexer_reorgs.sql` (new),
+`backend/internal/store/postgres/migrations/00006_indexer_reorgs.sql` (new),
 `backend/internal/store/postgres/postgrestest/`.
 
 **Acceptance criteria:**
@@ -512,7 +553,8 @@ ports and handlers), `backend/internal/store/postgres/` (port implementations),
 - Safe and finalized promotion first verifies that the node-reported hashes match
   `indexed_blocks`, and a promotion whose hash disagrees is treated as a reorg signal rather
   than written through (spec §4.2).
-- Migration `00005` adds a durable `indexer_reorgs` table — the only new schema in this plan.
+- Migration `00006` adds a durable `indexer_reorgs` table — the second and last piece of new
+  schema in this plan, after Task 3's `00005` (decision 9).
   The detection record is written and **committed before the recovery transaction opens**, so
   a rollback or rebuild that itself fails cannot also erase its own audit record. Each row
   carries enough to reconstruct the incident without the logs: chain and deployment, the
