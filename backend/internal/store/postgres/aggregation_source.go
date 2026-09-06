@@ -8,18 +8,18 @@ import (
 )
 
 type AggregationSource struct {
-	Owner   *Ownership
+	Adapter *Adapter
 	ChainID int64
 }
 
 func (s AggregationSource) Poll(context.Context) ([]stats.Claim, error) { return nil, nil }
 func (s AggregationSource) Claim(ctx context.Context, worker string, batch int32) ([]stats.Claim, error) {
 	var claims []DirtyClaim
-	err := s.Owner.WithinTx(ctx, func(ctx context.Context, adapter *Adapter) error {
+	err := func() error {
 		var err error
-		claims, err = adapter.ClaimAggregationDirty(ctx, worker, batch)
+		claims, err = s.Adapter.ClaimAggregationDirty(ctx, worker, batch)
 		return err
-	})
+	}()
 	if err != nil {
 		return nil, err
 	}
@@ -30,19 +30,17 @@ func (s AggregationSource) Claim(ctx context.Context, worker string, batch int32
 	return result, nil
 }
 func (s AggregationSource) Compute(ctx context.Context, claim stats.Claim) error {
-	return s.Owner.WithinTx(ctx, func(ctx context.Context, adapter *Adapter) error {
-		if err := adapter.RecomputeTokenStats(ctx, claim.ChainID, common.Address(claim.Token)); err != nil {
-			return err
-		}
-		return adapter.RecomputeProtocolAggregates(ctx, claim.ChainID)
-	})
+	if err := s.Adapter.RecomputeTokenStats(ctx, claim.ChainID, common.Address(claim.Token)); err != nil {
+		return err
+	}
+	return s.Adapter.RecomputeProtocolAggregates(ctx, claim.ChainID)
 }
 func (s AggregationSource) Complete(ctx context.Context, claim stats.Claim, worker string) (bool, error) {
 	var completed bool
-	err := s.Owner.WithinTx(ctx, func(ctx context.Context, adapter *Adapter) error {
+	err := func() error {
 		var err error
-		completed, err = adapter.CompleteAggregationDirty(ctx, DirtyClaim{ChainID: claim.ChainID, TokenAddress: Address(claim.Token), ClaimedGeneration: claim.Generation}, worker)
+		completed, err = s.Adapter.CompleteAggregationDirty(ctx, DirtyClaim{ChainID: claim.ChainID, TokenAddress: Address(claim.Token), ClaimedGeneration: claim.Generation}, worker)
 		return err
-	})
+	}()
 	return completed, err
 }

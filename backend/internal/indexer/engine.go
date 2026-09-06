@@ -164,6 +164,13 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 	if state.Observed == nil {
 		return false, nil
 	}
+	previousSafe, previousFinalized := int64(-1), int64(-1)
+	if state.Safe != nil {
+		previousSafe = state.Safe.BlockNumber
+	}
+	if state.Finalized != nil {
+		previousFinalized = state.Finalized.BlockNumber
+	}
 	// When RPC tags are ahead, promote only the locally processed intersection.
 	for _, promotion := range []struct {
 		remote ledger.IndexedBlock
@@ -208,7 +215,7 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 		if err := e.router.Apply(ctx, u, decoded, blocks, identities); err != nil {
 			return err
 		}
-		if err := u.PromoteBlocks(ctx, e.settings.ChainID, state.Safe, state.Finalized); err != nil {
+		if err := u.PromoteBlocks(ctx, e.settings.ChainID, state.Safe, state.Finalized, previousSafe, previousFinalized); err != nil {
 			return err
 		}
 		return u.WriteState(ctx, state)

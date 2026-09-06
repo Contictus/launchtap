@@ -78,7 +78,9 @@ func run() error {
 			stop()
 		}
 	}()
-	aggregation := stats.Worker{Source: storepostgres.AggregationSource{Owner: owner, ChainID: int64(c.ChainID)}, WorkerID: c.IndexerWorkerID, PollInterval: stats.DefaultDirtyPollInterval, BatchSize: 32}
+	aggregation := stats.Worker{Source: storepostgres.AggregationSource{Adapter: storepostgres.NewAdapter(pool), ChainID: int64(c.ChainID)}, WorkerID: c.IndexerWorkerID, PollInterval: stats.DefaultDirtyPollInterval, BatchSize: 32, OnError: func(claim stats.Claim, err error) {
+		slog.Error("aggregation compute failed", "chain_id", claim.ChainID, "token", fmt.Sprintf("%x", claim.Token), "error", err)
+	}}
 	aggregationErrors := make(chan error, 1)
 	go func() {
 		if err := aggregation.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {

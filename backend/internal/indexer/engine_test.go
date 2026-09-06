@@ -53,11 +53,11 @@ func (u *memoryUnit) UpsertIndexedBlock(_ context.Context, b ledger.IndexedBlock
 	u.blocks[b.BlockNumber] = b
 	return ledger.UpsertResult{Changed: true}, nil
 }
-func (u *memoryUnit) PromoteBlocks(_ context.Context, _ int64, safe, final *ledger.IndexedBlock) error {
+func (u *memoryUnit) PromoteBlocks(_ context.Context, _ int64, safe, final *ledger.IndexedBlock, previousSafe, previousFinalized int64) error {
 	for n, b := range u.blocks {
-		if final != nil && n <= final.BlockNumber {
+		if final != nil && n > previousFinalized && n <= final.BlockNumber {
 			b.FinalityStatus = "finalized"
-		} else if safe != nil && n <= safe.BlockNumber {
+		} else if safe != nil && n > previousSafe && n <= safe.BlockNumber {
 			b.FinalityStatus = "safe"
 		}
 		u.blocks[n] = b

@@ -30,7 +30,7 @@ type UnitOfWork interface {
 	WriteState(context.Context, State) error
 	ReadBlock(context.Context, int64, int64) (ledger.IndexedBlock, bool, error)
 	UpsertIndexedBlock(context.Context, ledger.IndexedBlock) (ledger.UpsertResult, error)
-	PromoteBlocks(context.Context, int64, *ledger.IndexedBlock, *ledger.IndexedBlock) error
+	PromoteBlocks(context.Context, int64, *ledger.IndexedBlock, *ledger.IndexedBlock, int64, int64) error
 	TokenIdentities(context.Context, int64) ([]TokenIdentity, error)
 }
 

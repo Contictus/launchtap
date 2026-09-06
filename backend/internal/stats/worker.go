@@ -28,6 +28,7 @@ type Worker struct {
 	PollInterval time.Duration
 	BatchSize    int32
 	Wake         <-chan struct{}
+	OnError      func(Claim, error)
 }
 
 func (w Worker) Run(ctx context.Context) error {
@@ -60,7 +61,10 @@ func (w Worker) drain(ctx context.Context, batch int32) error {
 	}
 	for _, claim := range claims {
 		if err := w.Source.Compute(ctx, claim); err != nil {
-			return err
+			if w.OnError != nil {
+				w.OnError(claim, err)
+			}
+			continue
 		}
 		if _, err := w.Source.Complete(ctx, claim, w.WorkerID); err != nil {
 			return err

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -53,7 +54,7 @@ func WithinTx(
 		return rollbackWithCause(tx, fmt.Errorf("transaction context: %w", contextErr))
 	}
 	if commitErr := tx.Commit(ctx); commitErr != nil {
-		return rollbackWithCause(tx, &CommitOutcomeError{Err: commitErr})
+		return rollbackWithCause(tx, &CommitOutcomeError{Err: errors.Join(indexer.ErrUnknownTransactionOutcome, commitErr)})
 	}
 	return nil
 }

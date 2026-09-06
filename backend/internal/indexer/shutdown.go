@@ -14,6 +14,9 @@ func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
+	if errors.Is(err, ErrUnknownTransactionOutcome) || errors.Is(err, ErrOwnershipLost) {
+		return 1
+	}
 	if errors.Is(err, context.Canceled) {
 		return 0
 	}

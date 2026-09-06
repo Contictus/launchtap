@@ -35,7 +35,7 @@ type LedgerRouter struct {
 	ChainID int64
 }
 
-func (r LedgerRouter) Apply(ctx context.Context, u UnitOfWork, logs []chain.DecodedLog, blocks map[int64]ledger.IndexedBlock, _ []TokenIdentity) error {
+func (r LedgerRouter) Apply(ctx context.Context, u UnitOfWork, logs []chain.DecodedLog, blocks map[int64]ledger.IndexedBlock, identities []TokenIdentity) error {
 	if r.Sink == nil {
 		sink, ok := u.(EventSink)
 		if !ok {
@@ -45,6 +45,12 @@ func (r LedgerRouter) Apply(ctx context.Context, u UnitOfWork, logs []chain.Deco
 	}
 	launchBlocks := make(map[[20]byte]int64)
 	graduationBlocks := make(map[[20]byte]int64)
+	for _, identity := range identities {
+		launchBlocks[[20]byte(identity.Token)] = identity.Launch.BlockNumber
+		if identity.GraduationBlock != nil {
+			graduationBlocks[[20]byte(identity.Token)] = *identity.GraduationBlock
+		}
+	}
 	for _, log := range logs {
 		switch value := log.Value.(type) {
 		case chain.TokenLaunched:

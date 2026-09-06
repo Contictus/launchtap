@@ -30,4 +30,4 @@ SET finality_status = CASE
  WHEN finality_status = 'finalized' THEN 'finalized'
  ELSE 'safe'
 END
-WHERE chain_id=$1 AND block_number <= $2;
+WHERE chain_id=$1 AND block_number > $4 AND block_number <= $2;

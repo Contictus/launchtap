@@ -68,14 +68,14 @@ func (a *Adapter) ReadBlock(ctx context.Context, chainID, n int64) (ledger.Index
 	}
 	return b, true, nil
 }
-func (a *Adapter) PromoteBlocks(ctx context.Context, chainID int64, safe, final *ledger.IndexedBlock) error {
+func (a *Adapter) PromoteBlocks(ctx context.Context, chainID int64, safe, final *ledger.IndexedBlock, previousSafe, previousFinalized int64) error {
 	if safe != nil {
-		if err := a.queries.PromoteIndexedBlocks(ctx, sqlc.PromoteIndexedBlocksParams{ChainID: chainID, BlockNumber: safe.BlockNumber, Column3: "safe"}); err != nil {
+		if err := a.queries.PromoteIndexedBlocks(ctx, sqlc.PromoteIndexedBlocksParams{ChainID: chainID, BlockNumber: safe.BlockNumber, Column3: "safe", BlockNumber_2: previousSafe}); err != nil {
 			return err
 		}
 	}
 	if final != nil {
-		if err := a.queries.PromoteIndexedBlocks(ctx, sqlc.PromoteIndexedBlocksParams{ChainID: chainID, BlockNumber: final.BlockNumber, Column3: "finalized"}); err != nil {
+		if err := a.queries.PromoteIndexedBlocks(ctx, sqlc.PromoteIndexedBlocksParams{ChainID: chainID, BlockNumber: final.BlockNumber, Column3: "finalized", BlockNumber_2: previousFinalized}); err != nil {
 			return err
 		}
 	}

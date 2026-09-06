@@ -68,17 +68,23 @@ SET finality_status = CASE
  WHEN finality_status = 'finalized' THEN 'finalized'
  ELSE 'safe'
 END
-WHERE chain_id=$1 AND block_number <= $2
+WHERE chain_id=$1 AND block_number > $4 AND block_number <= $2
 `
 
 type PromoteIndexedBlocksParams struct {
-	ChainID     int64
-	BlockNumber int64
-	Column3     interface{}
+	ChainID       int64
+	BlockNumber   int64
+	Column3       interface{}
+	BlockNumber_2 int64
 }
 
 func (q *Queries) PromoteIndexedBlocks(ctx context.Context, arg PromoteIndexedBlocksParams) error {
-	_, err := q.db.Exec(ctx, promoteIndexedBlocks, arg.ChainID, arg.BlockNumber, arg.Column3)
+	_, err := q.db.Exec(ctx, promoteIndexedBlocks,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.Column3,
+		arg.BlockNumber_2,
+	)
 	return err
 }
 

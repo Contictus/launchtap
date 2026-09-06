@@ -18,6 +18,7 @@ type RecoveryUnit interface {
 	RebuildTokenProjections(context.Context, int64, common.Address) error
 	RecomputeTokenStats(context.Context, int64, common.Address) error
 	RecomputeProtocolAggregates(context.Context, int64) error
+	WriteState(context.Context, State) error
 	RecordReorg(context.Context, ReorgRecord) (int64, error)
 	CompleteReorg(context.Context, int64) error
 }
@@ -47,6 +48,9 @@ func (e *Engine) recoverReorg(ctx context.Context, state State, tip ledger.Index
 		depth := state.Observed.BlockNumber - ancestor.BlockNumber
 		if depth <= 0 {
 			return errors.New("reorg ancestor is not below observed tip")
+		}
+		if state.Safe != nil && ancestor.BlockNumber < state.Safe.BlockNumber {
+			return ErrSafeViolation
 		}
 		reorgID, err = recovery.RecordReorg(ctx, ReorgRecord{ChainID: e.settings.ChainID, DeploymentID: e.settings.DeploymentID, DetectedTipNumber: tip.BlockNumber, DetectedTipHash: tip.BlockHash, CommonAncestorNumber: ancestor.BlockNumber, CommonAncestorHash: ancestor.BlockHash, Depth: depth, DetectedAt: time.Now().UTC()})
 		return err
@@ -78,6 +82,10 @@ func (e *Engine) recoverReorg(ctx context.Context, state State, tip ledger.Index
 			}
 		}
 		if err := recovery.RecomputeProtocolAggregates(ctx, e.settings.ChainID); err != nil {
+			return err
+		}
+		state.Observed = &ancestor
+		if err := recovery.WriteState(ctx, state); err != nil {
 			return err
 		}
 		return recovery.CompleteReorg(ctx, reorgID)
