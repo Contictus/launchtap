@@ -22,8 +22,8 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first migration up: %v", err)
 	}
-	assertMigrationResults(t, firstUp, []migrationResultWant{{version: 1, direction: "up"}, {version: 2, direction: "up"}, {version: 3, direction: "up"}, {version: 4, direction: "up"}, {version: 5, direction: "up"}})
-	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied"})
+	assertMigrationResults(t, firstUp, []migrationResultWant{{version: 1, direction: "up"}, {version: 2, direction: "up"}, {version: 3, direction: "up"}, {version: 4, direction: "up"}, {version: 5, direction: "up"}, {version: 6, direction: "up"}})
+	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied"})
 	assertTableExists(t, ctx, database.DB, "sync_state", true)
 	assertTableExists(t, ctx, database.DB, "indexed_blocks", true)
 	assertTableExists(t, ctx, database.DB, "token_launches", true)
@@ -33,8 +33,8 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migration down: %v", err)
 	}
-	assertMigrationResults(t, down, []migrationResultWant{{version: 5, direction: "down"}})
-	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "pending"})
+	assertMigrationResults(t, down, []migrationResultWant{{version: 6, direction: "down"}})
+	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "pending"})
 	assertTableExists(t, ctx, database.DB, "sync_state", true)
 	assertTableExists(t, ctx, database.DB, "indexed_blocks", true)
 	assertTableExists(t, ctx, database.DB, "token_launches", true)
@@ -44,8 +44,8 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second migration up: %v", err)
 	}
-	assertMigrationResults(t, secondUp, []migrationResultWant{{version: 5, direction: "up"}})
-	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied"})
+	assertMigrationResults(t, secondUp, []migrationResultWant{{version: 6, direction: "up"}})
+	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied"})
 	assertTableExists(t, ctx, database.DB, "sync_state", true)
 	assertTableExists(t, ctx, database.DB, "indexed_blocks", true)
 	assertTableExists(t, ctx, database.DB, "token_launches", true)
