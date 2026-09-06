@@ -54,7 +54,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer owner.Close()
+	defer func() { _ = owner.Close() }()
 	decoder, err := chain.NewDecoder(deployment.EngineVersion)
 	if err != nil {
 		return err
