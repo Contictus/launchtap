@@ -55,6 +55,10 @@ func AcquireOwnership(ctx context.Context, databaseURL string, chainID int64, de
 
 func (o *Ownership) BackendPID() uint32 { return o.pid }
 
+func (o *Ownership) Beginner() TransactionBeginner { return o.conn }
+
+func (o *Ownership) DBTX() DBTX { return o.conn }
+
 func (o *Ownership) WithinTx(ctx context.Context, fn func(context.Context, *Adapter) error) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()

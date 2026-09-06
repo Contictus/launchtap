@@ -70,6 +70,7 @@ type Querier interface {
 	InsertTransfer(ctx context.Context, arg InsertTransferParams) (int64, error)
 	LaunchFeeClaimMatchesEvent(ctx context.Context, arg LaunchFeeClaimMatchesEventParams) (pgtype.Bool, error)
 	LaunchPauseEventMatchesEvent(ctx context.Context, arg LaunchPauseEventMatchesEventParams) (pgtype.Bool, error)
+	ListTokenIdentities(ctx context.Context, chainID int64) ([]ListTokenIdentitiesRow, error)
 	MarkPairTokenDirty(ctx context.Context, arg MarkPairTokenDirtyParams) error
 	MarkTokenDirty(ctx context.Context, arg MarkTokenDirtyParams) error
 	PoolBurnMatchesEvent(ctx context.Context, arg PoolBurnMatchesEventParams) (pgtype.Bool, error)
