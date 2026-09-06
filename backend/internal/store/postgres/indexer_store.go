@@ -7,6 +7,7 @@ import (
 
 	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/Contictus/launchtap/backend/internal/ledger"
+	"github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -68,16 +69,13 @@ func (a *Adapter) ReadBlock(ctx context.Context, chainID, n int64) (ledger.Index
 	return b, true, nil
 }
 func (a *Adapter) PromoteBlocks(ctx context.Context, chainID int64, safe, final *ledger.IndexedBlock) error {
-	for _, b := range []*ledger.IndexedBlock{safe, final} {
-		if b == nil {
-			continue
-		}
-		existing, ok, err := a.ReadBlock(ctx, chainID, b.BlockNumber)
-		if err != nil || !ok {
+	if safe != nil {
+		if err := a.queries.PromoteIndexedBlocks(ctx, sqlc.PromoteIndexedBlocksParams{ChainID: chainID, BlockNumber: safe.BlockNumber, Column3: "safe"}); err != nil {
 			return err
 		}
-		existing.FinalityStatus = b.FinalityStatus
-		if _, err := a.UpsertIndexedBlock(ctx, existing); err != nil {
+	}
+	if final != nil {
+		if err := a.queries.PromoteIndexedBlocks(ctx, sqlc.PromoteIndexedBlocksParams{ChainID: chainID, BlockNumber: final.BlockNumber, Column3: "finalized"}); err != nil {
 			return err
 		}
 	}

@@ -56,3 +56,10 @@ type Settings struct {
 	ChunkSize    int64
 	PollInterval time.Duration
 }
+
+type ReorgRecord struct {
+	ChainID, DetectedTipNumber, CommonAncestorNumber, Depth int64
+	DeploymentID                                            string
+	DetectedTipHash, CommonAncestorHash                     common.Hash
+	DetectedAt                                              time.Time
+}

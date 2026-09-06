@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/Contictus/launchtap/backend/internal/ledger"
 	"github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc"
 	"github.com/ethereum/go-ethereum/common"
@@ -648,6 +649,26 @@ func (adapter *Adapter) DeleteCanonicalAbove(ctx context.Context, chainID, ances
 	return nil
 }
 
+func (adapter *Adapter) RecordReorg(ctx context.Context, record indexer.ReorgRecord) (int64, error) {
+	row, err := adapter.queries.RecordIndexerReorg(ctx, sqlc.RecordIndexerReorgParams{
+		ChainID: record.ChainID, DeploymentID: record.DeploymentID,
+		DetectedTipNumber: record.DetectedTipNumber, DetectedTipHash: sqlc.Hash(record.DetectedTipHash),
+		CommonAncestorNumber: record.CommonAncestorNumber, CommonAncestorHash: sqlc.Hash(record.CommonAncestorHash),
+		Depth: record.Depth, DetectedAt: pgtype.Timestamptz{Time: record.DetectedAt, Valid: true},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("record reorg: %w", err)
+	}
+	return row, nil
+}
+
+func (adapter *Adapter) CompleteReorg(ctx context.Context, id int64) error {
+	if err := adapter.queries.CompleteIndexerReorg(ctx, id); err != nil {
+		return fmt.Errorf("complete reorg %d: %w", id, err)
+	}
+	return nil
+}
+
 func (adapter *Adapter) ClaimAggregationDirty(
 	ctx context.Context,
 	workerID string,
@@ -686,6 +707,25 @@ func (adapter *Adapter) CompleteAggregationDirty(
 		return false, fmt.Errorf("complete dirty aggregation: %w", err)
 	}
 	return rows == 1, nil
+}
+
+func (adapter *Adapter) RecomputeTokenStats(ctx context.Context, chainID int64, token common.Address) error {
+	if err := adapter.queries.RecomputeTokenStats(ctx, sqlc.RecomputeTokenStatsParams{ChainID: chainID, TokenAddress: sqlc.Address(token)}); err != nil {
+		return fmt.Errorf("recompute token stats: %w", err)
+	}
+	return nil
+}
+func (adapter *Adapter) RecomputeProtocolAggregates(ctx context.Context, chainID int64) error {
+	if err := adapter.queries.ClearProtocolDaily(ctx, chainID); err != nil {
+		return fmt.Errorf("clear protocol daily: %w", err)
+	}
+	if err := adapter.queries.RecomputeProtocolDaily(ctx, chainID); err != nil {
+		return fmt.Errorf("recompute protocol daily: %w", err)
+	}
+	if err := adapter.queries.RecomputeProtocolStats(ctx, chainID); err != nil {
+		return fmt.Errorf("recompute protocol aggregates: %w", err)
+	}
+	return nil
 }
 
 func invariantConflict(entity, key string, cause error) error {

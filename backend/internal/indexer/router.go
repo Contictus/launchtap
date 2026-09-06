@@ -35,9 +35,33 @@ type LedgerRouter struct {
 	ChainID int64
 }
 
-func (r LedgerRouter) Apply(ctx context.Context, _ UnitOfWork, logs []chain.DecodedLog, blocks map[int64]ledger.IndexedBlock, _ []TokenIdentity) error {
+func (r LedgerRouter) Apply(ctx context.Context, u UnitOfWork, logs []chain.DecodedLog, blocks map[int64]ledger.IndexedBlock, _ []TokenIdentity) error {
 	if r.Sink == nil {
-		return fmt.Errorf("event sink is nil")
+		sink, ok := u.(EventSink)
+		if !ok {
+			return fmt.Errorf("transaction unit does not provide event sink")
+		}
+		r.Sink = sink
+	}
+	launchBlocks := make(map[[20]byte]int64)
+	graduationBlocks := make(map[[20]byte]int64)
+	for _, log := range logs {
+		switch value := log.Value.(type) {
+		case chain.TokenLaunched:
+			launchBlocks[value.Token] = int64(log.Coordinates.BlockNumber)
+		case chain.Graduated:
+			graduationBlocks[value.Token] = int64(log.Coordinates.BlockNumber)
+		}
+	}
+	for _, log := range logs {
+		if trade, ok := log.Value.(chain.Trade); ok {
+			if graduation, exists := graduationBlocks[trade.Token]; exists && int64(log.Coordinates.BlockNumber) > graduation {
+				return fmt.Errorf("trade after graduation for token %s", trade.Token.Hex())
+			}
+			if launch, exists := launchBlocks[trade.Token]; exists && int64(log.Coordinates.BlockNumber) < launch {
+				return fmt.Errorf("pre-launch trade for token %s", trade.Token.Hex())
+			}
+		}
 	}
 	for _, log := range logs {
 		if _, err := r.apply(ctx, log, blocks); err != nil {

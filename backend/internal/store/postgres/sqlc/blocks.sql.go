@@ -61,6 +61,27 @@ func (q *Queries) GetIndexedBlockByNumber(ctx context.Context, arg GetIndexedBlo
 	return i, err
 }
 
+const promoteIndexedBlocks = `-- name: PromoteIndexedBlocks :exec
+UPDATE indexed_blocks
+SET finality_status = CASE
+ WHEN $3 = 'finalized' THEN 'finalized'
+ WHEN finality_status = 'finalized' THEN 'finalized'
+ ELSE 'safe'
+END
+WHERE chain_id=$1 AND block_number <= $2
+`
+
+type PromoteIndexedBlocksParams struct {
+	ChainID     int64
+	BlockNumber int64
+	Column3     interface{}
+}
+
+func (q *Queries) PromoteIndexedBlocks(ctx context.Context, arg PromoteIndexedBlocksParams) error {
+	_, err := q.db.Exec(ctx, promoteIndexedBlocks, arg.ChainID, arg.BlockNumber, arg.Column3)
+	return err
+}
+
 const upsertIndexedBlock = `-- name: UpsertIndexedBlock :execrows
 INSERT INTO indexed_blocks (
     chain_id,

@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const affectedTokensAbove = `-- name: AffectedTokensAbove :many
@@ -52,6 +54,16 @@ func (q *Queries) AffectedTokensAbove(ctx context.Context, arg AffectedTokensAbo
 		return nil, err
 	}
 	return items, nil
+}
+
+const completeIndexerReorg = `-- name: CompleteIndexerReorg :exec
+UPDATE indexer_reorgs SET outcome='recovered', completed_at=now()
+WHERE reorg_id=$1 AND outcome='open'
+`
+
+func (q *Queries) CompleteIndexerReorg(ctx context.Context, reorgID int64) error {
+	_, err := q.db.Exec(ctx, completeIndexerReorg, reorgID)
+	return err
 }
 
 const deleteCreatorFeeClaimsAbove = `-- name: DeleteCreatorFeeClaimsAbove :execrows
@@ -400,4 +412,39 @@ func (q *Queries) FindCommonAncestor(ctx context.Context, arg FindCommonAncestor
 	var i FindCommonAncestorRow
 	err := row.Scan(&i.BlockNumber, &i.BlockHash)
 	return i, err
+}
+
+const recordIndexerReorg = `-- name: RecordIndexerReorg :one
+INSERT INTO indexer_reorgs (
+ chain_id, deployment_id, detected_tip_number, detected_tip_hash,
+ common_ancestor_number, common_ancestor_hash, depth, detected_at, outcome
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open')
+RETURNING reorg_id
+`
+
+type RecordIndexerReorgParams struct {
+	ChainID              int64
+	DeploymentID         string
+	DetectedTipNumber    int64
+	DetectedTipHash      Hash
+	CommonAncestorNumber int64
+	CommonAncestorHash   Hash
+	Depth                int64
+	DetectedAt           pgtype.Timestamptz
+}
+
+func (q *Queries) RecordIndexerReorg(ctx context.Context, arg RecordIndexerReorgParams) (int64, error) {
+	row := q.db.QueryRow(ctx, recordIndexerReorg,
+		arg.ChainID,
+		arg.DeploymentID,
+		arg.DetectedTipNumber,
+		arg.DetectedTipHash,
+		arg.CommonAncestorNumber,
+		arg.CommonAncestorHash,
+		arg.Depth,
+		arg.DetectedAt,
+	)
+	var reorg_id int64
+	err := row.Scan(&reorg_id)
+	return reorg_id, err
 }

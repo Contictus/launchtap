@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"github.com/Contictus/launchtap/backend/internal/chain"
 	"github.com/Contictus/launchtap/backend/internal/config"
 	"github.com/Contictus/launchtap/backend/internal/indexer"
+	"github.com/Contictus/launchtap/backend/internal/stats"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
 )
 
@@ -64,16 +66,34 @@ func run() error {
 		return err
 	}
 	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner()}
-	router := indexer.LedgerRouter{Sink: storepostgres.NewAdapter(owner.DBTX()), ChainID: int64(c.ChainID)}
+	router := indexer.LedgerRouter{ChainID: int64(c.ChainID)}
 	engine, err := indexer.New(indexer.Settings{ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, Factory: deployment.Factory, StartBlock: int64(deployment.StartBlock), ChunkSize: int64(c.IndexerChunkSize), PollInterval: c.IndexerPollInterval}, store, source, discovery, decoder, router)
 	if err != nil {
 		return err
 	}
+	watchErrors := make(chan error, 1)
 	go func() {
 		if err := owner.Watch(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			watchErrors <- err
+			stop()
+		}
+	}()
+	aggregation := stats.Worker{Source: storepostgres.AggregationSource{Owner: owner, ChainID: int64(c.ChainID)}, WorkerID: c.IndexerWorkerID, PollInterval: stats.DefaultDirtyPollInterval, BatchSize: 32}
+	aggregationErrors := make(chan error, 1)
+	go func() {
+		if err := aggregation.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			aggregationErrors <- err
 			stop()
 		}
 	}()
 	slog.Info("indexer started", "chain_id", c.ChainID, "deployment_id", c.DeploymentID, "start_block", deployment.StartBlock, "started_at", time.Now().UTC())
-	return engine.Run(ctx)
+	runErr := engine.Run(ctx)
+	select {
+	case err := <-watchErrors:
+		return fmt.Errorf("ownership watchdog: %w", err)
+	case err := <-aggregationErrors:
+		return fmt.Errorf("aggregation worker: %w", err)
+	default:
+	}
+	return runErr
 }

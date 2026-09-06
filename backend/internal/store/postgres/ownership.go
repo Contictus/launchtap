@@ -9,15 +9,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/jackc/pgx/v5"
 )
 
-var ErrOwnershipLost = errors.New("indexer ownership lost")
+var ErrOwnershipLost = indexer.ErrOwnershipLost
 var ErrOwnershipBusy = errors.New("indexer ownership already held")
 
 const OwnershipProbeInterval = time.Second
 const ownershipProbeTimeout = 2 * time.Second
-const ownedTransactionTimeout = 30 * time.Second
+const ownedTransactionTimeout = 5 * time.Minute
 
 // Ownership is a session lock and its only write connection. Serializing all
 // writers on this connection fences a dead owner at the server, even before its

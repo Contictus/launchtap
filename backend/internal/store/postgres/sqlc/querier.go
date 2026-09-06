@@ -20,7 +20,9 @@ type Querier interface {
 	ApplyTransferProjection(ctx context.Context, arg ApplyTransferProjectionParams) (pgtype.Bool, error)
 	ClaimAggregationDirty(ctx context.Context, arg ClaimAggregationDirtyParams) ([]ClaimAggregationDirtyRow, error)
 	ClearOrphanProjections(ctx context.Context, arg ClearOrphanProjectionsParams) error
+	ClearProtocolDaily(ctx context.Context, chainID int64) error
 	CompleteAggregationDirty(ctx context.Context, arg CompleteAggregationDirtyParams) (int64, error)
+	CompleteIndexerReorg(ctx context.Context, reorgID int64) error
 	CreatorFeeClaimMatchesEvent(ctx context.Context, arg CreatorFeeClaimMatchesEventParams) (pgtype.Bool, error)
 	DeleteCreatorFeeClaimsAbove(ctx context.Context, arg DeleteCreatorFeeClaimsAboveParams) (int64, error)
 	DeleteEngineConfigurationsAbove(ctx context.Context, arg DeleteEngineConfigurationsAboveParams) (int64, error)
@@ -77,8 +79,13 @@ type Querier interface {
 	PoolMintMatchesEvent(ctx context.Context, arg PoolMintMatchesEventParams) (pgtype.Bool, error)
 	PoolSwapMatchesEvent(ctx context.Context, arg PoolSwapMatchesEventParams) (pgtype.Bool, error)
 	PoolSyncMatchesEvent(ctx context.Context, arg PoolSyncMatchesEventParams) (pgtype.Bool, error)
+	PromoteIndexedBlocks(ctx context.Context, arg PromoteIndexedBlocksParams) error
 	ProtocolFeeClaimMatchesEvent(ctx context.Context, arg ProtocolFeeClaimMatchesEventParams) (pgtype.Bool, error)
 	RebuildTokenProjections(ctx context.Context, arg RebuildTokenProjectionsParams) error
+	RecomputeProtocolDaily(ctx context.Context, chainID int64) error
+	RecomputeProtocolStats(ctx context.Context, chainID int64) error
+	RecomputeTokenStats(ctx context.Context, arg RecomputeTokenStatsParams) error
+	RecordIndexerReorg(ctx context.Context, arg RecordIndexerReorgParams) (int64, error)
 	RefundClaimMatchesEvent(ctx context.Context, arg RefundClaimMatchesEventParams) (pgtype.Bool, error)
 	RefundCreditMatchesEvent(ctx context.Context, arg RefundCreditMatchesEventParams) (pgtype.Bool, error)
 	TokenLaunchMatchesEvent(ctx context.Context, arg TokenLaunchMatchesEventParams) (pgtype.Bool, error)

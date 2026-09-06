@@ -62,3 +62,14 @@ DELETE FROM future_defaults_configurations WHERE chain_id=$1 AND block_number>$2
 DELETE FROM future_treasury_configurations WHERE chain_id=$1 AND block_number>$2;
 -- name: DeleteIndexedBlocksAbove :execrows
 DELETE FROM indexed_blocks WHERE chain_id=$1 AND block_number>$2;
+
+-- name: RecordIndexerReorg :one
+INSERT INTO indexer_reorgs (
+ chain_id, deployment_id, detected_tip_number, detected_tip_hash,
+ common_ancestor_number, common_ancestor_hash, depth, detected_at, outcome
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open')
+RETURNING reorg_id;
+
+-- name: CompleteIndexerReorg :exec
+UPDATE indexer_reorgs SET outcome='recovered', completed_at=now()
+WHERE reorg_id=$1 AND outcome='open';

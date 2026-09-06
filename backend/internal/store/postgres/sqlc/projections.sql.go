@@ -131,6 +131,7 @@ WITH deltas AS (
         SELECT $3::bytea AS holder, -$4::numeric AS delta
         WHERE $3::bytea <> decode(repeat('00',20),'hex')
         UNION ALL SELECT $5::bytea AS holder, $4::numeric AS delta
+        WHERE $5::bytea <> decode(repeat('00',20),'hex')
     ) AS legs GROUP BY holder
 ), valid AS (
     SELECT NOT EXISTS (
@@ -250,6 +251,15 @@ func (q *Queries) ClearOrphanProjections(ctx context.Context, arg ClearOrphanPro
 	return err
 }
 
+const clearProtocolDaily = `-- name: ClearProtocolDaily :exec
+DELETE FROM protocol_daily WHERE chain_id=$1
+`
+
+func (q *Queries) ClearProtocolDaily(ctx context.Context, chainID int64) error {
+	_, err := q.db.Exec(ctx, clearProtocolDaily, chainID)
+	return err
+}
+
 const completeAggregationDirty = `-- name: CompleteAggregationDirty :execrows
 DELETE FROM aggregation_dirty
 WHERE chain_id = $1
@@ -337,5 +347,88 @@ type RebuildTokenProjectionsParams struct {
 
 func (q *Queries) RebuildTokenProjections(ctx context.Context, arg RebuildTokenProjectionsParams) error {
 	_, err := q.db.Exec(ctx, rebuildTokenProjections, arg.RebuildChainID, arg.RebuildTokenAddress)
+	return err
+}
+
+const recomputeProtocolDaily = `-- name: RecomputeProtocolDaily :exec
+WITH daily AS (
+ SELECT block_time::date AS day, sum(gross_eth_volume) AS volume, 0::bigint AS launches, count(*)::bigint AS trades, 0::bigint AS graduations
+ FROM market_trades WHERE chain_id=$1 GROUP BY block_time::date
+ UNION ALL SELECT block_time::date,0,count(*)::bigint,0,0 FROM token_launches WHERE chain_id=$1 GROUP BY block_time::date
+ UNION ALL SELECT block_time::date,0,0,count(*)::bigint,0 FROM trades WHERE chain_id=$1 GROUP BY block_time::date
+ UNION ALL SELECT block_time::date,0,0,0,count(*)::bigint FROM graduations WHERE chain_id=$1 GROUP BY block_time::date
+), daily_rollup AS (
+ SELECT day,coalesce(sum(volume),0) volume,coalesce(sum(launches),0)::integer launches,coalesce(sum(trades),0)::integer trades,coalesce(sum(graduations),0)::integer graduations
+ FROM daily GROUP BY day
+)
+INSERT INTO protocol_daily (chain_id,day,volume_eth_wad,launches_count,trades_count,graduations_count)
+SELECT $1,day,volume,launches,trades,graduations FROM daily_rollup
+ON CONFLICT (chain_id,day) DO UPDATE SET volume_eth_wad=excluded.volume_eth_wad,launches_count=excluded.launches_count,trades_count=excluded.trades_count,graduations_count=excluded.graduations_count
+`
+
+func (q *Queries) RecomputeProtocolDaily(ctx context.Context, chainID int64) error {
+	_, err := q.db.Exec(ctx, recomputeProtocolDaily, chainID)
+	return err
+}
+
+const recomputeProtocolStats = `-- name: RecomputeProtocolStats :exec
+INSERT INTO protocol_stats (
+ chain_id,volume_24h_eth_wad,volume_all_time_eth_wad,launches_24h,launches_all_time,
+ trades_24h,trades_all_time,graduations_24h,graduations_all_time,updated_at
+)
+SELECT $1,
+ COALESCE((SELECT sum(gross_eth_volume) FROM market_trades WHERE chain_id=$1 AND block_time>=now()-interval '24 hours'),0),
+ COALESCE((SELECT sum(gross_eth_volume) FROM market_trades WHERE chain_id=$1),0),
+ (SELECT count(*) FROM token_launches WHERE chain_id=$1 AND block_time>=now()-interval '24 hours'),
+ (SELECT count(*) FROM token_launches WHERE chain_id=$1),
+ (SELECT count(*) FROM trades WHERE chain_id=$1 AND block_time>=now()-interval '24 hours'),
+ (SELECT count(*) FROM trades WHERE chain_id=$1),
+ (SELECT count(*) FROM graduations WHERE chain_id=$1 AND block_time>=now()-interval '24 hours'),
+ (SELECT count(*) FROM graduations WHERE chain_id=$1),now()
+ON CONFLICT (chain_id) DO UPDATE SET
+ volume_24h_eth_wad=EXCLUDED.volume_24h_eth_wad,volume_all_time_eth_wad=EXCLUDED.volume_all_time_eth_wad,
+ launches_24h=EXCLUDED.launches_24h,launches_all_time=EXCLUDED.launches_all_time,
+ trades_24h=EXCLUDED.trades_24h,trades_all_time=EXCLUDED.trades_all_time,
+ graduations_24h=EXCLUDED.graduations_24h,graduations_all_time=EXCLUDED.graduations_all_time,updated_at=EXCLUDED.updated_at
+`
+
+func (q *Queries) RecomputeProtocolStats(ctx context.Context, chainID int64) error {
+	_, err := q.db.Exec(ctx, recomputeProtocolStats, chainID)
+	return err
+}
+
+const recomputeTokenStats = `-- name: RecomputeTokenStats :exec
+INSERT INTO token_stats (
+ chain_id,token_address,spot_price_eth_wad,market_cap_eth_wad,fdv_eth_wad,
+ liquidity_eth_wad,ath_price_eth_wad,ath_at,volume_24h_eth_wad,
+ price_change_24h_bps,holder_count,updated_at
+)
+SELECT t.chain_id,t.token_address,
+ COALESCE(tr.eth_reserve*1000000000000000000/NULLIF(tr.token_reserve,0),0),
+ COALESCE(tr.eth_reserve*1000000000000000000/NULLIF(tr.token_reserve,0),0)*t.total_supply,
+ COALESCE(tr.eth_reserve*1000000000000000000/NULLIF(tr.token_reserve,0),0)*t.total_supply,
+ COALESCE(tr.eth_reserve,0),
+ GREATEST(t.initial_virtual_eth*1000000000000000000/NULLIF(t.initial_virtual_token,0),COALESCE((SELECT max(high_price_wad) FROM candles c WHERE c.chain_id=t.chain_id AND c.token_address=t.token_address),0)),
+ COALESCE((SELECT max(bucket_start_time) FROM candles c WHERE c.chain_id=t.chain_id AND c.token_address=t.token_address),t.launch_block_time),
+ COALESCE((SELECT sum(gross_eth_volume) FROM candles c WHERE c.chain_id=t.chain_id AND c.token_address=t.token_address AND c.bucket_start_time >= now()-interval '24 hours'),0),
+ 0,
+ (SELECT count(*) FROM holder_balances h WHERE h.chain_id=t.chain_id AND h.token_address=t.token_address AND h.balance>0 AND h.holder_address NOT IN (t.curve_address,t.lp_pair,t.weth)),
+ now()
+FROM tokens t LEFT JOIN token_reserves tr ON tr.chain_id=t.chain_id AND tr.token_address=t.token_address
+WHERE t.chain_id=$1 AND t.token_address=$2
+ON CONFLICT (chain_id,token_address) DO UPDATE SET
+ spot_price_eth_wad=EXCLUDED.spot_price_eth_wad,market_cap_eth_wad=EXCLUDED.market_cap_eth_wad,
+ fdv_eth_wad=EXCLUDED.fdv_eth_wad,liquidity_eth_wad=EXCLUDED.liquidity_eth_wad,
+ ath_price_eth_wad=EXCLUDED.ath_price_eth_wad,ath_at=EXCLUDED.ath_at,
+ volume_24h_eth_wad=EXCLUDED.volume_24h_eth_wad,holder_count=EXCLUDED.holder_count,updated_at=EXCLUDED.updated_at
+`
+
+type RecomputeTokenStatsParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+func (q *Queries) RecomputeTokenStats(ctx context.Context, arg RecomputeTokenStatsParams) error {
+	_, err := q.db.Exec(ctx, recomputeTokenStats, arg.ChainID, arg.TokenAddress)
 	return err
 }

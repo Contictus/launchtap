@@ -79,7 +79,14 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 			if state.Safe != nil && saved.BlockNumber <= state.Safe.BlockNumber {
 				return false, ErrSafeViolation
 			}
-			return false, ErrCanonicalMismatch
+			tip, err := e.block(remote)
+			if err != nil {
+				return false, err
+			}
+			if err := e.recoverReorg(ctx, state, tip); err != nil {
+				return false, err
+			}
+			return true, nil
 		}
 	}
 	from := e.settings.StartBlock
@@ -105,7 +112,13 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 			return false, errors.New("RPC header number differs from requested number")
 		}
 		if previous != nil && block.ParentHash != previous.BlockHash {
-			return false, ErrCanonicalMismatch
+			if state.Safe != nil && previous.BlockNumber <= state.Safe.BlockNumber {
+				return false, ErrSafeViolation
+			}
+			if err := e.recoverReorg(ctx, state, block); err != nil {
+				return false, err
+			}
+			return true, nil
 		}
 		blocks[number] = block
 		previous = &block
@@ -155,7 +168,8 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 	for _, promotion := range []struct {
 		remote ledger.IndexedBlock
 		target **ledger.IndexedBlock
-	}{{safe, &state.Safe}, {finalized, &state.Finalized}} {
+		status string
+	}{{safe, &state.Safe, "safe"}, {finalized, &state.Finalized, "finalized"}} {
 		number := min(promotion.remote.BlockNumber, state.Observed.BlockNumber)
 		if number < e.settings.StartBlock || (*promotion.target != nil && number <= (*promotion.target).BlockNumber) {
 			continue
@@ -182,6 +196,7 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 		if remote.Hash() != local.BlockHash || (number == promotion.remote.BlockNumber && local.BlockHash != promotion.remote.BlockHash) {
 			return false, ErrCanonicalMismatch
 		}
+		local.FinalityStatus = promotion.status
 		*promotion.target = &local
 	}
 	err = e.store.Transaction(ctx, func(ctx context.Context, u UnitOfWork) error {

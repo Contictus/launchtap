@@ -22,3 +22,12 @@ WHERE chain_id = $1 AND block_number = $2;
 SELECT chain_id, block_number, block_hash, parent_hash, block_time, finality_status
 FROM indexed_blocks
 WHERE chain_id = $1 AND block_hash = $2;
+
+-- name: PromoteIndexedBlocks :exec
+UPDATE indexed_blocks
+SET finality_status = CASE
+ WHEN $3 = 'finalized' THEN 'finalized'
+ WHEN finality_status = 'finalized' THEN 'finalized'
+ ELSE 'safe'
+END
+WHERE chain_id=$1 AND block_number <= $2;
