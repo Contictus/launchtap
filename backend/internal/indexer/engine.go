@@ -208,8 +208,12 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 	}
 	err = e.store.Transaction(ctx, func(ctx context.Context, u UnitOfWork) error {
 		for number := from; number <= to; number++ {
-			if _, err := u.UpsertIndexedBlock(ctx, blocks[number]); err != nil {
+			result, err := u.UpsertIndexedBlock(ctx, blocks[number])
+			if err != nil {
 				return err
+			}
+			if !result.Changed {
+				return ErrCanonicalMismatch
 			}
 		}
 		if err := e.router.Apply(ctx, u, decoded, blocks, identities); err != nil {
