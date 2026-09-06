@@ -112,6 +112,20 @@ type IndexedBlock struct {
 	FinalityStatus string
 }
 
+type IndexerReorg struct {
+	ReorgID              int64
+	ChainID              int64
+	DeploymentID         string
+	DetectedTipNumber    int64
+	DetectedTipHash      Hash
+	CommonAncestorNumber int64
+	CommonAncestorHash   Hash
+	Depth                int64
+	DetectedAt           pgtype.Timestamptz
+	Outcome              string
+	CompletedAt          pgtype.Timestamptz
+}
+
 type LaunchFeeClaim struct {
 	ChainID          int64
 	BlockNumber      int64

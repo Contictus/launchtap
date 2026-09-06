@@ -109,7 +109,9 @@ ON CONFLICT (chain_id, token_address) DO UPDATE SET generation=nextval('aggregat
 WITH candidate AS (
     SELECT chain_id, token_address
     FROM aggregation_dirty
-    WHERE claimed_generation IS NULL OR claimed_generation < generation
+    WHERE claimed_generation IS NULL
+       OR claimed_generation < generation
+       OR (claimed_at IS NOT NULL AND claimed_at < now() - interval '30 seconds')
     ORDER BY generation, chain_id, token_address
     LIMIT sqlc.arg(batch_size)::integer
     FOR UPDATE SKIP LOCKED

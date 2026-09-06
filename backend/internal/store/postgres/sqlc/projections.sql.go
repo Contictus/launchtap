@@ -183,7 +183,9 @@ const claimAggregationDirty = `-- name: ClaimAggregationDirty :many
 WITH candidate AS (
     SELECT chain_id, token_address
     FROM aggregation_dirty
-    WHERE claimed_generation IS NULL OR claimed_generation < generation
+    WHERE claimed_generation IS NULL
+       OR claimed_generation < generation
+       OR (claimed_at IS NOT NULL AND claimed_at < now() - interval '30 seconds')
     ORDER BY generation, chain_id, token_address
     LIMIT $2::integer
     FOR UPDATE SKIP LOCKED

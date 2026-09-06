@@ -393,6 +393,28 @@ func (adapter *Adapter) IngestPoolBurn(ctx context.Context, event ledger.PoolBur
 	return result, adapter.markPairTokenDirty(ctx, event.ChainID, event.Pair)
 }
 
+// The remaining canonical events have no token projection side effect; they
+// still use the same idempotent insert contract so the router can handle all 18
+// ABI event types uniformly.
+func (adapter *Adapter) IngestLaunchFeeClaim(ctx context.Context, event ledger.LaunchFeeClaim) (ledger.InsertResult, error) {
+	return adapter.InsertLaunchFeeClaim(ctx, event)
+}
+func (adapter *Adapter) IngestLaunchPauseEvent(ctx context.Context, event ledger.LaunchPauseEvent) (ledger.InsertResult, error) {
+	return adapter.InsertLaunchPauseEvent(ctx, event)
+}
+func (adapter *Adapter) IngestTradingPauseEvent(ctx context.Context, event ledger.TradingPauseEvent) (ledger.InsertResult, error) {
+	return adapter.InsertTradingPauseEvent(ctx, event)
+}
+func (adapter *Adapter) IngestEngineConfiguration(ctx context.Context, event ledger.EngineConfiguration) (ledger.InsertResult, error) {
+	return adapter.InsertEngineConfiguration(ctx, event)
+}
+func (adapter *Adapter) IngestFutureDefaultsConfiguration(ctx context.Context, event ledger.FutureDefaultsConfiguration) (ledger.InsertResult, error) {
+	return adapter.InsertFutureDefaultsConfiguration(ctx, event)
+}
+func (adapter *Adapter) IngestFutureTreasuryConfiguration(ctx context.Context, event ledger.FutureTreasuryConfiguration) (ledger.InsertResult, error) {
+	return adapter.InsertFutureTreasuryConfiguration(ctx, event)
+}
+
 func (adapter *Adapter) markTokenDirty(ctx context.Context, chainID int64, token common.Address) error {
 	if err := adapter.queries.MarkTokenDirty(ctx, sqlc.MarkTokenDirtyParams{ChainID: chainID, TokenAddress: sqlc.Address(token)}); err != nil {
 		return fmt.Errorf("mark token dirty: %w", err)

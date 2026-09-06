@@ -31,6 +31,10 @@ sql:
             go_type: {type: "Hash", pointer: true}
           - column: "sync_state.finalized_hash"
             go_type: {type: "Hash", pointer: true}
+          - column: "indexer_reorgs.detected_tip_hash"
+            go_type: {type: "Hash"}
+          - column: "indexer_reorgs.common_ancestor_hash"
+            go_type: {type: "Hash"}
           - column: "future_defaults_configurations.config_hash"
             go_type: {type: "Hash"}
           - column: "tokens.launch_block_hash"
