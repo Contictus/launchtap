@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/Contictus/launchtap/backend/internal/ledger"
@@ -17,8 +18,10 @@ import (
 // IndexerStore is the application bridge between the neutral indexer ports and
 // the PostgreSQL adapter. It is kept here so generated types never escape.
 type IndexerStore struct {
-	Pool     *pgxpool.Pool
-	Beginner TransactionBeginner
+	Pool         *pgxpool.Pool
+	Beginner     TransactionBeginner
+	ChainID      int64
+	DeploymentID string
 }
 
 func (s IndexerStore) Transaction(ctx context.Context, fn func(context.Context, indexer.UnitOfWork) error) error {
@@ -26,7 +29,16 @@ func (s IndexerStore) Transaction(ctx context.Context, fn func(context.Context, 
 	if beginner == nil {
 		beginner = s.Pool
 	}
-	return WithinTx(ctx, beginner, func(ctx context.Context, a *Adapter) error { return fn(ctx, a) })
+	if err := WithinTx(ctx, beginner, func(ctx context.Context, a *Adapter) error { return fn(ctx, a) }); err != nil {
+		return err
+	}
+	if s.Pool != nil && s.ChainID > 0 && s.DeploymentID != "" {
+		_, err := s.Pool.Exec(ctx, `SELECT pg_notify('market_dirty', $1)`, fmt.Sprintf(`{"chain_id":%d,"deployment_id":%q}`, s.ChainID, s.DeploymentID))
+		if err != nil {
+			slog.Warn("market dirty notification failed", "error", err)
+		}
+	}
+	return nil
 }
 func (a *Adapter) ReadState(ctx context.Context, chainID int64, deployment string) (indexer.State, error) {
 	state, err := a.GetSyncState(ctx, chainID, deployment)

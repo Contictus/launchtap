@@ -1,6 +1,11 @@
 package indexer
 
-import "time"
+import (
+	"encoding/json"
+	"net/http"
+	"sync"
+	"time"
+)
 
 // Health is the read-only operational snapshot exposed by the runtime. Writers
 // update it only after a transaction outcome is known.
@@ -17,16 +22,33 @@ type Health struct {
 	LastError                          string
 }
 
-type HealthTracker struct{ snapshot Health }
+type HealthTracker struct {
+	mu       sync.RWMutex
+	snapshot Health
+}
 
 func (h *HealthTracker) Set(snapshot Health) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	snapshot.PhaseCounts = cloneCounts(snapshot.PhaseCounts)
 	h.snapshot = snapshot
 }
 func (h *HealthTracker) Snapshot() Health {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	snapshot := h.snapshot
 	snapshot.PhaseCounts = cloneCounts(snapshot.PhaseCounts)
 	return snapshot
+}
+
+// HealthHandler exposes the operational snapshot as JSON for orchestrators.
+func HealthHandler(tracker *HealthTracker) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(tracker.Snapshot()); err != nil {
+			return
+		}
+	})
 }
 func cloneCounts(source map[string]int64) map[string]int64 {
 	if source == nil {

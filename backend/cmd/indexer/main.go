@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -65,7 +66,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner()}
+	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner(), ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID}
 	router := indexer.LedgerRouter{ChainID: int64(c.ChainID)}
 	engine, err := indexer.New(indexer.Settings{ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, Factory: deployment.Factory, StartBlock: int64(deployment.StartBlock), ChunkSize: int64(c.IndexerChunkSize), PollInterval: c.IndexerPollInterval}, store, source, discovery, decoder, router)
 	if err != nil {
@@ -78,9 +79,29 @@ func run() error {
 			stop()
 		}
 	}()
-	aggregation := stats.Worker{Source: storepostgres.AggregationSource{Adapter: storepostgres.NewAdapter(pool), ChainID: int64(c.ChainID)}, WorkerID: c.IndexerWorkerID, PollInterval: stats.DefaultDirtyPollInterval, BatchSize: 32, OnError: func(claim stats.Claim, err error) {
+	wake := make(chan struct{}, 1)
+	health := new(indexer.HealthTracker)
+	health.Set(indexer.Health{ChainID: int64(c.ChainID), OwnershipHeld: true, RPCHealthy: true})
+	healthServer := &http.Server{Addr: c.APIAddr, Handler: indexer.HealthHandler(health)}
+	go func() {
+		if err := healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Warn("health server stopped", "error", err)
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = healthServer.Shutdown(shutdownCtx)
+	}()
+	aggregation := stats.Worker{Source: storepostgres.AggregationSource{Adapter: storepostgres.NewAdapter(pool), ChainID: int64(c.ChainID)}, WorkerID: c.IndexerWorkerID, PollInterval: stats.DefaultDirtyPollInterval, BatchSize: 32, Wake: wake, OnError: func(claim stats.Claim, err error) {
 		slog.Error("aggregation compute failed", "chain_id", claim.ChainID, "token", fmt.Sprintf("%x", claim.Token), "error", err)
 	}}
+	go func() {
+		if err := storepostgres.ListenMarketDirty(ctx, pool, wake); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Warn("market dirty listener stopped", "error", err)
+		}
+	}()
 	aggregationErrors := make(chan error, 1)
 	go func() {
 		if err := aggregation.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
