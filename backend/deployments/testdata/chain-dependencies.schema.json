@@ -24,6 +24,7 @@
     "chainId": { "type": "integer", "minimum": 1 },
     "name": { "type": "string", "minLength": 1, "maxLength": 100 },
     "explorerBase": { "type": "string", "minLength": 1 },
+    "reviewed": { "type": "boolean" },
     "weth": { "$ref": "#/$defs/address" },
     "uniswapV2Factory": { "$ref": "#/$defs/address" },
     "uniswapV2Router02": { "$ref": "#/$defs/address" },
