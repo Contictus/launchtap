@@ -37,6 +37,8 @@ The milestone is not closed until the following evidence exists:
 Plan 3 consumes canonical and derived backend state. It owns Huma REST endpoints, finality
 and `asOfBlock` response metadata, Privy access-token and linked-wallet verification, quote
 DTOs, pagination, and SSE streams. It does not redefine ledger semantics or curve formulas.
+Its pre-flight defines seven tasks in
+[`docs/plans/2026-09-08-backend-api-identity.md`](plans/2026-09-08-backend-api-identity.md).
 
 ## Later milestone — web delivery
 

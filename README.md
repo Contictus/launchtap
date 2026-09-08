@@ -14,7 +14,7 @@ indexes canonical chain data and never holds trading funds.
 | Backend Indexer Task 2 | Complete |
 | Backend Indexer Task 3 | Complete |
 | Backend Indexer Tasks 4–5 | Implemented; acceptance pending |
-| API and identity (Plan 3) | Not started |
+| API and identity (Plan 3) | Pre-flight drafted; implementation not started |
 | Web client | Not started |
 
 Plan 2 still needs the external Robinhood probe and reviewed chain-46630 deployment
@@ -75,5 +75,6 @@ never runs migrations during startup. Docker is required for PostgreSQL integrat
 5. [`docs/plans/2026-09-01-contract-foundations.md`](docs/plans/2026-09-01-contract-foundations.md)
 6. [`docs/plans/2026-09-01-backend-foundations.md`](docs/plans/2026-09-01-backend-foundations.md)
 7. [`docs/plans/2026-09-05-backend-indexer.md`](docs/plans/2026-09-05-backend-indexer.md)
+8. [`docs/plans/2026-09-08-backend-api-identity.md`](docs/plans/2026-09-08-backend-api-identity.md)
 
 `dev` is the active implementation branch. `main` contains verified milestones only.
