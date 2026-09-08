@@ -3,11 +3,18 @@
 > **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
 > and independent review. This is an implementation task list, not implementation code.
 
-**Status:** Written, not started. The five cross-cutting decisions under "Locked decisions"
-are closed and binding; each task still takes its own pre-flight for the criteria below it.
-Task 1 gates the whole plan: if the active provider cannot supply a usable `safe` tag, that is
-a launch blocker to raise before Task 4's architecture, not a runtime patch (`backlog.md`,
-spec §4.1).
+**Status:** Implementation is in progress on `dev`. Task 2 (ABI artifacts, decoding, and
+staged discovery), Task 3 (store completion and projection writes), and the merged Tasks 4–5
+delivery unit (indexer runtime, reorg recovery, aggregation, notifications, and health surface)
+are implemented. Task 1's external RPC probe and chain-46630 deployment manifest remain open;
+Anvil end-to-end evidence and live runtime observability evidence are also pending. Task 1
+remains a launch gate: if the active provider cannot supply a usable `safe` tag, that is a
+blocker before production operation (`backlog.md`, spec §4.1).
+
+The five cross-cutting decisions under "Locked decisions" are closed and binding. The plan's
+acceptance criteria remain authoritative for the outstanding evidence and for any follow-up
+hardening. Task 1 gates production operation: if the active provider cannot supply a usable
+`safe` tag, that is a launch blocker, not a runtime patch (`backlog.md`, spec §4.1).
 
 **Goal:** Turn the Backend Foundations substrate into a running chain ingestion service —
 RPC access, staged log discovery, event decoding and routing, transactional canonical writes,
