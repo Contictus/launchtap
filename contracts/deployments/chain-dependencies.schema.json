@@ -27,7 +27,7 @@
     "reviewed": { "type": "boolean" },
     "weth": { "$ref": "#/$defs/address" },
     "uniswapV2Factory": { "$ref": "#/$defs/address" },
-    "uniswapV2Router02": { "$ref": "#/$defs/address" },
+    "uniswapV2Router02": { "oneOf": [{ "$ref": "#/$defs/address" }, { "type": "null" }] },
     "pairInitCodeHash": { "$ref": "#/$defs/hash" },
     "bytecodeHashes": {
       "type": "object",

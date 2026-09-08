@@ -202,14 +202,13 @@ func validateDependencies(filePath string, body []byte, schema *jsonschema.Schem
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return &ValidationError{Path: filePath, Err: err}
 	}
-	for name, value := range map[string]string{
-		"weth":               raw.WETH,
-		"uniswap v2 factory": raw.UniswapV2Factory,
-		"uniswap v2 router":  raw.UniswapV2Router02,
-	} {
+	for name, value := range map[string]string{"weth": raw.WETH, "uniswap v2 factory": raw.UniswapV2Factory} {
 		if err := requireAddress(name, value, true); err != nil {
 			return &ValidationError{Path: filePath, Err: err}
 		}
+	}
+	if raw.UniswapV2Router02 != "" {
+		if err := requireAddress("uniswap v2 router", raw.UniswapV2Router02, true); err != nil { return &ValidationError{Path: filePath, Err: err} }
 	}
 	for name, value := range map[string]string{
 		"pair init code":           raw.PairInitCodeHash,
