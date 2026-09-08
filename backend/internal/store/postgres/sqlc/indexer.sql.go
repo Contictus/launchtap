@@ -54,3 +54,76 @@ func (q *Queries) ListTokenIdentities(ctx context.Context, chainID int64) ([]Lis
 	}
 	return items, nil
 }
+
+const listTokenPhaseCounts = `-- name: ListTokenPhaseCounts :many
+SELECT token.phase, count(*)::BIGINT AS token_count
+FROM tokens AS token
+WHERE token.chain_id = $1
+GROUP BY token.phase
+ORDER BY token.phase
+`
+
+type ListTokenPhaseCountsRow struct {
+	Phase      string
+	TokenCount int64
+}
+
+func (q *Queries) ListTokenPhaseCounts(ctx context.Context, chainID int64) ([]ListTokenPhaseCountsRow, error) {
+	rows, err := q.db.Query(ctx, listTokenPhaseCounts, chainID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTokenPhaseCountsRow{}
+	for rows.Next() {
+		var i ListTokenPhaseCountsRow
+		if err := rows.Scan(&i.Phase, &i.TokenCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readOperationalHealth = `-- name: ReadOperationalHealth :one
+SELECT
+    dirty.dirty_work,
+    COALESCE(reorg.reorg_id, 0)::BIGINT AS last_reorg_id,
+    COALESCE(reorg.depth, 0)::BIGINT AS last_reorg_depth,
+    reorg.detected_at AS last_reorg_at
+FROM (SELECT count(*)::BIGINT AS dirty_work FROM aggregation_dirty AS entry WHERE entry.chain_id = $1) AS dirty
+LEFT JOIN LATERAL (
+    SELECT reorg_id, depth, detected_at
+    FROM indexer_reorgs AS entry
+    WHERE entry.chain_id = $1 AND entry.deployment_id = $2
+    ORDER BY reorg_id DESC
+    LIMIT 1
+) AS reorg ON TRUE
+`
+
+type ReadOperationalHealthParams struct {
+	ChainID      int64
+	DeploymentID string
+}
+
+type ReadOperationalHealthRow struct {
+	DirtyWork      int64
+	LastReorgID    int64
+	LastReorgDepth int64
+	LastReorgAt    pgtype.Timestamptz
+}
+
+func (q *Queries) ReadOperationalHealth(ctx context.Context, arg ReadOperationalHealthParams) (ReadOperationalHealthRow, error) {
+	row := q.db.QueryRow(ctx, readOperationalHealth, arg.ChainID, arg.DeploymentID)
+	var i ReadOperationalHealthRow
+	err := row.Scan(
+		&i.DirtyWork,
+		&i.LastReorgID,
+		&i.LastReorgDepth,
+		&i.LastReorgAt,
+	)
+	return i, err
+}

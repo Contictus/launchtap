@@ -70,6 +70,17 @@ func run() error {
 	router := indexer.LedgerRouter{ChainID: int64(c.ChainID)}
 	health := new(indexer.HealthTracker)
 	health.Set(indexer.Health{ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, OwnershipHeld: true, RPCHealthy: true})
+	healthStore := storepostgres.NewAdapter(pool)
+	refreshOperationalHealth := func() {
+		snapshot, err := healthStore.ReadOperationalHealth(ctx, int64(c.ChainID), c.DeploymentID)
+		if err != nil {
+			health.Failed(err)
+			slog.Warn("operational health refresh failed", "error", err)
+			return
+		}
+		health.Operational(snapshot)
+	}
+	refreshOperationalHealth()
 	engine, err := indexer.New(indexer.Settings{
 		ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, Factory: deployment.Factory,
 		StartBlock: int64(deployment.StartBlock), ChunkSize: int64(c.IndexerChunkSize), PollInterval: c.IndexerPollInterval,
@@ -84,6 +95,18 @@ func run() error {
 			health.OwnershipLost(err)
 			watchErrors <- err
 			stop()
+		}
+	}()
+	go func() {
+		ticker := time.NewTicker(c.IndexerPollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				refreshOperationalHealth()
+			}
 		}
 	}()
 	wake := make(chan struct{}, 1)

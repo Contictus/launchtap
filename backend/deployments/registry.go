@@ -208,7 +208,9 @@ func validateDependencies(filePath string, body []byte, schema *jsonschema.Schem
 		}
 	}
 	if raw.UniswapV2Router02 != "" {
-		if err := requireAddress("uniswap v2 router", raw.UniswapV2Router02, true); err != nil { return &ValidationError{Path: filePath, Err: err} }
+		if err := requireAddress("uniswap v2 router", raw.UniswapV2Router02, true); err != nil {
+			return &ValidationError{Path: filePath, Err: err}
+		}
 	}
 	for name, value := range map[string]string{
 		"pair init code":           raw.PairInitCodeHash,

@@ -12,9 +12,10 @@ func TestHealthHandlerReturnsSnapshot(t *testing.T) {
 	tracker := new(HealthTracker)
 	tracker.Set(Health{ChainID: 46630, DeploymentID: "testnet-v1", OwnershipHeld: true, RPCHealthy: true})
 	tracker.Committed(State{ChainID: 46630, DeploymentID: "testnet-v1", Observed: &ledger.IndexedBlock{BlockNumber: 12, BlockTime: time.Now().UTC()}})
+	tracker.Operational(OperationalHealth{DirtyWork: 2, LastReorgID: 4, LastReorgDepth: 3, LastReorgAt: time.Now().UTC(), PhaseCounts: map[string]int64{"curve": 5}})
 	recorder := httptest.NewRecorder()
 	HealthHandler(tracker).ServeHTTP(recorder, httptest.NewRequest("GET", "/healthz", nil))
-	if recorder.Code != 200 || !contains(recorder.Body.String(), "46630") || !contains(recorder.Body.String(), "testnet-v1") {
+	if recorder.Code != 200 || !contains(recorder.Body.String(), "46630") || !contains(recorder.Body.String(), "testnet-v1") || !contains(recorder.Body.String(), "\"DirtyWork\":2") || !contains(recorder.Body.String(), "\"curve\":5") {
 		t.Fatalf("unexpected health response: %s", recorder.Body.String())
 	}
 }

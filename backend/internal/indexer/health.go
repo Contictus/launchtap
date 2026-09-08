@@ -26,6 +26,17 @@ type Health struct {
 	LastError                          string
 }
 
+// OperationalHealth is the persisted portion of the runtime health snapshot.
+// It is deliberately neutral so a store adapter, not generated SQL types,
+// crosses the application boundary.
+type OperationalHealth struct {
+	DirtyWork      int64
+	LastReorgID    int64
+	LastReorgDepth int64
+	LastReorgAt    time.Time
+	PhaseCounts    map[string]int64
+}
+
 type HealthTracker struct {
 	mu       sync.RWMutex
 	snapshot Health
@@ -91,8 +102,24 @@ func (h *HealthTracker) Snapshot() Health {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	snapshot := h.snapshot
+	now := time.Now().UTC()
+	snapshot.ObservedLag = healthLag(now, snapshot.ObservedAt)
+	snapshot.SafeLag = healthLag(now, snapshot.SafeAt)
+	snapshot.FinalizedLag = healthLag(now, snapshot.FinalizedAt)
 	snapshot.PhaseCounts = cloneCounts(snapshot.PhaseCounts)
 	return snapshot
+}
+
+// Operational updates the persisted counters without changing transaction or
+// ownership readiness. Values come from committed database state only.
+func (h *HealthTracker) Operational(value OperationalHealth) {
+	h.Update(func(snapshot *Health) {
+		snapshot.DirtyWork = value.DirtyWork
+		snapshot.LastReorgID = value.LastReorgID
+		snapshot.LastReorgDepth = value.LastReorgDepth
+		snapshot.LastReorgAt = value.LastReorgAt
+		snapshot.PhaseCounts = cloneCounts(value.PhaseCounts)
+	})
 }
 
 // HealthHandler exposes the operational snapshot as JSON for orchestrators.

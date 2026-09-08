@@ -4,9 +4,11 @@ package postgrestest
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/stats"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -74,7 +76,29 @@ func TestRecomputeTokenStatsUsesCanonicalSupplyAndCandleHistory(t *testing.T) {
 	if err := adapter.RecomputeTokenStats(ctx, chainID, common.Address(token)); err != nil {
 		t.Fatalf("recompute token stats: %v", err)
 	}
-	assertTokenStats(t, ctx, database, chainID, token, "2000000000000000000", "200002", "2000000", "2000000000000000", now.Add(-24*time.Hour-time.Minute))
+	expected := stats.ComputeTokenStats(stats.TokenInput{
+		Token:        common.Address(token),
+		Curve:        common.Address(curve),
+		Pair:         common.Address(pair),
+		LaunchPrice:  big.NewInt(10_000_000_000_000),
+		LaunchAt:     now.Add(-26 * time.Hour),
+		ReserveETH:   big.NewInt(200),
+		ReserveToken: big.NewInt(100),
+		TotalSupply:  big.NewInt(1_000_000),
+		Holders: []stats.Holder{
+			{Address: common.Address(curve), Balance: big.NewInt(799_999)},
+			{Address: common.Address(pair), Balance: big.NewInt(100_000)},
+			{Address: common.Address(addressBytes(0)), Balance: big.NewInt(50_000)},
+			{Address: common.HexToAddress("0x000000000000000000000000000000000000dEaD"), Balance: big.NewInt(50_000)},
+			{Address: common.Address(addressBytes(0x59)), Balance: big.NewInt(1)},
+		},
+		Candles: []stats.Candle{
+			{Start: now.Add(-25 * time.Hour), High: big.NewInt(1_000_000_000_000_000), Close: big.NewInt(1_000_000_000_000_000), Volume: big.NewInt(1)},
+			{Start: now.Add(-24*time.Hour - time.Minute), High: big.NewInt(2_000_000_000_000_000), Close: big.NewInt(800_000_000_000_000), Volume: big.NewInt(2)},
+			{Start: now.Add(-time.Hour), High: big.NewInt(2_000_000_000_000_000), Close: big.NewInt(600_000_000_000_000), Volume: big.NewInt(3)},
+		},
+	}, now)
+	assertTokenStatsMatchesCalculator(t, ctx, database, chainID, token, expected)
 
 	if _, err := database.DB.ExecContext(ctx, `DELETE FROM candles WHERE chain_id=$1 AND token_address=$2 AND high_price_wad=2000000000000000`, chainID, token); err != nil {
 		t.Fatalf("delete former ATH candles: %v", err)
@@ -94,7 +118,7 @@ func TestRecomputeTokenStatsUsesCanonicalSupplyAndCandleHistory(t *testing.T) {
 	}
 }
 
-func assertTokenStats(t testing.TB, ctx context.Context, database *Database, chainID int64, token []byte, spot, marketCap, fdv, ath string, athAt time.Time) {
+func assertTokenStatsMatchesCalculator(t testing.TB, ctx context.Context, database *Database, chainID int64, token []byte, expected stats.TokenStats) {
 	t.Helper()
 	var gotSpot, gotMarketCap, gotFDV, gotATH string
 	var holders, change int
@@ -107,7 +131,7 @@ func assertTokenStats(t testing.TB, ctx context.Context, database *Database, cha
 	`, chainID, token).Scan(&gotSpot, &gotMarketCap, &gotFDV, &gotATH, &gotATHAt, &volume, &change, &holders); err != nil {
 		t.Fatalf("read token stats: %v", err)
 	}
-	if gotSpot != spot || gotMarketCap != marketCap || gotFDV != fdv || gotATH != ath || !gotATHAt.Equal(athAt) || volume != "3" || change != -2500 || holders != 1 {
-		t.Fatalf("token stats = spot=%s market_cap=%s fdv=%s ath=%s ath_at=%s volume=%s change=%d holders=%d", gotSpot, gotMarketCap, gotFDV, gotATH, gotATHAt, volume, change, holders)
+	if gotSpot != expected.SpotPrice.String() || gotMarketCap != expected.MarketCap.String() || gotFDV != expected.FDV.String() || gotATH != expected.ATH.String() || !gotATHAt.Equal(expected.ATHAt) || volume != expected.Volume24H.String() || int64(change) != expected.PriceChange24hBPS || int64(holders) != expected.HolderCount {
+		t.Fatalf("token stats diverge from calculator: got spot=%s market_cap=%s fdv=%s ath=%s ath_at=%s volume=%s change=%d holders=%d; want %+v", gotSpot, gotMarketCap, gotFDV, gotATH, gotATHAt, volume, change, holders, expected)
 	}
 }
