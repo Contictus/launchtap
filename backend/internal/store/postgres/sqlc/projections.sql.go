@@ -289,6 +289,23 @@ func (q *Queries) CompleteAggregationDirty(ctx context.Context, arg CompleteAggr
 	return result.RowsAffected(), nil
 }
 
+const deleteTokenStats = `-- name: DeleteTokenStats :execrows
+DELETE FROM token_stats WHERE chain_id=$1 AND token_address=$2
+`
+
+type DeleteTokenStatsParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+func (q *Queries) DeleteTokenStats(ctx context.Context, arg DeleteTokenStatsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTokenStats, arg.ChainID, arg.TokenAddress)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const hasCanonicalLaunch = `-- name: HasCanonicalLaunch :one
 SELECT EXISTS(SELECT 1 FROM token_launches WHERE chain_id=$1 AND token_address=$2)
 `
@@ -398,29 +415,123 @@ func (q *Queries) RecomputeProtocolStats(ctx context.Context, chainID int64) err
 }
 
 const recomputeTokenStats = `-- name: RecomputeTokenStats :exec
+WITH clock AS (
+    SELECT now() AS now_at
+), prices AS (
+    SELECT
+        t.chain_id,
+        t.token_address,
+        t.initial_virtual_eth * 1000000000000000000 / NULLIF(t.initial_virtual_token, 0) AS launch_price,
+        t.launch_block_time,
+        COALESCE(reserve.eth_reserve * 1000000000000000000 / NULLIF(reserve.token_reserve, 0), 0) AS spot_price,
+        COALESCE(reserve.eth_reserve, 0) AS liquidity,
+        t.total_supply,
+        t.curve_address,
+        t.lp_pair
+    FROM tokens AS t
+    LEFT JOIN token_reserves AS reserve
+      ON reserve.chain_id = t.chain_id AND reserve.token_address = t.token_address
+    WHERE t.chain_id = $1 AND t.token_address = $2
+), candles_ath AS (
+    SELECT c.chain_id, c.token_address, c.high_price_wad, c.bucket_start_time
+    FROM candles AS c
+    WHERE c.chain_id = $1 AND c.token_address = $2
+    ORDER BY c.high_price_wad DESC, c.bucket_start_time ASC
+    LIMIT 1
+), baseline AS (
+    SELECT c.close_price_wad
+    FROM candles AS c CROSS JOIN clock
+    WHERE c.chain_id = $1 AND c.token_address = $2
+      AND c.bucket_start_time <= clock.now_at - interval '24 hours'
+    ORDER BY c.bucket_start_time DESC
+    LIMIT 1
+), latest AS (
+    SELECT c.close_price_wad
+    FROM candles AS c
+    WHERE c.chain_id = $1 AND c.token_address = $2
+    ORDER BY c.bucket_start_time DESC
+    LIMIT 1
+), rolling AS (
+    SELECT COALESCE(sum(c.gross_eth_volume), 0) AS volume_24h
+    FROM candles AS c CROSS JOIN clock
+    WHERE c.chain_id = $1 AND c.token_address = $2
+      AND c.bucket_start_time >= clock.now_at - interval '24 hours'
+), holders AS (
+    SELECT
+        p.chain_id,
+        p.token_address,
+        COALESCE(sum(h.balance) FILTER (
+            WHERE h.holder_address IN (
+                p.curve_address,
+                decode('0000000000000000000000000000000000000000', 'hex'),
+                decode('000000000000000000000000000000000000dead', 'hex')
+            )
+        ), 0) AS non_circulating,
+        count(*) FILTER (
+            WHERE h.balance > 0
+              AND h.holder_address NOT IN (
+                  p.curve_address,
+                  p.lp_pair,
+                  decode('0000000000000000000000000000000000000000', 'hex'),
+                  decode('000000000000000000000000000000000000dead', 'hex')
+              )
+        )::INTEGER AS holder_count
+    FROM prices AS p
+    LEFT JOIN holder_balances AS h
+      ON h.chain_id = p.chain_id AND h.token_address = p.token_address
+    GROUP BY p.chain_id, p.token_address
+), computed AS (
+    SELECT
+        p.chain_id, p.token_address, p.launch_price, p.launch_block_time, p.spot_price, p.liquidity, p.total_supply, p.curve_address, p.lp_pair,
+        h.non_circulating,
+        h.holder_count,
+        rolling.volume_24h,
+        baseline.close_price_wad AS baseline_price,
+        latest.close_price_wad AS latest_price,
+        COALESCE(candles_ath.high_price_wad, 0) AS candle_ath,
+        candles_ath.bucket_start_time AS candle_ath_at,
+        previous.ath_price_eth_wad AS previous_ath,
+        previous.ath_at AS previous_ath_at
+    FROM prices AS p
+    JOIN holders AS h USING (chain_id, token_address)
+    CROSS JOIN rolling
+    LEFT JOIN candles_ath USING (chain_id, token_address)
+    LEFT JOIN baseline ON TRUE
+    LEFT JOIN latest ON TRUE
+    LEFT JOIN token_stats AS previous
+      ON previous.chain_id = p.chain_id AND previous.token_address = p.token_address
+)
 INSERT INTO token_stats (
  chain_id,token_address,spot_price_eth_wad,market_cap_eth_wad,fdv_eth_wad,
  liquidity_eth_wad,ath_price_eth_wad,ath_at,volume_24h_eth_wad,
  price_change_24h_bps,holder_count,updated_at
 )
-SELECT t.chain_id,t.token_address,
- COALESCE(tr.eth_reserve*1000000000000000000/NULLIF(tr.token_reserve,0),0),
- COALESCE(tr.eth_reserve*1000000000000000000/NULLIF(tr.token_reserve,0),0)*t.total_supply,
- COALESCE(tr.eth_reserve*1000000000000000000/NULLIF(tr.token_reserve,0),0)*t.total_supply,
- COALESCE(tr.eth_reserve,0),
- GREATEST(t.initial_virtual_eth*1000000000000000000/NULLIF(t.initial_virtual_token,0),COALESCE((SELECT max(high_price_wad) FROM candles c WHERE c.chain_id=t.chain_id AND c.token_address=t.token_address),0)),
- COALESCE((SELECT max(bucket_start_time) FROM candles c WHERE c.chain_id=t.chain_id AND c.token_address=t.token_address),t.launch_block_time),
- COALESCE((SELECT sum(gross_eth_volume) FROM candles c WHERE c.chain_id=t.chain_id AND c.token_address=t.token_address AND c.bucket_start_time >= now()-interval '24 hours'),0),
- 0,
- (SELECT count(*) FROM holder_balances h WHERE h.chain_id=t.chain_id AND h.token_address=t.token_address AND h.balance>0 AND h.holder_address NOT IN (t.curve_address,t.lp_pair,t.weth)),
+SELECT chain_id, token_address,
+ spot_price,
+ spot_price * GREATEST(total_supply - non_circulating, 0) / 1000000000000000000,
+ spot_price * total_supply / 1000000000000000000,
+ liquidity,
+ GREATEST(COALESCE(previous_ath, 0), COALESCE(launch_price, 0), candle_ath),
+ CASE
+   WHEN previous_ath IS NOT NULL AND previous_ath >= GREATEST(COALESCE(launch_price, 0), candle_ath) THEN previous_ath_at
+   WHEN candle_ath > COALESCE(launch_price, 0) THEN candle_ath_at
+   ELSE launch_block_time
+ END,
+ volume_24h,
+ CASE
+   WHEN baseline_price > 0 AND latest_price IS NOT NULL
+     THEN trunc((latest_price - baseline_price) * 10000 / baseline_price)::INTEGER
+   ELSE 0
+ END,
+ holder_count,
  now()
-FROM tokens t LEFT JOIN token_reserves tr ON tr.chain_id=t.chain_id AND tr.token_address=t.token_address
-WHERE t.chain_id=$1 AND t.token_address=$2
+FROM computed
 ON CONFLICT (chain_id,token_address) DO UPDATE SET
  spot_price_eth_wad=EXCLUDED.spot_price_eth_wad,market_cap_eth_wad=EXCLUDED.market_cap_eth_wad,
  fdv_eth_wad=EXCLUDED.fdv_eth_wad,liquidity_eth_wad=EXCLUDED.liquidity_eth_wad,
  ath_price_eth_wad=EXCLUDED.ath_price_eth_wad,ath_at=EXCLUDED.ath_at,
- volume_24h_eth_wad=EXCLUDED.volume_24h_eth_wad,holder_count=EXCLUDED.holder_count,updated_at=EXCLUDED.updated_at
+ volume_24h_eth_wad=EXCLUDED.volume_24h_eth_wad,price_change_24h_bps=EXCLUDED.price_change_24h_bps,
+ holder_count=EXCLUDED.holder_count,updated_at=EXCLUDED.updated_at
 `
 
 type RecomputeTokenStatsParams struct {

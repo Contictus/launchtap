@@ -715,6 +715,12 @@ func (adapter *Adapter) RecomputeTokenStats(ctx context.Context, chainID int64, 
 	}
 	return nil
 }
+func (adapter *Adapter) DeleteTokenStats(ctx context.Context, chainID int64, token common.Address) error {
+	if _, err := adapter.queries.DeleteTokenStats(ctx, sqlc.DeleteTokenStatsParams{ChainID: chainID, TokenAddress: sqlc.Address(token)}); err != nil {
+		return fmt.Errorf("delete token stats: %w", err)
+	}
+	return nil
+}
 func (adapter *Adapter) RecomputeProtocolAggregates(ctx context.Context, chainID int64) error {
 	if err := adapter.queries.ClearProtocolDaily(ctx, chainID); err != nil {
 		return fmt.Errorf("clear protocol daily: %w", err)

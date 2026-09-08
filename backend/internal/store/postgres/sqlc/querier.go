@@ -40,6 +40,7 @@ type Querier interface {
 	DeleteRefundClaimsAbove(ctx context.Context, arg DeleteRefundClaimsAboveParams) (int64, error)
 	DeleteRefundCreditsAbove(ctx context.Context, arg DeleteRefundCreditsAboveParams) (int64, error)
 	DeleteTokenLaunchesAbove(ctx context.Context, arg DeleteTokenLaunchesAboveParams) (int64, error)
+	DeleteTokenStats(ctx context.Context, arg DeleteTokenStatsParams) (int64, error)
 	DeleteTradesAbove(ctx context.Context, arg DeleteTradesAboveParams) (int64, error)
 	DeleteTradingPauseEventsAbove(ctx context.Context, arg DeleteTradingPauseEventsAboveParams) (int64, error)
 	DeleteTransfersAbove(ctx context.Context, arg DeleteTransfersAboveParams) (int64, error)

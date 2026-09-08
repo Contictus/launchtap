@@ -82,7 +82,7 @@ func run() error {
 	wake := make(chan struct{}, 1)
 	health := new(indexer.HealthTracker)
 	health.Set(indexer.Health{ChainID: int64(c.ChainID), OwnershipHeld: true, RPCHealthy: true})
-	healthServer := &http.Server{Addr: c.APIAddr, Handler: indexer.HealthHandler(health)}
+	healthServer := &http.Server{Addr: c.IndexerHealthAddr, Handler: indexer.HealthHandler(health)}
 	go func() {
 		if err := healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Warn("health server stopped", "error", err)

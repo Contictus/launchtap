@@ -16,6 +16,7 @@ func TestLoadParsesCompleteConfiguration(t *testing.T) {
 	env["PRIVY_VERIFICATION_KEY"] = " verification-key "
 	env["LOG_LEVEL"] = "debug"
 	env["API_ADDR"] = "127.0.0.1:9090"
+	env["INDEXER_HEALTH_ADDR"] = "127.0.0.1:9091"
 	env["INDEXER_CHUNK_SIZE"] = "2500"
 	env["INDEXER_LOG_ADDRESS_BATCH_SIZE"] = "750"
 	env["INDEXER_POLL_INTERVAL"] = "2s"
@@ -41,6 +42,7 @@ func TestLoadParsesCompleteConfiguration(t *testing.T) {
 		PrivyVerificationKey:       "verification-key",
 		LogLevel:                   "debug",
 		APIAddr:                    "127.0.0.1:9090",
+		IndexerHealthAddr:          "127.0.0.1:9091",
 		IndexerChunkSize:           2500,
 		IndexerLogAddressBatchSize: 750,
 		IndexerPollInterval:        2 * time.Second,
@@ -68,6 +70,7 @@ func TestConfigEnvironmentMapping(t *testing.T) {
 		"PrivyVerificationKey":       "PRIVY_VERIFICATION_KEY",
 		"LogLevel":                   "LOG_LEVEL",
 		"APIAddr":                    "API_ADDR",
+		"IndexerHealthAddr":          "INDEXER_HEALTH_ADDR",
 		"IndexerChunkSize":           "INDEXER_CHUNK_SIZE",
 		"IndexerLogAddressBatchSize": "INDEXER_LOG_ADDRESS_BATCH_SIZE",
 		"IndexerPollInterval":        "INDEXER_POLL_INTERVAL",
@@ -245,6 +248,8 @@ func TestLoadRejectsInvalidBoundedSettings(t *testing.T) {
 		{name: "address without port", field: "API_ADDR", value: "localhost"},
 		{name: "zero port", field: "API_ADDR", value: ":0"},
 		{name: "port overflow", field: "API_ADDR", value: ":65536"},
+		{name: "indexer health address without port", field: "INDEXER_HEALTH_ADDR", value: "localhost"},
+		{name: "indexer health zero port", field: "INDEXER_HEALTH_ADDR", value: ":0"},
 		{name: "zero chunk", field: "INDEXER_CHUNK_SIZE", value: "0"},
 		{name: "chunk above provisional maximum", field: "INDEXER_CHUNK_SIZE", value: "10001"},
 		{name: "zero address batch", field: "INDEXER_LOG_ADDRESS_BATCH_SIZE", value: "0"},

@@ -16,6 +16,7 @@ type RecoveryUnit interface {
 	AffectedTokensAbove(context.Context, int64, int64) ([]common.Address, error)
 	DeleteCanonicalAbove(context.Context, int64, int64) error
 	RebuildTokenProjections(context.Context, int64, common.Address) error
+	DeleteTokenStats(context.Context, int64, common.Address) error
 	RecomputeTokenStats(context.Context, int64, common.Address) error
 	RecomputeProtocolAggregates(context.Context, int64) error
 	WriteState(context.Context, State) error
@@ -75,6 +76,9 @@ func (e *Engine) recoverReorg(ctx context.Context, state State, tip ledger.Index
 		}
 		for _, token := range tokens {
 			if err := recovery.RebuildTokenProjections(ctx, e.settings.ChainID, token); err != nil {
+				return err
+			}
+			if err := recovery.DeleteTokenStats(ctx, e.settings.ChainID, token); err != nil {
 				return err
 			}
 			if err := recovery.RecomputeTokenStats(ctx, e.settings.ChainID, token); err != nil {

@@ -12,16 +12,17 @@ import (
 )
 
 const (
-	defaultLogLevel         = "info"
-	defaultAPIAddr          = ":8080"
-	defaultIndexerChunkSize = uint64(100)
-	maxIndexerChunkSize     = uint64(10000)
-	defaultLogAddressBatch  = uint64(500)
-	maxLogAddressBatch      = uint64(2000)
-	defaultPollInterval     = time.Second
-	defaultRPCTimeout       = 10 * time.Second
-	defaultRPCMaxRetries    = uint64(3)
-	defaultRPCRetryBackoff  = 250 * time.Millisecond
+	defaultLogLevel          = "info"
+	defaultAPIAddr           = ":8080"
+	defaultIndexerHealthAddr = ":8081"
+	defaultIndexerChunkSize  = uint64(100)
+	maxIndexerChunkSize      = uint64(10000)
+	defaultLogAddressBatch   = uint64(500)
+	maxLogAddressBatch       = uint64(2000)
+	defaultPollInterval      = time.Second
+	defaultRPCTimeout        = 10 * time.Second
+	defaultRPCMaxRetries     = uint64(3)
+	defaultRPCRetryBackoff   = 250 * time.Millisecond
 )
 
 var (
@@ -57,6 +58,7 @@ type Config struct {
 	PrivyVerificationKey       string        `env:"PRIVY_VERIFICATION_KEY"`
 	LogLevel                   string        `env:"LOG_LEVEL"`
 	APIAddr                    string        `env:"API_ADDR"`
+	IndexerHealthAddr          string        `env:"INDEXER_HEALTH_ADDR"`
 	IndexerChunkSize           uint64        `env:"INDEXER_CHUNK_SIZE"`
 	IndexerLogAddressBatchSize uint64        `env:"INDEXER_LOG_ADDRESS_BATCH_SIZE"`
 	IndexerPollInterval        time.Duration `env:"INDEXER_POLL_INTERVAL"`
@@ -128,6 +130,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	indexerHealthAddr, err := parseListenerAddr("INDEXER_HEALTH_ADDR", values.indexerHealthAddr, defaultIndexerHealthAddr)
+	if err != nil {
+		return Config{}, err
+	}
 	chunkSize, err := optionalBoundedUint64(
 		"INDEXER_CHUNK_SIZE",
 		values.indexerChunkSize,
@@ -152,6 +158,7 @@ func Load(getenv func(string) string) (Config, error) {
 		PrivyVerificationKey:       values.privyVerificationKey,
 		LogLevel:                   logLevel,
 		APIAddr:                    apiAddr,
+		IndexerHealthAddr:          indexerHealthAddr,
 		IndexerChunkSize:           chunkSize,
 		IndexerLogAddressBatchSize: addressBatchSize,
 		IndexerPollInterval:        pollInterval,
@@ -207,6 +214,7 @@ type environmentValues struct {
 	privyVerificationKey       string
 	logLevel                   string
 	apiAddr                    string
+	indexerHealthAddr          string
 	indexerChunkSize           string
 	indexerLogAddressBatchSize string
 	indexerPollInterval        string
@@ -228,6 +236,7 @@ func readEnvironment(getenv func(string) string) environmentValues {
 		privyVerificationKey:       strings.TrimSpace(getenv("PRIVY_VERIFICATION_KEY")),
 		logLevel:                   strings.TrimSpace(getenv("LOG_LEVEL")),
 		apiAddr:                    strings.TrimSpace(getenv("API_ADDR")),
+		indexerHealthAddr:          strings.TrimSpace(getenv("INDEXER_HEALTH_ADDR")),
 		indexerChunkSize:           strings.TrimSpace(getenv("INDEXER_CHUNK_SIZE")),
 		indexerLogAddressBatchSize: strings.TrimSpace(getenv("INDEXER_LOG_ADDRESS_BATCH_SIZE")),
 		indexerPollInterval:        strings.TrimSpace(getenv("INDEXER_POLL_INTERVAL")),
@@ -323,19 +332,23 @@ func parseLogLevel(value string) (string, error) {
 }
 
 func parseAPIAddr(value string) (string, error) {
+	return parseListenerAddr("API_ADDR", value, defaultAPIAddr)
+}
+
+func parseListenerAddr(field, value, defaultValue string) (string, error) {
 	if value == "" {
-		value = defaultAPIAddr
+		value = defaultValue
 	}
 
 	// API processes need a stable numeric listener. Ephemeral port zero and
 	// service names such as "http" are intentionally rejected.
 	_, port, err := net.SplitHostPort(value)
 	if err != nil {
-		return "", &FieldError{Field: "API_ADDR", Err: ErrInvalid}
+		return "", &FieldError{Field: field, Err: ErrInvalid}
 	}
 	parsedPort, err := strconv.ParseUint(port, 10, 16)
 	if err != nil || parsedPort == 0 {
-		return "", &FieldError{Field: "API_ADDR", Err: ErrInvalid}
+		return "", &FieldError{Field: field, Err: ErrInvalid}
 	}
 
 	return value, nil

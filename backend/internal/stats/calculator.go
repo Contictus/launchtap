@@ -8,6 +8,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+var (
+	wad         = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
+	zeroAddress common.Address
+	deadAddress = common.HexToAddress("0x000000000000000000000000000000000000dEaD")
+)
+
 type Holder struct {
 	Address common.Address
 	Balance *big.Int
@@ -18,13 +24,15 @@ type Candle struct {
 	Trades                         int64
 }
 type TokenInput struct {
-	Token                    common.Address
+	Token, Curve, Pair       common.Address
 	LaunchPrice              *big.Int
 	LaunchAt                 time.Time
 	ReserveETH, ReserveToken *big.Int
 	TotalSupply              *big.Int
 	Candles                  []Candle
 	Holders                  []Holder
+	PreviousATH              *big.Int
+	PreviousATHAt            time.Time
 }
 type TokenStats struct {
 	Token                                                common.Address
@@ -34,54 +42,84 @@ type TokenStats struct {
 	HolderCount                                          int64
 }
 
-var zero = new(big.Int)
-
-// ComputeTokenStats is deterministic and uses only projection data. ATH is
-// monotonic for normal worker updates; rollback callers pass the rebuilt input.
+// ComputeTokenStats mirrors RecomputeTokenStats. PreviousATH is supplied for
+// ordinary aggregation so ATH remains monotonic; rollback callers omit it
+// after deleting the invalidated token_stats row.
 func ComputeTokenStats(input TokenInput, now time.Time) TokenStats {
-	result := TokenStats{Token: input.Token, SpotPrice: new(big.Int), MarketCap: new(big.Int), FDV: new(big.Int), Liquidity: new(big.Int), ATH: new(big.Int).Set(input.LaunchPrice), ATHAt: input.LaunchAt, Volume24H: new(big.Int)}
-	if input.ReserveETH != nil && input.ReserveToken != nil && input.ReserveToken.Sign() > 0 {
-		result.SpotPrice.Mul(input.ReserveETH, new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
+	result := TokenStats{Token: input.Token, SpotPrice: new(big.Int), MarketCap: new(big.Int), FDV: new(big.Int), Liquidity: new(big.Int), ATH: nonNegativeCopy(input.LaunchPrice), ATHAt: input.LaunchAt, Volume24H: new(big.Int)}
+	if input.PreviousATH != nil && input.PreviousATH.Sign() >= 0 {
+		result.ATH.Set(input.PreviousATH)
+		result.ATHAt = input.PreviousATHAt
+	}
+	if positive(input.ReserveETH) && positive(input.ReserveToken) {
+		result.SpotPrice.Mul(input.ReserveETH, wad)
 		result.SpotPrice.Div(result.SpotPrice, input.ReserveToken)
 	}
-	if input.TotalSupply != nil {
+	if input.TotalSupply != nil && input.TotalSupply.Sign() >= 0 {
 		result.FDV.Mul(result.SpotPrice, input.TotalSupply)
-		result.MarketCap.Set(result.FDV)
+		result.FDV.Div(result.FDV, wad)
+		circulating := new(big.Int).Set(input.TotalSupply)
+		for _, holder := range input.Holders {
+			if !positive(holder.Balance) {
+				continue
+			}
+			if isSupplyExcluded(holder.Address, input.Curve) {
+				circulating.Sub(circulating, holder.Balance)
+			}
+			if !isHolderExcluded(holder.Address, input.Curve, input.Pair) {
+				result.HolderCount++
+			}
+		}
+		if circulating.Sign() > 0 {
+			result.MarketCap.Mul(result.SpotPrice, circulating)
+			result.MarketCap.Div(result.MarketCap, wad)
+		}
 	}
-	if input.ReserveETH != nil {
+	if positive(input.ReserveETH) {
 		result.Liquidity.Set(input.ReserveETH)
 	}
+
 	cutoff := now.Add(-24 * time.Hour)
-	var prior, latest *big.Int
-	for _, c := range input.Candles {
-		if c.High != nil && c.High.Cmp(result.ATH) > 0 {
-			result.ATH.Set(c.High)
-			result.ATHAt = c.Start
+	var baseline, latest *Candle
+	athFromCandle := false
+	for index := range input.Candles {
+		candle := &input.Candles[index]
+		if positive(candle.High) && (candle.High.Cmp(result.ATH) > 0 || (athFromCandle && candle.High.Cmp(result.ATH) == 0 && candle.Start.Before(result.ATHAt))) {
+			result.ATH.Set(candle.High)
+			result.ATHAt = candle.Start
+			athFromCandle = true
 		}
-		if c.Start.Before(cutoff) {
-			continue
+		if !candle.Start.Before(cutoff) && positive(candle.Volume) {
+			result.Volume24H.Add(result.Volume24H, candle.Volume)
 		}
-		if c.Volume != nil {
-			result.Volume24H.Add(result.Volume24H, c.Volume)
+		if candle.Close != nil && candle.Start.Compare(cutoff) <= 0 && (baseline == nil || candle.Start.After(baseline.Start)) {
+			baseline = candle
 		}
-		if prior == nil || c.Start.Before(cutoff) {
-			prior = new(big.Int).Set(c.Close)
-		}
-		if latest == nil || c.Start.After(cutoff) {
-			latest = new(big.Int).Set(c.Close)
+		if candle.Close != nil && (latest == nil || candle.Start.After(latest.Start)) {
+			latest = candle
 		}
 	}
-	if prior != nil && prior.Sign() > 0 && latest != nil {
-		delta := new(big.Int).Sub(latest, prior)
-		delta.Mul(delta, big.NewInt(10000))
-		result.PriceChange24hBPS = delta.Div(delta, prior).Int64()
+	if baseline != nil && positive(baseline.Close) && latest != nil {
+		delta := new(big.Int).Sub(latest.Close, baseline.Close)
+		delta.Mul(delta, big.NewInt(10_000))
+		result.PriceChange24hBPS = delta.Div(delta, baseline.Close).Int64()
 	}
-	for _, holder := range input.Holders {
-		if holder.Balance == nil || holder.Balance.Sign() <= 0 {
-			continue
-		}
-		result.HolderCount++
-	}
-	_ = zero
 	return result
+}
+
+func positive(value *big.Int) bool { return value != nil && value.Sign() > 0 }
+
+func nonNegativeCopy(value *big.Int) *big.Int {
+	if value == nil || value.Sign() < 0 {
+		return new(big.Int)
+	}
+	return new(big.Int).Set(value)
+}
+
+func isSupplyExcluded(address, curve common.Address) bool {
+	return address == zeroAddress || address == deadAddress || address == curve
+}
+
+func isHolderExcluded(address, curve, pair common.Address) bool {
+	return isSupplyExcluded(address, curve) || address == pair
 }
