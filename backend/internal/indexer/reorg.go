@@ -32,7 +32,7 @@ func (e *Engine) recoverReorg(ctx context.Context, state State, tip ledger.Index
 	for number := tip.BlockNumber; number >= e.settings.StartBlock && len(candidates) < 128; number-- {
 		header, err := e.source.HeaderByNumber(ctx, uint64(number))
 		if err != nil {
-			return err
+			return rpcFailure("read reorg candidate header", err)
 		}
 		candidates = append(candidates, header.Hash())
 	}

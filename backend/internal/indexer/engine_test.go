@@ -67,11 +67,12 @@ func (u *memoryUnit) PromoteBlocks(_ context.Context, _ int64, safe, final *ledg
 func (*memoryUnit) TokenIdentities(context.Context, int64) ([]TokenIdentity, error) { return nil, nil }
 
 type fakeSource struct {
-	headers map[uint64]*types.Header
-	heads   chain.Heads
+	headers  map[uint64]*types.Header
+	heads    chain.Heads
+	headsErr error
 }
 
-func (s *fakeSource) Heads(context.Context) (chain.Heads, error) { return s.heads, nil }
+func (s *fakeSource) Heads(context.Context) (chain.Heads, error) { return s.heads, s.headsErr }
 func (s *fakeSource) HeaderByNumber(_ context.Context, n uint64) (*types.Header, error) {
 	h, ok := s.headers[n]
 	if !ok {
@@ -129,6 +130,38 @@ func TestWatermarksAreBoundedByCommittedChunk(t *testing.T) {
 	}
 	if len(store.unit.blocks) != 2 || store.unit.state.Observed.BlockNumber != 2 {
 		t.Fatal("failed chunk partially committed")
+	}
+}
+
+func TestEngineReportsOnlyCommittedWatermarks(t *testing.T) {
+	e, store, _ := newTestEngine(t)
+	var reported []State
+	e.settings.OnCommitted = func(state State) { reported = append(reported, state) }
+	if _, err := e.Step(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(reported) != 1 || reported[0].Observed == nil || reported[0].Observed.BlockNumber != store.unit.state.Observed.BlockNumber {
+		t.Fatalf("reported=%+v stored=%+v", reported, store.unit.state)
+	}
+	store.unit.fail = true
+	if _, err := e.Step(t.Context()); err == nil {
+		t.Fatal("expected failed transaction")
+	}
+	if len(reported) != 1 {
+		t.Fatalf("reported uncommitted watermark: %+v", reported)
+	}
+}
+
+func TestEngineReportsTypedRPCFailure(t *testing.T) {
+	e, _, source := newTestEngine(t)
+	source.headsErr = errors.New("RPC unavailable")
+	var reported error
+	e.settings.OnFailure = func(err error) { reported = err }
+	if _, err := e.Step(t.Context()); !errors.Is(err, ErrRPCUnhealthy) {
+		t.Fatalf("Step() error = %v, want RPC health error", err)
+	}
+	if !errors.Is(reported, ErrRPCUnhealthy) {
+		t.Fatalf("reported error = %v, want RPC health error", reported)
 	}
 }
 func TestSafeHashMismatchStopsBeforeWrites(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 
 var ErrCanonicalMismatch = errors.New("canonical chain mismatch")
 var ErrSafeViolation = errors.New("canonical mismatch at or below safe head")
+var ErrRPCUnhealthy = errors.New("indexer RPC unavailable")
 
 type Engine struct {
 	settings  Settings
@@ -34,10 +35,15 @@ func New(settings Settings, store Store, source Source, discovery Discovery, dec
 // Step commits at most one block-aligned chunk. RPC snapshots are checked against
 // each other before opening the write transaction; no watermark describes work
 // that has not committed locally.
-func (e *Engine) Step(ctx context.Context) (bool, error) {
+func (e *Engine) Step(ctx context.Context) (advanced bool, err error) {
+	defer func() {
+		if err != nil && e.settings.OnFailure != nil {
+			e.settings.OnFailure(err)
+		}
+	}()
 	var state State
 	var identities []TokenIdentity
-	if err := e.store.Transaction(ctx, func(ctx context.Context, u UnitOfWork) error {
+	if err = e.store.Transaction(ctx, func(ctx context.Context, u UnitOfWork) error {
 		var err error
 		state, err = u.ReadState(ctx, e.settings.ChainID, e.settings.DeploymentID)
 		if err != nil {
@@ -50,7 +56,7 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 	}
 	heads, err := e.source.Heads(ctx)
 	if err != nil {
-		return false, fmt.Errorf("read RPC heads: %w", err)
+		return false, rpcFailure("read heads", err)
 	}
 	latest, err := e.block(heads.Latest)
 	if err != nil {
@@ -73,7 +79,7 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 		}
 		remote, err := e.source.HeaderByNumber(ctx, uint64(saved.BlockNumber))
 		if err != nil {
-			return false, err
+			return false, rpcFailure("read saved header", err)
 		}
 		if remote.Hash() != saved.BlockHash {
 			if state.Safe != nil && saved.BlockNumber <= state.Safe.BlockNumber {
@@ -102,7 +108,7 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 	for number := from; number <= to; number++ {
 		header, err := e.source.HeaderByNumber(ctx, uint64(number))
 		if err != nil {
-			return false, err
+			return false, rpcFailure("read chunk header", err)
 		}
 		block, err := e.block(header)
 		if err != nil {
@@ -154,7 +160,7 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 		}
 		check, err := e.source.HeaderByNumber(ctx, uint64(to))
 		if err != nil {
-			return false, err
+			return false, rpcFailure("recheck chunk header", err)
 		}
 		if check.Hash() != blocks[to].BlockHash {
 			return false, ErrCanonicalMismatch
@@ -198,7 +204,7 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 		}
 		remote, err := e.source.HeaderByNumber(ctx, uint64(number))
 		if err != nil {
-			return false, err
+			return false, rpcFailure("read promotion header", err)
 		}
 		if remote.Hash() != local.BlockHash || (number == promotion.remote.BlockNumber && local.BlockHash != promotion.remote.BlockHash) {
 			return false, ErrCanonicalMismatch
@@ -224,7 +230,14 @@ func (e *Engine) Step(ctx context.Context) (bool, error) {
 		}
 		return u.WriteState(ctx, state)
 	})
+	if err == nil && e.settings.OnCommitted != nil {
+		e.settings.OnCommitted(state)
+	}
 	return len(blocks) > 0, err
+}
+
+func rpcFailure(operation string, err error) error {
+	return fmt.Errorf("%w while %s: %w", ErrRPCUnhealthy, operation, err)
 }
 
 func (e *Engine) Run(ctx context.Context) error {

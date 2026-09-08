@@ -2,9 +2,12 @@ package indexer
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Contictus/launchtap/backend/internal/ledger"
 )
 
 // Health is the read-only operational snapshot exposed by the runtime. Writers
@@ -33,6 +36,55 @@ func (h *HealthTracker) Set(snapshot Health) {
 	snapshot.PhaseCounts = cloneCounts(snapshot.PhaseCounts)
 	h.snapshot = snapshot
 }
+
+// Committed records watermarks only after the indexer's write transaction has
+// committed. The health surface therefore never reports uncommitted progress.
+func (h *HealthTracker) Committed(state State) {
+	h.Update(func(snapshot *Health) {
+		snapshot.ChainID = state.ChainID
+		snapshot.Observed, snapshot.ObservedAt = healthBlock(state.Observed)
+		snapshot.Safe, snapshot.SafeAt = healthBlock(state.Safe)
+		snapshot.Finalized, snapshot.FinalizedAt = healthBlock(state.Finalized)
+		now := time.Now().UTC()
+		snapshot.ObservedLag = healthLag(now, snapshot.ObservedAt)
+		snapshot.SafeLag = healthLag(now, snapshot.SafeAt)
+		snapshot.FinalizedLag = healthLag(now, snapshot.FinalizedAt)
+		snapshot.RPCHealthy = true
+		snapshot.LastError = ""
+	})
+}
+
+// Failed makes the endpoint not-ready. A subsequent committed state clears
+// the transient failure only after both the write and watermark update succeed.
+func (h *HealthTracker) Failed(err error) {
+	if err == nil {
+		return
+	}
+	h.Update(func(snapshot *Health) {
+		snapshot.LastError = err.Error()
+		if errors.Is(err, ErrRPCUnhealthy) {
+			snapshot.RPCHealthy = false
+		}
+	})
+}
+
+// OwnershipLost is terminal for this process because its session advisory lock
+// no longer fences writes.
+func (h *HealthTracker) OwnershipLost(err error) {
+	h.Update(func(snapshot *Health) {
+		snapshot.OwnershipHeld = false
+		if err != nil {
+			snapshot.LastError = err.Error()
+		}
+	})
+}
+
+func (h *HealthTracker) Update(update func(*Health)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	update(&h.snapshot)
+	h.snapshot.PhaseCounts = cloneCounts(h.snapshot.PhaseCounts)
+}
 func (h *HealthTracker) Snapshot() Health {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -45,10 +97,32 @@ func (h *HealthTracker) Snapshot() Health {
 func HealthHandler(tracker *HealthTracker) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(tracker.Snapshot()); err != nil {
+		snapshot := tracker.Snapshot()
+		if !ready(snapshot) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		if err := json.NewEncoder(w).Encode(snapshot); err != nil {
 			return
 		}
 	})
+}
+
+func ready(snapshot Health) bool {
+	return snapshot.ChainID > 0 && snapshot.OwnershipHeld && snapshot.RPCHealthy && snapshot.LastError == "" && !snapshot.ObservedAt.IsZero()
+}
+
+func healthBlock(block *ledger.IndexedBlock) (int64, time.Time) {
+	if block == nil {
+		return 0, time.Time{}
+	}
+	return block.BlockNumber, block.BlockTime
+}
+
+func healthLag(now, at time.Time) time.Duration {
+	if at.IsZero() || now.Before(at) {
+		return 0
+	}
+	return now.Sub(at)
 }
 func cloneCounts(source map[string]int64) map[string]int64 {
 	if source == nil {

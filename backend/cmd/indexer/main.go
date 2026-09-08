@@ -68,20 +68,25 @@ func run() error {
 	}
 	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner(), ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID}
 	router := indexer.LedgerRouter{ChainID: int64(c.ChainID)}
-	engine, err := indexer.New(indexer.Settings{ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, Factory: deployment.Factory, StartBlock: int64(deployment.StartBlock), ChunkSize: int64(c.IndexerChunkSize), PollInterval: c.IndexerPollInterval}, store, source, discovery, decoder, router)
+	health := new(indexer.HealthTracker)
+	health.Set(indexer.Health{ChainID: int64(c.ChainID), OwnershipHeld: true, RPCHealthy: true})
+	engine, err := indexer.New(indexer.Settings{
+		ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, Factory: deployment.Factory,
+		StartBlock: int64(deployment.StartBlock), ChunkSize: int64(c.IndexerChunkSize), PollInterval: c.IndexerPollInterval,
+		OnCommitted: health.Committed, OnFailure: health.Failed,
+	}, store, source, discovery, decoder, router)
 	if err != nil {
 		return err
 	}
 	watchErrors := make(chan error, 1)
 	go func() {
 		if err := owner.Watch(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			health.OwnershipLost(err)
 			watchErrors <- err
 			stop()
 		}
 	}()
 	wake := make(chan struct{}, 1)
-	health := new(indexer.HealthTracker)
-	health.Set(indexer.Health{ChainID: int64(c.ChainID), OwnershipHeld: true, RPCHealthy: true})
 	healthServer := &http.Server{Addr: c.IndexerHealthAddr, Handler: indexer.HealthHandler(health)}
 	go func() {
 		if err := healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -95,6 +100,7 @@ func run() error {
 		_ = healthServer.Shutdown(shutdownCtx)
 	}()
 	aggregation := stats.Worker{Source: storepostgres.AggregationSource{Adapter: storepostgres.NewAdapter(pool), ChainID: int64(c.ChainID)}, WorkerID: c.IndexerWorkerID, PollInterval: stats.DefaultDirtyPollInterval, BatchSize: 32, Wake: wake, OnError: func(claim stats.Claim, err error) {
+		health.Failed(err)
 		slog.Error("aggregation compute failed", "chain_id", claim.ChainID, "token", fmt.Sprintf("%x", claim.Token), "error", err)
 	}}
 	go func() {
@@ -105,6 +111,7 @@ func run() error {
 	aggregationErrors := make(chan error, 1)
 	go func() {
 		if err := aggregation.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			health.Failed(err)
 			aggregationErrors <- err
 			stop()
 		}
