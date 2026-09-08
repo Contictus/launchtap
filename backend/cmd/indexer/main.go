@@ -69,7 +69,7 @@ func run() error {
 	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner(), ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID}
 	router := indexer.LedgerRouter{ChainID: int64(c.ChainID)}
 	health := new(indexer.HealthTracker)
-	health.Set(indexer.Health{ChainID: int64(c.ChainID), OwnershipHeld: true, RPCHealthy: true})
+	health.Set(indexer.Health{ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, OwnershipHeld: true, RPCHealthy: true})
 	engine, err := indexer.New(indexer.Settings{
 		ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, Factory: deployment.Factory,
 		StartBlock: int64(deployment.StartBlock), ChunkSize: int64(c.IndexerChunkSize), PollInterval: c.IndexerPollInterval,

@@ -10,19 +10,19 @@ import (
 
 func TestHealthHandlerReturnsSnapshot(t *testing.T) {
 	tracker := new(HealthTracker)
-	tracker.Set(Health{ChainID: 46630, OwnershipHeld: true, RPCHealthy: true})
-	tracker.Committed(State{ChainID: 46630, Observed: &ledger.IndexedBlock{BlockNumber: 12, BlockTime: time.Now().UTC()}})
+	tracker.Set(Health{ChainID: 46630, DeploymentID: "testnet-v1", OwnershipHeld: true, RPCHealthy: true})
+	tracker.Committed(State{ChainID: 46630, DeploymentID: "testnet-v1", Observed: &ledger.IndexedBlock{BlockNumber: 12, BlockTime: time.Now().UTC()}})
 	recorder := httptest.NewRecorder()
 	HealthHandler(tracker).ServeHTTP(recorder, httptest.NewRequest("GET", "/healthz", nil))
-	if recorder.Code != 200 || !contains(recorder.Body.String(), "46630") {
+	if recorder.Code != 200 || !contains(recorder.Body.String(), "46630") || !contains(recorder.Body.String(), "testnet-v1") {
 		t.Fatalf("unexpected health response: %s", recorder.Body.String())
 	}
 }
 
 func TestHealthHandlerBecomesNotReadyAfterOwnershipLoss(t *testing.T) {
 	tracker := new(HealthTracker)
-	tracker.Set(Health{ChainID: 46630, OwnershipHeld: true, RPCHealthy: true})
-	tracker.Committed(State{ChainID: 46630, Observed: &ledger.IndexedBlock{BlockNumber: 12, BlockTime: time.Now().UTC()}})
+	tracker.Set(Health{ChainID: 46630, DeploymentID: "testnet-v1", OwnershipHeld: true, RPCHealthy: true})
+	tracker.Committed(State{ChainID: 46630, DeploymentID: "testnet-v1", Observed: &ledger.IndexedBlock{BlockNumber: 12, BlockTime: time.Now().UTC()}})
 	tracker.OwnershipLost(assertionError("connection closed"))
 	recorder := httptest.NewRecorder()
 	HealthHandler(tracker).ServeHTTP(recorder, httptest.NewRequest("GET", "/healthz", nil))

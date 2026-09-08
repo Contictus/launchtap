@@ -13,6 +13,7 @@ import (
 // Health is the read-only operational snapshot exposed by the runtime. Writers
 // update it only after a transaction outcome is known.
 type Health struct {
+	DeploymentID                       string
 	ChainID, Observed, Safe, Finalized int64
 	ObservedAt, SafeAt, FinalizedAt    time.Time
 	ObservedLag, SafeLag, FinalizedLag time.Duration
@@ -42,6 +43,7 @@ func (h *HealthTracker) Set(snapshot Health) {
 func (h *HealthTracker) Committed(state State) {
 	h.Update(func(snapshot *Health) {
 		snapshot.ChainID = state.ChainID
+		snapshot.DeploymentID = state.DeploymentID
 		snapshot.Observed, snapshot.ObservedAt = healthBlock(state.Observed)
 		snapshot.Safe, snapshot.SafeAt = healthBlock(state.Safe)
 		snapshot.Finalized, snapshot.FinalizedAt = healthBlock(state.Finalized)
