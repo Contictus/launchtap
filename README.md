@@ -1,64 +1,79 @@
-# launchpad
+# Launchpad
 
-A pons-style **fixed-supply token launchpad** on Robinhood Chain (EVM L2). Bonding curve
-→ graduation at a threshold → liquidity moved to a Uniswap v2 pool with the LP burned.
-Non-custodial: every state change is submitted by the user's own wallet.
+Launchpad is a non-custodial fixed-supply token launchpad for Robinhood Chain. Tokens start
+on an integer bonding curve, graduate at a configured threshold, and move to a Uniswap v2
+pair whose initial LP position is burned. Users sign their own transactions; the backend
+indexes canonical chain data and never holds trading funds.
 
-## Status
+## Project status
 
-Contract and backend design closure is complete. There is **no application code yet** — the
-next gate is the normal independent pre-flight review, followed by explicit user approval
-to start implementation.
+| Area | Status |
+| --- | --- |
+| Contract Foundations (Tasks 1–12) | Complete |
+| Backend Foundations (Tasks 1–12) | Complete |
+| Backend Indexer Task 2 | Complete |
+| Backend Indexer Task 3 | Complete |
+| Backend Indexer Tasks 4–5 | Implemented; acceptance pending |
+| API and identity (Plan 3) | Not started |
+| Web client | Not started |
+
+Plan 2 still needs the external Robinhood probe and reviewed chain-46630 deployment
+manifest. The Anvil end-to-end indexer scenario and full observability gate must pass before
+this milestone is merged to `main`.
 
 ## Repository layout
 
+- `contracts/` — Solidity, Foundry tests, deployment scripts and artifacts.
+- `backend/` — Go module and PostgreSQL-backed indexer.
+- `docs/specs/` — normative specifications.
+- `docs/plans/` — implementation plans and acceptance criteria.
+- `notes.md` — product and architecture decisions.
+- `backlog.md` — externally blocked or deliberately deferred work.
+
+Backend packages include `internal/chain` (RPC/ABI/discovery), `internal/curve` (stdlib-only
+curve mirror), `internal/indexer` (chunk loop and reorg recovery), `internal/ledger` (domain
+events), `internal/stats` (aggregation), and `internal/store/postgres` (pgx/sqlc/migrations).
+
+## Toolchain and quick start
+
+- Go 1.26.x; PostgreSQL 18.6
+- Foundry 1.8.1; Solidity 0.8.36
+- pgx/v5, sqlc 1.31.1, goose/v3, golangci-lint 2.13.2
+
+```powershell
+cd contracts
+forge install
+forge test
+
+cd ../backend
+go run github.com/go-task/task/v3/cmd/task@v3.53.1 setup
+go run github.com/go-task/task/v3/cmd/task@v3.53.1 verify
 ```
-AGENTS.md          Agent instructions + workflows (single source of truth;
-                   CLAUDE.md just imports it). READ THIS FIRST.
-README.md          This file.
-notes.md           Project brain: reference-product analysis, every decision
-                   (chain, economics, curve simulation, auth), open questions.
-backlog.md         Unfinished-work log.
-docs/specs/        Normative contract core and backend core design specs.
-docs/plans/        Contract and backend implementation task lists with acceptance criteria.
-backend/           Go module — created by Backend Foundations. Modular monolith:
-  internal/curve/      pure bonding-curve math (big.Int), zero deps
-  internal/config/     env + compiled-in chain registry
-  internal/store/      Postgres: pgx + sqlc + goose + Unit of Work
-  internal/chain/      RPC / logs / decoding                     (Plan 2)
-  internal/indexer/    sync loop, reorg, event routing            (Plan 2)
-  internal/<feature>/  launch / trading / token / holder / candle / stats / metadata
-  internal/apiserver/  huma REST + SSE                            (Plan 3)
-  cmd/api  cmd/indexer  cmd/migrate
-contracts/         Solidity + Foundry — created by Contract Foundations.
-web/               Next.js frontend (later).
-```
 
-## Where to start
+The indexer requires `CHAIN_ID`, `DEPLOYMENT_ID`, `RPC_URL`, `DATABASE_URL`, and
+`INDEXER_WORKER_ID`. Run migrations explicitly with `task migrate -- up`; `cmd/indexer`
+never runs migrations during startup. Docker is required for PostgreSQL integration tests.
 
-1. `AGENTS.md` — roles, multi-agent workflow, git workflow.
-2. `notes.md` — the decisions and the reasoning behind them.
-3. `docs/specs/2026-09-01-contract-core-design.md` — authoritative economics,
-   contract state machine, graduation, security, and events.
-4. `docs/specs/2026-09-01-backend-core-design.md` — indexer, finality, storage,
-   market semantics, auth, and API boundaries.
-5. `docs/plans/2026-09-01-contract-foundations.md` — first implementation task list;
-   produces the authoritative contracts and curve vectors.
-6. `docs/plans/2026-09-01-backend-foundations.md` — backend foundation task list;
-   its Go curve tasks consume those vectors.
+## Architecture invariants
 
-## Key facts
+- Solidity and the canonical event ledger are authoritative; projections and aggregates are
+  rebuildable from surviving canonical events.
+- Amounts use `*big.Int` in Go and `NUMERIC(78,0)` in PostgreSQL. Monetary floats are not used.
+- One indexed chunk is one transaction. Advisory ownership uses a dedicated PostgreSQL
+  session; automatic reorg recovery is limited to data above the locally confirmed safe head.
+- `latest`, `safe`, and `finalized` are tracked independently. Confirmation counts are not
+  finality on non-local deployments.
+- Contract artifacts, ABIs, vectors, manifests, migrations and sqlc output are single-sourced
+  and protected by drift checks.
 
-- **Chain:** Robinhood Chain (testnet chainId 46630, mainnet 4663), an EVM-equivalent
-  Arbitrum Orbit L2. Contracts are written EVM-agnostic. Dev on Anvil.
-- **Backend:** Go 1.26. Modular monolith, two processes (`api` + `indexer`) over one Postgres.
-  REST/JSON via `huma`. Custom Go indexer (`go-ethereum` + `abigen`), not Ponder.
-- **Wallet / auth:** Privy — access token proves the session; identity token proves linked
-  wallets. No custom auth/session system.
-- **Curve:** virtual-reserve constant-product. Solidity is authoritative; the Go `curve`
-  package is a mirror verified by differential vectors.
-- **Finality:** latest data is provisional; the indexer separately tracks Robinhood RPC
-  `safe` and `finalized` heads and rolls provisional data back on reorg.
-- **Budget:** zero-cost — free tiers only; dev Postgres via Docker / testcontainers.
-- **Working model:** Codex builds and commits implementation; Claude is the independent
-  reviewer / architect and commits only docs. Branches: `main` (verified) / `dev` (active).
+## Reading order
+
+1. [`AGENTS.md`](AGENTS.md)
+2. [`notes.md`](notes.md)
+3. [`docs/specs/2026-09-01-contract-core-design.md`](docs/specs/2026-09-01-contract-core-design.md)
+4. [`docs/specs/2026-09-01-backend-core-design.md`](docs/specs/2026-09-01-backend-core-design.md)
+5. [`docs/plans/2026-09-01-contract-foundations.md`](docs/plans/2026-09-01-contract-foundations.md)
+6. [`docs/plans/2026-09-01-backend-foundations.md`](docs/plans/2026-09-01-backend-foundations.md)
+7. [`docs/plans/2026-09-05-backend-indexer.md`](docs/plans/2026-09-05-backend-indexer.md)
+
+`dev` is the active implementation branch. `main` contains verified milestones only.
