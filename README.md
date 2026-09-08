@@ -14,7 +14,7 @@ indexes canonical chain data and never holds trading funds.
 | Backend Indexer Task 2 | Complete |
 | Backend Indexer Task 3 | Complete |
 | Backend Indexer Tasks 4–5 | Implemented; acceptance pending |
-| API and identity (Plan 3) | Pre-flight drafted; implementation not started |
+| API and identity (Plan 3) | Pre-flight approved; implementation not started |
 | Web client | Not started |
 
 Plan 2 still needs the external Robinhood probe and reviewed chain-46630 deployment

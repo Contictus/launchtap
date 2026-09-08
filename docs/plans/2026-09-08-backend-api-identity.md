@@ -4,11 +4,12 @@
 > review. This document closes the planning boundary for Backend Plan 3. It is not
 > implementation code.
 
-**Status:** Pre-flight drafted. Seven tasks are proposed. Implementation must start with
-Task 1 because the current aggregate and runtime surfaces are not yet safe to expose as a
-public API. The external Robinhood RPC probe, chain-46630 deployment manifest, production
-Privy credentials, production origins, ETH/USD source, and production governance inputs are
-explicitly deferred; they do not block local implementation or deterministic tests.
+**Status:** Pre-flight approved by the builder. Seven tasks and decisions 1–16 are locked.
+Implementation starts with Task 1 because the current aggregate and runtime surfaces are not
+yet safe to expose as a public API. The external Robinhood RPC probe, chain-46630 deployment
+manifest, production Privy credentials, production origins, ETH/USD source, and production
+governance inputs are explicitly deferred; they do not block local implementation or
+deterministic tests.
 
 **Goal:** Deliver a stateless REST/JSON API under `/v1` with a generated OpenAPI contract,
 reorg-aware pagination, public market reads, informational curve quotes, Privy-authenticated
@@ -134,10 +135,9 @@ same storage port without changing endpoint DTOs.
 - **R10 — Generated contract drift:** OpenAPI is derived from Go DTOs, committed, and checked
   byte-for-byte in `task verify`. No hand-maintained second schema is allowed.
 
-## Decisions to lock before implementation
+## Locked decisions
 
-The following are the recommended decisions. Approval of this pre-flight locks them as a
-single set.
+The following decisions are approved and binding for implementation.
 
 1. **Seven tasks, sequential at high-risk seams.** Tasks 1–3 establish correctness, storage,
    and HTTP contracts; Tasks 4–6 implement features; Task 7 closes realtime and verification.
@@ -387,9 +387,9 @@ live acceptance or release claim, not Tasks 1–7's local implementation.
 
 ## Pre-flight verdict
 
-Plan 3 is implementable as seven tasks, but it is not correct to begin at HTTP handlers.
-B1–B5 must be accepted as binding decisions, and Task 1 must land first. No external account
-work is required to start Tasks 1–5 or the generated-key portion of Task 6.
+Plan 3 is approved as seven tasks. B1–B5 and decisions 1–16 are binding, and Task 1 lands
+before public HTTP handlers. No external account work is required to start Tasks 1–5 or the
+generated-key portion of Task 6.
 
 ## Primary references checked during pre-flight
 
