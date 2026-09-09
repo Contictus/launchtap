@@ -29,3 +29,6 @@ SELECT
     finalized_number, finalized_hash, finalized_at
 FROM sync_state
 WHERE chain_id = $1 AND deployment_id = $2;
+
+-- name: NotifyAPIRefresh :exec
+SELECT pg_notify('api_refresh', sqlc.arg(payload)::text);

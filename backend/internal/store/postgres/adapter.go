@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/Contictus/launchtap/backend/internal/ledger"
@@ -20,6 +22,8 @@ type InvariantConflictError struct {
 	Key    string
 	Cause  error
 }
+
+type refreshDeploymentContextKey struct{}
 
 // NegativeBalanceError identifies a canonical transfer that cannot be folded.
 type NegativeBalanceError struct {
@@ -98,9 +102,15 @@ func (adapter *Adapter) InsertTokenLaunch(ctx context.Context, event ledger.Toke
 	if err != nil {
 		return ledger.InsertResult{}, err
 	}
-	return adapter.insertEvent(ctx, "token_launch", eventParams(event.EventCoordinates), func() (int64, error) { return adapter.queries.InsertTokenLaunch(ctx, arg) }, func() (pgtype.Bool, error) {
+	result, err := adapter.insertEvent(ctx, "token_launch", eventParams(event.EventCoordinates), func() (int64, error) { return adapter.queries.InsertTokenLaunch(ctx, arg) }, func() (pgtype.Bool, error) {
 		return adapter.queries.TokenLaunchMatchesEvent(ctx, sqlc.TokenLaunchMatchesEventParams(arg))
 	})
+	if err == nil && result.Inserted {
+		if deploymentID, ok := ctx.Value(refreshDeploymentContextKey{}).(string); ok && deploymentID != "" {
+			adapter.notifyAPIRefresh(ctx, map[string]any{"type": "launch", "chain_id": event.ChainID, "deployment_id": deploymentID, "token": event.Token.Hex(), "as_of_block": event.BlockNumber, "as_of_block_hash": event.BlockHash.Hex()})
+		}
+	}
+	return result, err
 }
 func (adapter *Adapter) InsertGraduation(ctx context.Context, event ledger.Graduation) (ledger.InsertResult, error) {
 	arg, err := graduationParams(event)
@@ -662,10 +672,22 @@ func (adapter *Adapter) RecordReorg(ctx context.Context, record indexer.ReorgRec
 	return row, nil
 }
 
+func (adapter *Adapter) notifyAPIRefresh(ctx context.Context, event map[string]any) {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	if err := adapter.queries.NotifyAPIRefresh(ctx, string(payload)); err != nil {
+		slog.Warn("API refresh notification failed", "error", err)
+	}
+}
+
 func (adapter *Adapter) CompleteReorg(ctx context.Context, id int64) error {
-	if err := adapter.queries.CompleteIndexerReorg(ctx, id); err != nil {
+	row, err := adapter.queries.CompleteIndexerReorg(ctx, id)
+	if err != nil {
 		return fmt.Errorf("complete reorg %d: %w", id, err)
 	}
+	adapter.notifyAPIRefresh(ctx, map[string]any{"type": "reorg", "chain_id": row.ChainID, "deployment_id": row.DeploymentID, "as_of_block": row.CommonAncestorNumber, "as_of_block_hash": common.Hash(row.CommonAncestorHash).Hex(), "common_ancestor": row.CommonAncestorNumber})
 	return nil
 }
 

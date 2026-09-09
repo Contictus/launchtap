@@ -2,20 +2,101 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/metadata"
 	"github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
-	ErrWriteUnauthorized = errors.New("creator is not authorized")
-	ErrRevisionConflict  = errors.New("metadata or image revision conflict")
+	ErrWriteUnauthorized = metadata.ErrUnauthorized
+	ErrRevisionConflict  = metadata.ErrRevisionConflict
 )
+
+type MetadataStore struct {
+	Pool         *pgxpool.Pool
+	DeploymentID string
+}
+
+func (store MetadataStore) ReplaceMetadata(ctx context.Context, chainID int64, token common.Address, wallets []common.Address, value metadata.Metadata) (int64, error) {
+	var revision int64
+	err := WithinTx(ctx, store.Pool, func(ctx context.Context, adapter *Adapter) error {
+		creator, err := adapter.authorizedCreator(ctx, chainID, token, wallets)
+		if err != nil {
+			return err
+		}
+		revision, err = adapter.ReplaceTokenMetadata(ctx, chainID, token, creator, value.Description, value.ImageURL, value.XURL, value.TelegramURL, value.Revision, value.UpdatedAt)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	store.notifyToken(ctx, chainID, token)
+	return revision, nil
+}
+
+func (store MetadataStore) ReplaceImage(ctx context.Context, chainID int64, token common.Address, wallets []common.Address, value metadata.Image) (int64, error) {
+	var revision int64
+	err := WithinTx(ctx, store.Pool, func(ctx context.Context, adapter *Adapter) error {
+		creator, err := adapter.authorizedCreator(ctx, chainID, token, wallets)
+		if err != nil {
+			return err
+		}
+		revision, err = adapter.ReplaceTokenImage(ctx, chainID, token, creator, value.ContentType, value.Content, value.SHA256[:], value.Revision, value.UpdatedAt)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	store.notifyToken(ctx, chainID, token)
+	return revision, nil
+}
+
+func (store MetadataStore) GetImage(ctx context.Context, chainID int64, token common.Address) (metadata.Image, error) {
+	row, err := NewAdapter(store.Pool).queries.GetTokenImage(ctx, sqlc.GetTokenImageParams{ChainID: chainID, TokenAddress: sqlc.Address(token)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return metadata.Image{}, metadata.ErrNotFound
+	}
+	if err != nil {
+		return metadata.Image{}, fmt.Errorf("get token image: %w", err)
+	}
+	if !row.UpdatedAt.Valid {
+		return metadata.Image{}, errors.New("token image has invalid updated_at")
+	}
+	return metadata.Image{ContentType: row.ContentType, Content: append([]byte(nil), row.Content...), SHA256: [32]byte(row.Sha256), Revision: row.Revision, UpdatedAt: row.UpdatedAt.Time}, nil
+}
+
+func (adapter *Adapter) authorizedCreator(ctx context.Context, chainID int64, token common.Address, wallets []common.Address) (common.Address, error) {
+	creator, err := adapter.queries.GetTokenCreatorForUpdate(ctx, sqlc.GetTokenCreatorForUpdateParams{ChainID: chainID, TokenAddress: sqlc.Address(token)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return common.Address{}, metadata.ErrNotFound
+	}
+	if err != nil {
+		return common.Address{}, fmt.Errorf("read token creator: %w", err)
+	}
+	want := common.Address(creator)
+	for _, wallet := range wallets {
+		if wallet == want {
+			return want, nil
+		}
+	}
+	return common.Address{}, metadata.ErrUnauthorized
+}
+
+func (store MetadataStore) notifyToken(ctx context.Context, chainID int64, token common.Address) {
+	payload, _ := json.Marshal(map[string]any{"type": "token", "chain_id": chainID, "deployment_id": store.DeploymentID, "token": token.Hex()})
+	if _, err := store.Pool.Exec(ctx, `SELECT pg_notify('api_refresh', $1)`, string(payload)); err != nil {
+		slog.Warn("API refresh notification failed", "error", err)
+	}
+}
 
 func (adapter *Adapter) ReplaceTokenMetadata(ctx context.Context, chainID int64, token, creator common.Address, description, imageURL, xURL, telegramURL string, expectedRevision int64, now time.Time) (int64, error) {
 	revision, err := adapter.queries.ReplaceTokenMetadata(ctx, sqlc.ReplaceTokenMetadataParams{

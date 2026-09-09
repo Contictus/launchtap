@@ -11,11 +11,62 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getTokenCreatorForUpdate = `-- name: GetTokenCreatorForUpdate :one
+SELECT creator
+FROM token_launches
+WHERE chain_id = $1 AND token_address = $2
+FOR SHARE
+`
+
+type GetTokenCreatorForUpdateParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+func (q *Queries) GetTokenCreatorForUpdate(ctx context.Context, arg GetTokenCreatorForUpdateParams) (Address, error) {
+	row := q.db.QueryRow(ctx, getTokenCreatorForUpdate, arg.ChainID, arg.TokenAddress)
+	var creator Address
+	err := row.Scan(&creator)
+	return creator, err
+}
+
+const getTokenImage = `-- name: GetTokenImage :one
+SELECT content_type, content, sha256, revision, updated_at
+FROM token_images
+WHERE chain_id = $1 AND token_address = $2
+`
+
+type GetTokenImageParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+type GetTokenImageRow struct {
+	ContentType string
+	Content     []byte
+	Sha256      Hash
+	Revision    int64
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) GetTokenImage(ctx context.Context, arg GetTokenImageParams) (GetTokenImageRow, error) {
+	row := q.db.QueryRow(ctx, getTokenImage, arg.ChainID, arg.TokenAddress)
+	var i GetTokenImageRow
+	err := row.Scan(
+		&i.ContentType,
+		&i.Content,
+		&i.Sha256,
+		&i.Revision,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const replaceTokenImage = `-- name: ReplaceTokenImage :one
 INSERT INTO token_images (chain_id, token_address, content_type, content, byte_size, sha256, revision, updated_at)
 SELECT $1, $2, $3, $4,
        $5, $6, 0, $7
-FROM tokens
+FROM token_launches
 WHERE chain_id = $1 AND token_address = $2
   AND creator = $8 AND $9::bigint = 0
 ON CONFLICT (chain_id, token_address) DO UPDATE
@@ -59,7 +110,7 @@ const replaceTokenMetadata = `-- name: ReplaceTokenMetadata :one
 INSERT INTO token_metadata (chain_id, token_address, description, image_url, x_url, telegram_url, revision, updated_at)
 SELECT $1, $2, $3, $4,
        $5, $6, 0, $7
-FROM tokens
+FROM token_launches
 WHERE chain_id = $1 AND token_address = $2
   AND creator = $8 AND $9::bigint = 0
 ON CONFLICT (chain_id, token_address) DO UPDATE

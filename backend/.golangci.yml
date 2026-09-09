@@ -60,6 +60,21 @@ linters:
           allow:
             - $gostd
             - github.com/ethereum/go-ethereum/common
+        privyauth-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/privyauth/*.go"
+            - "**/internal/privyauth/**/*.go"
+          allow:
+            - $gostd
+            - github.com/ethereum/go-ethereum/common
+        realtime-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/realtime/*.go"
+            - "**/internal/realtime/**/*.go"
+          allow:
+            - $gostd
         deployments-boundary:
           list-mode: strict
           files:

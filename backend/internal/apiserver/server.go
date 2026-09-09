@@ -103,10 +103,12 @@ func New(cfg Config, ready Readiness, logger *slog.Logger) *Server {
 	return &Server{Handler: h, API: api, HTTP: &http.Server{Handler: h, ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout, MaxHeaderBytes: cfg.MaxHeaderBytes}}
 }
 
-func (s *Server) RegisterTokenRoutes(r TokenRoutes)   { r.Register(s.API) }
-func (s *Server) RegisterQuoteRoutes(r QuoteRoutes)   { r.Register(s.API) }
-func (s *Server) RegisterCandleRoutes(r CandleRoutes) { r.Register(s.API) }
-func (s *Server) RegisterPublicRoutes(r PublicRoutes) { r.Register(s.API) }
+func (s *Server) RegisterTokenRoutes(r TokenRoutes)       { r.Register(s.API) }
+func (s *Server) RegisterQuoteRoutes(r QuoteRoutes)       { r.Register(s.API) }
+func (s *Server) RegisterCandleRoutes(r CandleRoutes)     { r.Register(s.API) }
+func (s *Server) RegisterPublicRoutes(r PublicRoutes)     { r.Register(s.API) }
+func (s *Server) RegisterMetadataRoutes(r MetadataRoutes) { r.Register(s.API) }
+func (s *Server) RegisterEventRoutes(r EventRoutes)       { r.Register(s.API) }
 
 func (s *Server) Shutdown(ctx context.Context) error { return s.HTTP.Shutdown(ctx) }
 
@@ -161,8 +163,16 @@ func middleware(next http.Handler, cfg Config, logger *slog.Logger) http.Handler
 		if r.Body != nil {
 			r.Body = http.MaxBytesReader(rw, r.Body, cfg.MaxBodyBytes)
 		}
-		ctx, cancel := context.WithTimeout(ctx, cfg.ReadTimeout)
-		defer cancel()
+		if r.URL.Path != "/v1/events" {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, cfg.ReadTimeout)
+			defer cancel()
+		} else {
+			// net/http's server-wide WriteTimeout is an absolute request deadline.
+			// Disable it for this long-lived stream; heartbeat writes still detect
+			// dead clients and shutdown cancels the request context.
+			_ = http.NewResponseController(rw).SetWriteDeadline(time.Time{})
+		}
 		ctx = context.WithValue(ctx, authHeadersKey, AuthHeaders{Authorization: r.Header.Get("Authorization"), IdentityToken: r.Header.Get("privy-id-token")})
 		r = r.WithContext(ctx)
 		next.ServeHTTP(rw, r)
@@ -175,6 +185,12 @@ type statusWriter struct {
 }
 
 func (w *statusWriter) WriteHeader(code int) { *w.status = code; w.ResponseWriter.WriteHeader(code) }
+func (w *statusWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func cors(w http.ResponseWriter, origins []string, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -184,8 +200,8 @@ func cors(w http.ResponseWriter, origins []string, r *http.Request) bool {
 		if allowed == origin && allowed != "*" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,privy-id-token,If-Match")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,privy-id-token,If-Match,If-None-Match")
 			return true
 		}
 	}

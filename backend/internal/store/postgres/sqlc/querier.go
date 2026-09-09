@@ -22,7 +22,7 @@ type Querier interface {
 	ClearOrphanProjections(ctx context.Context, arg ClearOrphanProjectionsParams) error
 	ClearProtocolDaily(ctx context.Context, chainID int64) error
 	CompleteAggregationDirty(ctx context.Context, arg CompleteAggregationDirtyParams) (int64, error)
-	CompleteIndexerReorg(ctx context.Context, reorgID int64) error
+	CompleteIndexerReorg(ctx context.Context, reorgID int64) (CompleteIndexerReorgRow, error)
 	CreatorFeeClaimMatchesEvent(ctx context.Context, arg CreatorFeeClaimMatchesEventParams) (pgtype.Bool, error)
 	DeleteCreatorFeeClaimsAbove(ctx context.Context, arg DeleteCreatorFeeClaimsAboveParams) (int64, error)
 	DeleteEngineConfigurationsAbove(ctx context.Context, arg DeleteEngineConfigurationsAboveParams) (int64, error)
@@ -52,7 +52,9 @@ type Querier interface {
 	GetIndexedBlockByNumber(ctx context.Context, arg GetIndexedBlockByNumberParams) (IndexedBlock, error)
 	GetProtocolStats(ctx context.Context, chainID int64) (GetProtocolStatsRow, error)
 	GetSyncState(ctx context.Context, arg GetSyncStateParams) (SyncState, error)
+	GetTokenCreatorForUpdate(ctx context.Context, arg GetTokenCreatorForUpdateParams) (Address, error)
 	GetTokenDetail(ctx context.Context, arg GetTokenDetailParams) (GetTokenDetailRow, error)
+	GetTokenImage(ctx context.Context, arg GetTokenImageParams) (GetTokenImageRow, error)
 	GetTokenQuoteState(ctx context.Context, arg GetTokenQuoteStateParams) (GetTokenQuoteStateRow, error)
 	GraduationMatchesEvent(ctx context.Context, arg GraduationMatchesEventParams) (pgtype.Bool, error)
 	HasCanonicalLaunch(ctx context.Context, arg HasCanonicalLaunchParams) (bool, error)
@@ -88,6 +90,7 @@ type Querier interface {
 	ListTokenPhaseCounts(ctx context.Context, chainID int64) ([]ListTokenPhaseCountsRow, error)
 	MarkPairTokenDirty(ctx context.Context, arg MarkPairTokenDirtyParams) error
 	MarkTokenDirty(ctx context.Context, arg MarkTokenDirtyParams) error
+	NotifyAPIRefresh(ctx context.Context, payload string) error
 	PoolBurnMatchesEvent(ctx context.Context, arg PoolBurnMatchesEventParams) (pgtype.Bool, error)
 	PoolMintMatchesEvent(ctx context.Context, arg PoolMintMatchesEventParams) (pgtype.Bool, error)
 	PoolSwapMatchesEvent(ctx context.Context, arg PoolSwapMatchesEventParams) (pgtype.Bool, error)

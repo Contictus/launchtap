@@ -42,6 +42,12 @@ func TestServerBoundaries(t *testing.T) {
 	if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "https://app.example" {
 		t.Fatalf("preflight status=%d headers=%v", w.Code, w.Header())
 	}
+	if got := w.Header().Get("Access-Control-Allow-Methods"); got != "GET,POST,PUT,OPTIONS" {
+		t.Fatalf("preflight methods=%q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "Authorization,Content-Type,privy-id-token,If-Match,If-None-Match" {
+		t.Fatalf("preflight headers=%q", got)
+	}
 	if strings.Contains(logs.String(), "secret") {
 		t.Fatal("access log leaked authorization")
 	}
@@ -74,5 +80,17 @@ func TestCanonicalUint256(t *testing.T) {
 	}
 	if n, err := parseCanonicalUint256("0"); err != nil || n.Sign() != 0 {
 		t.Fatalf("zero: %v", err)
+	}
+}
+
+func TestOpenAPIContractIncludesPlan3Endpoints(t *testing.T) {
+	generated, err := GenerateOpenAPI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{`"/events"`, `"/tokens/{token}/metadata"`, `"/tokens/{token}/image"`} {
+		if !bytes.Contains(generated, []byte(path)) {
+			t.Fatalf("generated OpenAPI missing %s", path)
+		}
 	}
 }

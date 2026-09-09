@@ -14,7 +14,29 @@ import (
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
 	"github.com/Contictus/launchtap/backend/internal/store/postgres/postgrestest"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
+
+type laggedFinalitySource struct {
+	client *chain.Client
+	stable uint64
+}
+
+func (source laggedFinalitySource) Heads(ctx context.Context) (chain.Heads, error) {
+	heads, err := source.client.Heads(ctx)
+	if err != nil {
+		return chain.Heads{}, err
+	}
+	stable, err := source.client.HeaderByNumber(ctx, source.stable)
+	if err != nil {
+		return chain.Heads{}, err
+	}
+	heads.Safe, heads.Finalized = stable, stable
+	return heads, nil
+}
+func (source laggedFinalitySource) HeaderByNumber(ctx context.Context, number uint64) (*types.Header, error) {
+	return source.client.HeaderByNumber(ctx, number)
+}
 
 // TestAnvilIndexerEndToEnd indexes a production-contract TokenLaunched event
 // emitted on a fresh Anvil chain. The PowerShell gate supplies its isolated
@@ -61,14 +83,14 @@ func TestAnvilIndexerEndToEnd(t *testing.T) {
 	engine, err := indexer.New(indexer.Settings{
 		ChainID: chainID, DeploymentID: "anvil-indexer-e2e", Factory: factory,
 		StartBlock: start, ChunkSize: 128, PollInterval: time.Millisecond,
-	}, store, source, discovery, decoder, indexer.LedgerRouter{ChainID: chainID})
+	}, store, laggedFinalitySource{client: source, stable: uint64(start)}, discovery, decoder, indexer.LedgerRouter{ChainID: chainID})
 	if err != nil {
 		t.Fatalf("create engine: %v", err)
 	}
 	if advanced, err := engine.Step(ctx); err != nil || !advanced {
 		t.Fatalf("index Anvil deployment: advanced=%t err=%v", advanced, err)
 	}
-	var launches, tokens, transfers int
+	var launches, tokens, transfers, trades int
 	if err := database.DB.QueryRowContext(ctx, `SELECT count(*) FROM token_launches WHERE chain_id=$1`, chainID).Scan(&launches); err != nil {
 		t.Fatalf("count launches: %v", err)
 	}
@@ -78,9 +100,13 @@ func TestAnvilIndexerEndToEnd(t *testing.T) {
 	if err := database.DB.QueryRowContext(ctx, `SELECT count(*) FROM transfers WHERE chain_id=$1`, chainID).Scan(&transfers); err != nil {
 		t.Fatalf("count transfers: %v", err)
 	}
-	if launches != 1 || tokens != 1 || transfers == 0 {
-		t.Fatalf("indexed rows launches=%d tokens=%d transfers=%d; want 1, 1, positive", launches, tokens, transfers)
+	if err := database.DB.QueryRowContext(ctx, `SELECT count(*) FROM trades WHERE chain_id=$1`, chainID).Scan(&trades); err != nil {
+		t.Fatalf("count trades: %v", err)
 	}
+	if launches != 1 || tokens != 1 || transfers == 0 || trades == 0 {
+		t.Fatalf("indexed rows launches=%d tokens=%d transfers=%d trades=%d; want 1, 1, positive, positive", launches, tokens, transfers, trades)
+	}
+	exercisePlan3API(t, ctx, database, pool, engine, rpcURL, chainID)
 }
 
 func requireAnvilEnvironment(t testing.TB, key string) string {

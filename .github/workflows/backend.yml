@@ -89,3 +89,16 @@ jobs:
           if grep -Eq -- '--- (SKIP|FAIL): TestMigrationsUpDownUp' "$output_file"; then
             exit 1
           fi
+
+      - name: Prove API integration and OpenAPI sentinels executed
+        shell: bash
+        run: |
+          set -o pipefail
+          output_file="$(mktemp)"
+          trap 'rm -f "$output_file"' EXIT
+          go test -tags=integration -race -v -run '^(TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically|TestOpenAPIContractIncludesPlan3Endpoints)$' ./internal/apiserver ./internal/store/postgres/postgrestest 2>&1 | tee "$output_file"
+          grep -Fq -- '--- PASS: TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically' "$output_file"
+          grep -Fq -- '--- PASS: TestOpenAPIContractIncludesPlan3Endpoints' "$output_file"
+          if grep -Eq -- '--- (SKIP|FAIL): (TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically|TestOpenAPIContractIncludesPlan3Endpoints)' "$output_file"; then
+            exit 1
+          fi

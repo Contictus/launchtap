@@ -48,7 +48,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $manifestPath)) { Fail "deployment did not produce a manifest" }
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     $factory = [string]$manifest.factory
-    & cast send $factory "launch((string,string,uint16,uint256,uint256,uint256))" '("Anvil","ANVL",1,0,0,9999999999)' --from $sender --unlocked --rpc-url $rpcURL | Out-Host
+    & cast send $factory "launch((string,string,uint16,uint256,uint256,uint256))" '("Anvil","ANVL",1,1000000000000000,0,9999999999)' --value 1000000000000000 --from $sender --unlocked --rpc-url $rpcURL | Out-Host
     if ($LASTEXITCODE -ne 0) { Fail "launch transaction failed" }
 
     $env:ANVIL_INDEXER_RPC_URL = $rpcURL

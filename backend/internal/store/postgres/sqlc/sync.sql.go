@@ -45,6 +45,15 @@ func (q *Queries) GetSyncState(ctx context.Context, arg GetSyncStateParams) (Syn
 	return i, err
 }
 
+const notifyAPIRefresh = `-- name: NotifyAPIRefresh :exec
+SELECT pg_notify('api_refresh', $1::text)
+`
+
+func (q *Queries) NotifyAPIRefresh(ctx context.Context, payload string) error {
+	_, err := q.db.Exec(ctx, notifyAPIRefresh, payload)
+	return err
+}
+
 const upsertSyncState = `-- name: UpsertSyncState :one
 INSERT INTO sync_state (
     chain_id, deployment_id,

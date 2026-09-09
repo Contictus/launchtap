@@ -70,6 +70,7 @@ INSERT INTO indexer_reorgs (
 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open')
 RETURNING reorg_id;
 
--- name: CompleteIndexerReorg :exec
+-- name: CompleteIndexerReorg :one
 UPDATE indexer_reorgs SET outcome='recovered', completed_at=now()
-WHERE reorg_id=$1 AND outcome='open';
+WHERE reorg_id=$1 AND outcome='open'
+RETURNING chain_id, deployment_id, common_ancestor_number, common_ancestor_hash;

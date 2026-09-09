@@ -56,14 +56,29 @@ func (q *Queries) AffectedTokensAbove(ctx context.Context, arg AffectedTokensAbo
 	return items, nil
 }
 
-const completeIndexerReorg = `-- name: CompleteIndexerReorg :exec
+const completeIndexerReorg = `-- name: CompleteIndexerReorg :one
 UPDATE indexer_reorgs SET outcome='recovered', completed_at=now()
 WHERE reorg_id=$1 AND outcome='open'
+RETURNING chain_id, deployment_id, common_ancestor_number, common_ancestor_hash
 `
 
-func (q *Queries) CompleteIndexerReorg(ctx context.Context, reorgID int64) error {
-	_, err := q.db.Exec(ctx, completeIndexerReorg, reorgID)
-	return err
+type CompleteIndexerReorgRow struct {
+	ChainID              int64
+	DeploymentID         string
+	CommonAncestorNumber int64
+	CommonAncestorHash   Hash
+}
+
+func (q *Queries) CompleteIndexerReorg(ctx context.Context, reorgID int64) (CompleteIndexerReorgRow, error) {
+	row := q.db.QueryRow(ctx, completeIndexerReorg, reorgID)
+	var i CompleteIndexerReorgRow
+	err := row.Scan(
+		&i.ChainID,
+		&i.DeploymentID,
+		&i.CommonAncestorNumber,
+		&i.CommonAncestorHash,
+	)
+	return i, err
 }
 
 const deleteCreatorFeeClaimsAbove = `-- name: DeleteCreatorFeeClaimsAbove :execrows

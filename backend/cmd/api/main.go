@@ -8,12 +8,16 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/Contictus/launchtap/backend/deployments"
 	"github.com/Contictus/launchtap/backend/internal/apiserver"
 	"github.com/Contictus/launchtap/backend/internal/config"
+	"github.com/Contictus/launchtap/backend/internal/privyauth"
 	"github.com/Contictus/launchtap/backend/internal/quote"
+	"github.com/Contictus/launchtap/backend/internal/realtime"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -25,6 +29,13 @@ func main() {
 
 func run() error {
 	c, err := config.Load(os.Getenv)
+	if err != nil {
+		return err
+	}
+	if err := c.RequireAPI(); err != nil {
+		return err
+	}
+	verifier, err := privyauth.NewES256Verifier(c.PrivyAppID, c.PrivyVerificationKey)
 	if err != nil {
 		return err
 	}
@@ -66,6 +77,10 @@ func run() error {
 	protocol := storepostgres.ProtocolReader{Pool: pool, DeploymentID: c.DeploymentID}
 	server.RegisterPublicRoutes(apiserver.PublicRoutes{Tokens: tokens, Market: market, Protocol: protocol, ChainID: int64(c.ChainID)})
 	server.RegisterQuoteRoutes(apiserver.QuoteRoutes{Provider: quote.Service{Reader: tokens, ChainID: int64(c.ChainID)}})
+	hub := realtime.NewHub(1000, 16)
+	server.RegisterMetadataRoutes(apiserver.MetadataRoutes{Store: storepostgres.MetadataStore{Pool: pool, DeploymentID: c.DeploymentID}, Verifier: verifier, ChainID: int64(c.ChainID)})
+	server.RegisterEventRoutes(apiserver.EventRoutes{Hub: hub, ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID})
+	go listenRefreshHints(ctx, pool, hub, int64(c.ChainID), c.DeploymentID)
 	server.HTTP.Addr = c.APIAddr
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.HTTP.ListenAndServe() }()
@@ -79,5 +94,26 @@ func run() error {
 			return nil
 		}
 		return err
+	}
+}
+
+func listenRefreshHints(ctx context.Context, pool *pgxpool.Pool, hub *realtime.Hub, chainID int64, deploymentID string) {
+	for ctx.Err() == nil {
+		err := storepostgres.ListenAPIRefresh(ctx, pool, func(payload []byte) {
+			event, err := realtime.Decode(payload)
+			if err != nil || event.ChainID != chainID || (event.DeploymentID != "" && event.DeploymentID != deploymentID) {
+				return
+			}
+			hub.Publish(event)
+		})
+		if err == nil || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return
+		}
+		slog.Warn("API refresh listener disconnected", "error", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
 	}
 }

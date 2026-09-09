@@ -13,6 +13,8 @@ func GenerateOpenAPI() ([]byte, error) {
 	s.RegisterCandleRoutes(CandleRoutes{})
 	s.RegisterPublicRoutes(PublicRoutes{})
 	s.RegisterQuoteRoutes(QuoteRoutes{})
+	s.RegisterMetadataRoutes(MetadataRoutes{})
+	s.RegisterEventRoutes(EventRoutes{})
 	b, err := json.MarshalIndent(s.API.OpenAPI(), "", "  ")
 	if err != nil {
 		return nil, err

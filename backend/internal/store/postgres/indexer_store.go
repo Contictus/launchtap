@@ -29,13 +29,18 @@ func (s IndexerStore) Transaction(ctx context.Context, fn func(context.Context, 
 	if beginner == nil {
 		beginner = s.Pool
 	}
-	if err := WithinTx(ctx, beginner, func(ctx context.Context, a *Adapter) error { return fn(ctx, a) }); err != nil {
+	transactionContext := context.WithValue(ctx, refreshDeploymentContextKey{}, s.DeploymentID)
+	if err := WithinTx(transactionContext, beginner, func(ctx context.Context, a *Adapter) error { return fn(ctx, a) }); err != nil {
 		return err
 	}
 	if s.Pool != nil && s.ChainID > 0 && s.DeploymentID != "" {
 		_, err := s.Pool.Exec(ctx, `SELECT pg_notify('market_dirty', $1)`, fmt.Sprintf(`{"chain_id":%d,"deployment_id":%q}`, s.ChainID, s.DeploymentID))
 		if err != nil {
 			slog.Warn("market dirty notification failed", "error", err)
+		}
+		_, err = s.Pool.Exec(ctx, `SELECT pg_notify('api_refresh', $1)`, fmt.Sprintf(`{"type":"token","chain_id":%d,"deployment_id":%q}`, s.ChainID, s.DeploymentID))
+		if err != nil {
+			slog.Warn("API refresh notification failed", "error", err)
 		}
 	}
 	return nil
