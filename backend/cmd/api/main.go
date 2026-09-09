@@ -43,6 +43,8 @@ func run() error {
 	defer pool.Close()
 	ready := apiserver.ReadyFunc(func(ctx context.Context) error { return pool.Ping(ctx) })
 	server := apiserver.New(apiserver.DefaultConfig(), ready, slog.Default())
+	server.RegisterTokenRoutes(apiserver.TokenRoutes{Reader: storepostgres.TokenReader{Pool: pool, DeploymentID: c.DeploymentID}, ChainID: int64(c.ChainID)})
+	server.RegisterCandleRoutes(apiserver.CandleRoutes{Reader: storepostgres.CandleReader{Pool: pool, DeploymentID: c.DeploymentID}, ChainID: int64(c.ChainID)})
 	errCh := make(chan error, 1)
 	go func() { errCh <- http.ListenAndServe(c.APIAddr, server.Handler) }()
 	select {

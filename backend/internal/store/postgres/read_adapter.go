@@ -167,6 +167,11 @@ type PoolReadBeginner interface {
 	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
 }
 
+type TokenReader struct { Pool PoolReadBeginner; DeploymentID string }
+func (r TokenReader) List(ctx context.Context, q token.ListQuery) (token.Page, error) { return ReadTokenCards(ctx, r.Pool, q.ChainID, r.DeploymentID, q) }
+type CandleReader struct { Pool PoolReadBeginner; DeploymentID string }
+func (r CandleReader) List(ctx context.Context, q candle.Query) (candle.Page, error) { return ReadAggregatedCandles(ctx, r.Pool, q.ChainID, r.DeploymentID, q) }
+
 // ReadAggregatedCandles serves the stored 6h/all rollups without OFFSET and
 // keeps the watermark and rows in the same repeatable-read snapshot.
 func ReadAggregatedCandles(ctx context.Context, pool PoolReadBeginner, chainID int64, deploymentID string, query candle.Query) (candle.Page, error) {

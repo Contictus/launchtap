@@ -4,6 +4,8 @@
   "paths": {
     "/v1/healthz": {"get": {"operationId": "healthz", "responses": {"200": {"description": "Process is alive"}}}},
     "/v1/readyz": {"get": {"operationId": "readyz", "responses": {"200": {"description": "Ready"}, "503": {"description": "Not ready"}}}},
-    "/v1/tokens": {"get": {"operationId": "listTokens", "responses": {"200": {"description": "Token page"}, "400": {"description": "Invalid request"}}}}
+    "/v1/tokens": {"get": {"operationId": "listTokens", "responses": {"200": {"description": "Token page"}, "400": {"description": "Invalid request"}}}},
+    "/v1/tokens/{token}/candles": {"get": {"operationId": "listCandles", "responses": {"200": {"description": "Candle page"}, "400": {"description": "Invalid request"}}}},
+    "/v1/tokens/{token}/quote": {"get": {"operationId": "quoteCurve", "responses": {"200": {"description": "Informational quote"}, "400": {"description": "Invalid request"}}}}
   }
 }
