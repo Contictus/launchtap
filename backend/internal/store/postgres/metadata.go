@@ -34,9 +34,12 @@ func (adapter *Adapter) ReplaceTokenMetadata(ctx context.Context, chainID int64,
 }
 
 func (adapter *Adapter) ReplaceTokenImage(ctx context.Context, chainID int64, token, creator common.Address, contentType string, content, sha256 []byte, expectedRevision int64, now time.Time) (int64, error) {
+	if len(sha256) != 32 {
+		return 0, fmt.Errorf("image sha256 must be 32 bytes")
+	}
 	revision, err := adapter.queries.ReplaceTokenImage(ctx, sqlc.ReplaceTokenImageParams{
 		ChainID: chainID, TokenAddress: sqlc.Address(token), Creator: sqlc.Address(creator), ContentType: contentType,
-		Content: content, ByteSize: int32(len(content)), Sha256: sha256, ExpectedRevision: expectedRevision,
+		Content: content, ByteSize: int32(len(content)), Sha256: sqlc.Hash(sha256), ExpectedRevision: expectedRevision,
 		UpdatedAt: pgtype.Timestamptz{Time: now, Valid: true},
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
