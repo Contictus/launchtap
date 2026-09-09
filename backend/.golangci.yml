@@ -94,6 +94,7 @@ linters:
             - "**/internal/holder/*.go"
             - "**/internal/candle/*.go"
             - "**/internal/stats/*.go"
+            - "**/internal/quote/*.go"
             - "**/internal/metadata/*.go"
             - "**/domain/*.go"
             - "**/application/*.go"

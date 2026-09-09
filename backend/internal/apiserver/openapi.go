@@ -1,0 +1,21 @@
+package apiserver
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+)
+
+func GenerateOpenAPI() ([]byte, error) {
+	s := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.RegisterTokenRoutes(TokenRoutes{})
+	s.RegisterCandleRoutes(CandleRoutes{})
+	s.RegisterPublicRoutes(PublicRoutes{})
+	s.RegisterQuoteRoutes(QuoteRoutes{})
+	b, err := json.MarshalIndent(s.API.OpenAPI(), "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}

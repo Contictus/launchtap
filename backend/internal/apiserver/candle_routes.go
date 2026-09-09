@@ -20,12 +20,13 @@ type candleInput struct {
 	From     string `query:"from"`
 	To       string `query:"to"`
 	Limit    int    `query:"limit" minimum:"1" maximum:"100"`
+	Cursor   string `query:"cursor"`
 }
 type candleOutput struct{ Body candleBody }
 type candleBody struct {
 	Items      []candleDTO `json:"items"`
 	NextCursor string      `json:"next_cursor,omitempty"`
-	Snapshot   any         `json:"snapshot"`
+	Snapshot   snapshotDTO `json:"snapshot"`
 }
 type candleDTO struct {
 	Start       string `json:"start"`
@@ -52,12 +53,12 @@ func (r CandleRoutes) handle(ctx context.Context, in *candleInput) (*candleOutpu
 	if interval == "" {
 		interval = "1h"
 	}
-	if interval != "1h" && interval != "1d" && interval != "6h" && interval != "all" {
+	if interval != "1m" && interval != "5m" && interval != "1h" && interval != "1d" && interval != "6h" && interval != "all" {
 		return nil, huma.Error400BadRequest("unsupported interval")
 	}
 	limit := in.Limit
 	if limit == 0 {
-		limit = 100
+		limit = 20
 	}
 	from, to := time.Time{}, time.Now().UTC()
 	var err error
@@ -73,11 +74,15 @@ func (r CandleRoutes) handle(ctx context.Context, in *candleInput) (*candleOutpu
 			return nil, huma.Error400BadRequest("invalid to")
 		}
 	}
-	p, err := r.Reader.List(ctx, candle.Query{ChainID: r.ChainID, Token: common.HexToAddress(in.Token), Interval: interval, From: from, To: to, Limit: limit})
-	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+	cur, e := cursor(in.Cursor)
+	if e != nil {
+		return nil, e
 	}
-	out := candleOutput{Body: candleBody{Items: make([]candleDTO, 0, len(p.Items)), NextCursor: p.NextCursor, Snapshot: p.Snapshot}}
+	p, err := r.Reader.List(ctx, candle.Query{ChainID: r.ChainID, Token: common.HexToAddress(in.Token), Interval: interval, From: from, To: to, Limit: limit, Cursor: cur})
+	if err != nil {
+		return nil, mapReadError(ctx, err)
+	}
+	out := candleOutput{Body: candleBody{Items: make([]candleDTO, 0, len(p.Items)), NextCursor: p.NextCursor, Snapshot: snapDTO(p.Snapshot, p.Finality)}}
 	for _, v := range p.Items {
 		out.Body.Items = append(out.Body.Items, candleDTO{Start: v.Start.UTC().Format(time.RFC3339Nano), Open: decimal(v.Open), High: decimal(v.High), Low: decimal(v.Low), Close: decimal(v.Close), ETHVolume: decimal(v.ETHVolume), TokenVolume: decimal(v.TokenVolume), TradeCount: v.TradeCount})
 	}

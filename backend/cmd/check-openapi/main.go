@@ -2,30 +2,30 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
+	"flag"
 	"os"
+
+	"github.com/Contictus/launchtap/backend/internal/apiserver"
 )
 
 func main() {
-	b, err := os.ReadFile("openapi/v1.json")
+	write := flag.Bool("write", false, "write the generated contract")
+	flag.Parse()
+	generated, err := apiserver.GenerateOpenAPI()
 	if err != nil {
 		panic(err)
 	}
-	var doc struct {
-		OpenAPI string                     `json:"openapi"`
-		Paths   map[string]json.RawMessage `json:"paths"`
+	if *write {
+		if err := os.WriteFile("openapi/v1.json", generated, 0o644); err != nil {
+			panic(err)
+		}
+		return
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	if err := dec.Decode(&doc); err != nil {
+	committed, err := os.ReadFile("openapi/v1.json")
+	if err != nil {
 		panic(err)
 	}
-	if doc.OpenAPI != "3.1.0" || len(doc.Paths) == 0 {
-		panic("invalid OpenAPI contract")
-	}
-	for _, path := range []string{"/v1/healthz", "/v1/readyz", "/v1/tokens"} {
-		if _, ok := doc.Paths[path]; !ok {
-			panic(fmt.Sprintf("missing path %s", path))
-		}
+	if !bytes.Equal(generated, committed) {
+		panic("openapi/v1.json is stale; run check-openapi --write")
 	}
 }

@@ -58,6 +58,7 @@ type Config struct {
 	PrivyVerificationKey       string        `env:"PRIVY_VERIFICATION_KEY"`
 	LogLevel                   string        `env:"LOG_LEVEL"`
 	APIAddr                    string        `env:"API_ADDR"`
+	APIAllowedOrigins          []string      `env:"API_ALLOWED_ORIGINS"`
 	IndexerHealthAddr          string        `env:"INDEXER_HEALTH_ADDR"`
 	IndexerChunkSize           uint64        `env:"INDEXER_CHUNK_SIZE"`
 	IndexerLogAddressBatchSize uint64        `env:"INDEXER_LOG_ADDRESS_BATCH_SIZE"`
@@ -130,6 +131,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	apiOrigins, err := parseOrigins(values.apiAllowedOrigins)
+	if err != nil {
+		return Config{}, err
+	}
 	indexerHealthAddr, err := parseListenerAddr("INDEXER_HEALTH_ADDR", values.indexerHealthAddr, defaultIndexerHealthAddr)
 	if err != nil {
 		return Config{}, err
@@ -158,6 +163,7 @@ func Load(getenv func(string) string) (Config, error) {
 		PrivyVerificationKey:       values.privyVerificationKey,
 		LogLevel:                   logLevel,
 		APIAddr:                    apiAddr,
+		APIAllowedOrigins:          apiOrigins,
 		IndexerHealthAddr:          indexerHealthAddr,
 		IndexerChunkSize:           chunkSize,
 		IndexerLogAddressBatchSize: addressBatchSize,
@@ -214,6 +220,7 @@ type environmentValues struct {
 	privyVerificationKey       string
 	logLevel                   string
 	apiAddr                    string
+	apiAllowedOrigins          string
 	indexerHealthAddr          string
 	indexerChunkSize           string
 	indexerLogAddressBatchSize string
@@ -236,6 +243,7 @@ func readEnvironment(getenv func(string) string) environmentValues {
 		privyVerificationKey:       strings.TrimSpace(getenv("PRIVY_VERIFICATION_KEY")),
 		logLevel:                   strings.TrimSpace(getenv("LOG_LEVEL")),
 		apiAddr:                    strings.TrimSpace(getenv("API_ADDR")),
+		apiAllowedOrigins:          strings.TrimSpace(getenv("API_ALLOWED_ORIGINS")),
 		indexerHealthAddr:          strings.TrimSpace(getenv("INDEXER_HEALTH_ADDR")),
 		indexerChunkSize:           strings.TrimSpace(getenv("INDEXER_CHUNK_SIZE")),
 		indexerLogAddressBatchSize: strings.TrimSpace(getenv("INDEXER_LOG_ADDRESS_BATCH_SIZE")),
@@ -247,6 +255,34 @@ func readEnvironment(getenv func(string) string) environmentValues {
 		indexerConfirmations:       strings.TrimSpace(getenv("INDEXER_CONFIRMATIONS")),
 		ethUSDSource:               strings.TrimSpace(getenv("ETH_USD_SOURCE")),
 	}
+}
+
+func parseOrigins(value string) ([]string, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin == "" || origin == "*" {
+			return nil, &FieldError{Field: "API_ALLOWED_ORIGINS", Err: ErrInvalid}
+		}
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+			return nil, &FieldError{Field: "API_ALLOWED_ORIGINS", Err: ErrInvalid}
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return nil, &FieldError{Field: "API_ALLOWED_ORIGINS", Err: ErrInvalid}
+		}
+		if _, ok := seen[origin]; ok {
+			continue
+		}
+		seen[origin] = struct{}{}
+		out = append(out, origin)
+	}
+	return out, nil
 }
 
 func optionalPositiveDuration(field, value string, defaultValue time.Duration) (time.Duration, error) {

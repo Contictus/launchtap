@@ -32,6 +32,7 @@ type Page struct {
 	Items      []Candle
 	Snapshot   pagination.Snapshot
 	NextCursor string
+	Finality   string
 }
 
 type Reader interface {

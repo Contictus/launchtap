@@ -16,16 +16,16 @@ type TokenRoutes struct {
 }
 type tokenListInput struct {
 	Phase  string `query:"phase"`
-	Search string `query:"search"`
+	Query  string `query:"q"`
 	Sort   string `query:"sort"`
 	Cursor string `query:"cursor"`
 	Limit  int    `query:"limit" minimum:"1" maximum:"100"`
 }
 type tokenListOutput struct{ Body tokenListBody }
 type tokenListBody struct {
-	Items      []tokenDTO          `json:"items"`
-	NextCursor string              `json:"next_cursor,omitempty"`
-	Snapshot   pagination.Snapshot `json:"snapshot"`
+	Items      []tokenDTO  `json:"items"`
+	NextCursor string      `json:"next_cursor,omitempty"`
+	Snapshot   snapshotDTO `json:"snapshot"`
 }
 type tokenDTO struct {
 	Address      string `json:"address"`
@@ -60,20 +60,26 @@ func (r TokenRoutes) list(ctx context.Context, in *tokenListInput) (*tokenListOu
 	if in.Sort == "" {
 		in.Sort = "newest"
 	}
+	if in.Phase != "curve" && in.Phase != "graduated" {
+		return nil, apiProblem(http.StatusBadRequest, "invalid_phase", "Unsupported token phase")
+	}
+	if in.Sort != "newest" && in.Sort != "oldest" && in.Sort != "market_cap" && in.Sort != "volume_24h" {
+		return nil, apiProblem(http.StatusBadRequest, "invalid_sort", "Unsupported token sort")
+	}
 	var cur *pagination.Cursor
 	var err error
 	if in.Cursor != "" {
 		c, e := pagination.Decode(in.Cursor)
 		if e != nil {
-			return nil, huma.Error400BadRequest("invalid cursor")
+			return nil, apiProblem(http.StatusBadRequest, "invalid_cursor", "Cursor is invalid")
 		}
 		cur = &c
 	}
-	p, err := r.Reader.List(ctx, token.ListQuery{ChainID: r.ChainID, Phase: in.Phase, Search: in.Search, Sort: in.Sort, Cursor: cur, Limit: limit})
+	p, err := r.Reader.List(ctx, token.ListQuery{ChainID: r.ChainID, Phase: in.Phase, Search: in.Query, Sort: in.Sort, Cursor: cur, Limit: limit})
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, mapReadError(ctx, err)
 	}
-	out := tokenListOutput{Body: tokenListBody{Items: make([]tokenDTO, 0, len(p.Items)), NextCursor: p.NextCursor, Snapshot: p.Snapshot}}
+	out := tokenListOutput{Body: tokenListBody{Items: make([]tokenDTO, 0, len(p.Items)), NextCursor: p.NextCursor, Snapshot: snapDTO(p.Snapshot, p.Finality)}}
 	for _, v := range p.Items {
 		out.Body.Items = append(out.Body.Items, tokenDTO{Address: v.Address.Hex(), Name: v.Name, Symbol: v.Symbol, Phase: v.Phase, LaunchTime: v.LaunchTime.UTC().Format("2006-01-02T15:04:05.000000Z"), LaunchBlock: v.LaunchBlock, TotalSupply: decimal(v.TotalSupply), MarketCapETH: decimal(v.MarketCapETH), Volume24hETH: decimal(v.Volume24hETH), HolderCount: v.HolderCount})
 	}

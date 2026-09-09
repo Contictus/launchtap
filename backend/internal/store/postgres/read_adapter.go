@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -33,9 +35,10 @@ func ReadTokenCards(ctx context.Context, pool PoolReadBeginner, chainID int64, d
 	}
 	var page token.Page
 	err := withReadSnapshotBeginner(ctx, pool, chainID, deploymentID, func(ctx context.Context, adapter *Adapter, snapshot ReadSnapshot) error {
-		search := strings.TrimSpace(query.Search)
+		search := strings.ToLower(strings.TrimSpace(query.Search))
+		filters := cursorFilter(query.Phase, search)
 		if query.Cursor != nil {
-			if err := query.Cursor.ValidateRequest("tokens", query.Sort, search, "next", snapshot.Identity); err != nil {
+			if err := query.Cursor.ValidateRequest("tokens", query.Sort, filters, "next", snapshot.Identity); err != nil {
 				return err
 			}
 		}
@@ -91,6 +94,7 @@ func ReadTokenCards(ctx context.Context, pool PoolReadBeginner, chainID int64, d
 			return err
 		}
 		page.Snapshot = snapshot.Identity
+		page.Finality = finality(snapshot.State, snapshot.Identity.BlockNumber)
 		page.Items = make([]token.Summary, 0, len(cards))
 		for _, row := range cards {
 			page.Items = append(page.Items, token.Summary{Address: row.Address, Name: row.Name, Symbol: row.Symbol, Phase: row.Phase, LaunchTime: row.LaunchTime, LaunchBlock: row.Block, TotalSupply: row.Supply, MarketCapETH: row.Market, Volume24hETH: row.Volume, HolderCount: row.Holders})
@@ -104,7 +108,7 @@ func ReadTokenCards(ctx context.Context, pool PoolReadBeginner, chainID int64, d
 			if query.Sort == "volume_24h" {
 				key = []string{last.Volume.String(), last.Address.Hex()}
 			}
-			page.NextCursor, err = pagination.Encode(pagination.Cursor{Version: pagination.CurrentVersion, Snapshot: snapshot.Identity, Endpoint: "tokens", Sort: query.Sort, Filters: search, Direction: "next", Key: key})
+			page.NextCursor, err = pagination.Encode(pagination.Cursor{Version: pagination.CurrentVersion, Snapshot: snapshot.Identity, Endpoint: "tokens", Sort: query.Sort, Filters: filters, Direction: "next", Key: key})
 			if err != nil {
 				return err
 			}
@@ -167,10 +171,69 @@ type PoolReadBeginner interface {
 	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
 }
 
-type TokenReader struct { Pool PoolReadBeginner; DeploymentID string }
-func (r TokenReader) List(ctx context.Context, q token.ListQuery) (token.Page, error) { return ReadTokenCards(ctx, r.Pool, q.ChainID, r.DeploymentID, q) }
-type CandleReader struct { Pool PoolReadBeginner; DeploymentID string }
-func (r CandleReader) List(ctx context.Context, q candle.Query) (candle.Page, error) { return ReadAggregatedCandles(ctx, r.Pool, q.ChainID, r.DeploymentID, q) }
+type TokenReader struct {
+	Pool         PoolReadBeginner
+	DeploymentID string
+}
+
+func (r TokenReader) List(ctx context.Context, q token.ListQuery) (token.Page, error) {
+	return ReadTokenCards(ctx, r.Pool, q.ChainID, r.DeploymentID, q)
+}
+
+type CandleReader struct {
+	Pool         PoolReadBeginner
+	DeploymentID string
+}
+
+func (r CandleReader) List(ctx context.Context, q candle.Query) (candle.Page, error) {
+	if q.Interval == "1m" || q.Interval == "5m" || q.Interval == "1h" || q.Interval == "1d" {
+		if q.Limit < 1 || q.Limit > 100 {
+			return candle.Page{}, fmt.Errorf("candle page size must be between 1 and 100")
+		}
+		var page candle.Page
+		err := withReadSnapshotBeginner(ctx, r.Pool, q.ChainID, r.DeploymentID, func(ctx context.Context, a *Adapter, s ReadSnapshot) error {
+			filters := cursorFilter(q.Token.Hex(), q.From.UTC().Format(time.RFC3339Nano), q.To.UTC().Format(time.RFC3339Nano))
+			exists, err := a.queries.TokenExists(ctx, sqlc.TokenExistsParams{ChainID: q.ChainID, TokenAddress: sqlc.Address(q.Token)})
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return token.ErrNotFound
+			}
+			args := sqlc.ListStoredCandlesParams{ChainID: q.ChainID, TokenAddress: sqlc.Address(q.Token), Interval: q.Interval, FromTime: pgtype.Timestamptz{Time: q.From, Valid: true}, ToTime: pgtype.Timestamptz{Time: q.To, Valid: true}, PageSize: int32(q.Limit)}
+			if q.Cursor != nil {
+				if err := q.Cursor.ValidateRequest("candles", q.Interval, filters, "next", s.Identity); err != nil {
+					return err
+				}
+				if len(q.Cursor.Key) != 1 {
+					return pagination.ErrInvalidCursor
+				}
+				at, err := time.Parse(time.RFC3339Nano, q.Cursor.Key[0])
+				if err != nil {
+					return pagination.ErrInvalidCursor
+				}
+				args.AfterTime = pgtype.Timestamptz{Time: at, Valid: true}
+			}
+			rows, err := a.queries.ListStoredCandles(ctx, args)
+			if err != nil {
+				return err
+			}
+			for _, row := range rows {
+				v := candle.Candle{Start: row.BucketStartTime.Time, Open: row.OpenPriceWad.BigInt(), High: row.HighPriceWad.BigInt(), Low: row.LowPriceWad.BigInt(), Close: row.ClosePriceWad.BigInt(), ETHVolume: row.GrossEthVolume.BigInt(), TokenVolume: row.TokenVolume.BigInt(), TradeCount: int64(row.TradeCount)}
+				page.Items = append(page.Items, v)
+			}
+			page.Snapshot = s.Identity
+			page.Finality = finality(s.State, s.Identity.BlockNumber)
+			if len(page.Items) == q.Limit {
+				v := page.Items[len(page.Items)-1]
+				page.NextCursor, _ = pagination.Encode(pagination.Cursor{Version: pagination.CurrentVersion, Snapshot: s.Identity, Endpoint: "candles", Sort: q.Interval, Filters: filters, Direction: "next", Key: []string{v.Start.UTC().Format(time.RFC3339Nano)}})
+			}
+			return nil
+		})
+		return page, err
+	}
+	return ReadAggregatedCandles(ctx, r.Pool, q.ChainID, r.DeploymentID, q)
+}
 
 // ReadAggregatedCandles serves the stored 6h/all rollups without OFFSET and
 // keeps the watermark and rows in the same repeatable-read snapshot.
@@ -183,7 +246,28 @@ func ReadAggregatedCandles(ctx context.Context, pool PoolReadBeginner, chainID i
 	}
 	var page candle.Page
 	err := withReadSnapshotBeginner(ctx, pool, chainID, deploymentID, func(ctx context.Context, adapter *Adapter, snapshot ReadSnapshot) error {
+		filters := cursorFilter(query.Token.Hex(), query.From.UTC().Format(time.RFC3339Nano), query.To.UTC().Format(time.RFC3339Nano))
+		exists, err := adapter.queries.TokenExists(ctx, sqlc.TokenExistsParams{ChainID: chainID, TokenAddress: sqlc.Address(query.Token)})
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return token.ErrNotFound
+		}
 		arg := sqlc.ListCandlesAggregatedParams{ChainID: chainID, TokenAddress: sqlc.Address(query.Token), SourceInterval: "1h", TargetInterval: query.Interval, FromTime: pgtype.Timestamptz{Time: query.From, Valid: true}, ToTime: pgtype.Timestamptz{Time: query.To, Valid: true}, PageSize: int32(query.Limit)}
+		if query.Cursor != nil {
+			if err := query.Cursor.ValidateRequest("candles", query.Interval, filters, "next", snapshot.Identity); err != nil {
+				return err
+			}
+			if len(query.Cursor.Key) != 1 {
+				return pagination.ErrInvalidCursor
+			}
+			after, err := time.Parse(time.RFC3339Nano, query.Cursor.Key[0])
+			if err != nil {
+				return pagination.ErrInvalidCursor
+			}
+			arg.FromTime = pgtype.Timestamptz{Time: after.Add(time.Microsecond), Valid: true}
+		}
 		if query.Interval == "all" {
 			arg.SourceInterval = "1d"
 		}
@@ -192,6 +276,7 @@ func ReadAggregatedCandles(ctx context.Context, pool PoolReadBeginner, chainID i
 			return err
 		}
 		page.Snapshot = snapshot.Identity
+		page.Finality = finality(snapshot.State, snapshot.Identity.BlockNumber)
 		page.Items = make([]candle.Candle, 0, len(rows))
 		for _, row := range rows {
 			start, err := candleTime(row.BucketStartTime)
@@ -200,9 +285,21 @@ func ReadAggregatedCandles(ctx context.Context, pool PoolReadBeginner, chainID i
 			}
 			page.Items = append(page.Items, candle.Candle{Start: start, Open: candleNumeric(row.OpenPriceWad), High: candleNumeric(row.HighPriceWad), Low: candleNumeric(row.LowPriceWad), Close: candleNumeric(row.ClosePriceWad), ETHVolume: candleNumeric(row.GrossEthVolume), TokenVolume: candleNumeric(row.TokenVolume), TradeCount: row.TradeCount})
 		}
+		if len(page.Items) == query.Limit {
+			v := page.Items[len(page.Items)-1]
+			page.NextCursor, _ = pagination.Encode(pagination.Cursor{Version: pagination.CurrentVersion, Snapshot: snapshot.Identity, Endpoint: "candles", Sort: query.Interval, Filters: filters, Direction: "next", Key: []string{v.Start.UTC().Format(time.RFC3339Nano)}})
+		}
 		return nil
 	})
 	return page, err
+}
+
+func cursorFilter(parts ...string) string {
+	hash := sha256.New()
+	for _, part := range parts {
+		_, _ = fmt.Fprintf(hash, "%d:%s", len(part), part)
+	}
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func candleTime(v any) (time.Time, error) {

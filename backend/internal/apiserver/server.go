@@ -3,6 +3,7 @@ package apiserver
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -17,10 +18,12 @@ import (
 type Config struct {
 	AllowedOrigins                                                             []string
 	ReadHeaderTimeout, ReadTimeout, WriteTimeout, IdleTimeout, ShutdownTimeout time.Duration
+	MaxBodyBytes                                                               int64
+	MaxHeaderBytes                                                             int
 }
 
 func DefaultConfig() Config {
-	return Config{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, ShutdownTimeout: 5 * time.Second}
+	return Config{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, ShutdownTimeout: 5 * time.Second, MaxBodyBytes: 6 << 20, MaxHeaderBytes: 32 << 10}
 }
 
 type Readiness interface{ Ready(context.Context) error }
@@ -45,6 +48,28 @@ type humaHealthOutput struct {
 func New(cfg Config, ready Readiness, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	defaults := DefaultConfig()
+	if cfg.ReadHeaderTimeout <= 0 {
+		cfg.ReadHeaderTimeout = defaults.ReadHeaderTimeout
+	}
+	if cfg.ReadTimeout <= 0 {
+		cfg.ReadTimeout = defaults.ReadTimeout
+	}
+	if cfg.WriteTimeout <= 0 {
+		cfg.WriteTimeout = defaults.WriteTimeout
+	}
+	if cfg.IdleTimeout <= 0 {
+		cfg.IdleTimeout = defaults.IdleTimeout
+	}
+	if cfg.ShutdownTimeout <= 0 {
+		cfg.ShutdownTimeout = defaults.ShutdownTimeout
+	}
+	if cfg.MaxBodyBytes <= 0 {
+		cfg.MaxBodyBytes = defaults.MaxBodyBytes
+	}
+	if cfg.MaxHeaderBytes <= 0 {
+		cfg.MaxHeaderBytes = defaults.MaxHeaderBytes
 	}
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/v1", huma.DefaultConfig("Launchpad API", "1.0.0"))
@@ -75,61 +100,96 @@ func New(cfg Config, ready Readiness, logger *slog.Logger) *Server {
 		_ = json.NewEncoder(w).Encode(HealthResponse{Status: "ready"})
 	})
 	h := middleware(mux, cfg, logger)
-	serverCfg := cfg
-	if serverCfg.ReadHeaderTimeout <= 0 {
-		serverCfg = DefaultConfig()
-	}
-	return &Server{Handler: h, API: api, HTTP: &http.Server{Handler: h, ReadHeaderTimeout: serverCfg.ReadHeaderTimeout, ReadTimeout: serverCfg.ReadTimeout, WriteTimeout: serverCfg.WriteTimeout, IdleTimeout: serverCfg.IdleTimeout}}
+	return &Server{Handler: h, API: api, HTTP: &http.Server{Handler: h, ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout, MaxHeaderBytes: cfg.MaxHeaderBytes}}
 }
 
 func (s *Server) RegisterTokenRoutes(r TokenRoutes)   { r.Register(s.API) }
 func (s *Server) RegisterQuoteRoutes(r QuoteRoutes)   { r.Register(s.API) }
 func (s *Server) RegisterCandleRoutes(r CandleRoutes) { r.Register(s.API) }
+func (s *Server) RegisterPublicRoutes(r PublicRoutes) { r.Register(s.API) }
 
 func (s *Server) Shutdown(ctx context.Context) error { return s.HTTP.Shutdown(ctx) }
 
 type ctxKey string
 
 const requestIDKey ctxKey = "request_id"
+const authHeadersKey ctxKey = "auth_headers"
+
+type AuthHeaders struct {
+	Authorization string
+	IdentityToken string
+}
 
 func RequestID(ctx context.Context) string { v, _ := ctx.Value(requestIDKey).(string); return v }
+func ExtractedAuth(ctx context.Context) AuthHeaders {
+	v, _ := ctx.Value(authHeadersKey).(AuthHeaders)
+	return v
+}
 
 func middleware(next http.Handler, cfg Config, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		status := http.StatusOK
+		rw := &statusWriter{ResponseWriter: w, status: &status}
 		id := strings.TrimSpace(r.Header.Get("X-Request-ID"))
 		if id == "" {
-			id = fmt.Sprintf("%d", time.Now().UnixNano())
+			var raw [16]byte
+			if _, err := rand.Read(raw[:]); err == nil {
+				id = fmt.Sprintf("%x", raw)
+			} else {
+				id = fmt.Sprintf("%d", time.Now().UnixNano())
+			}
 		}
-		w.Header().Set("X-Request-ID", id)
-		ctx, cancel := context.WithTimeout(context.WithValue(r.Context(), requestIDKey, id), cfg.ReadTimeout)
-		defer cancel()
-		r = r.WithContext(ctx)
+		rw.Header().Set("X-Request-ID", id)
+		ctx := context.WithValue(r.Context(), requestIDKey, id)
 		defer func() {
 			if v := recover(); v != nil {
-				problem(w, http.StatusInternalServerError, "internal server error", id)
+				problem(rw, http.StatusInternalServerError, "internal server error", id)
 				logger.Error("panic recovered", "request_id", id)
 			}
+			logger.Info("http request", "request_id", id, "method", r.Method, "path", r.URL.Path, "status", status, "duration_ms", time.Since(started).Milliseconds())
 		}()
 		if r.Method == http.MethodOptions {
-			cors(w, cfg.AllowedOrigins, r)
-			w.WriteHeader(http.StatusNoContent)
+			if !cors(rw, cfg.AllowedOrigins, r) {
+				problem(rw, http.StatusForbidden, "origin not allowed", id)
+				return
+			}
+			rw.WriteHeader(http.StatusNoContent)
 			return
 		}
-		cors(w, cfg.AllowedOrigins, r)
-		next.ServeHTTP(w, r)
+		cors(rw, cfg.AllowedOrigins, r)
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(rw, r.Body, cfg.MaxBodyBytes)
+		}
+		ctx, cancel := context.WithTimeout(ctx, cfg.ReadTimeout)
+		defer cancel()
+		ctx = context.WithValue(ctx, authHeadersKey, AuthHeaders{Authorization: r.Header.Get("Authorization"), IdentityToken: r.Header.Get("privy-id-token")})
+		r = r.WithContext(ctx)
+		next.ServeHTTP(rw, r)
 	})
 }
-func cors(w http.ResponseWriter, origins []string, r *http.Request) {
+
+type statusWriter struct {
+	http.ResponseWriter
+	status *int
+}
+
+func (w *statusWriter) WriteHeader(code int) { *w.status = code; w.ResponseWriter.WriteHeader(code) }
+func cors(w http.ResponseWriter, origins []string, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
 	for _, allowed := range origins {
-		if allowed == origin && origin != "" {
+		if allowed == origin && allowed != "*" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,privy-id-token,If-Match")
-			return
+			return true
 		}
 	}
+	return false
 }
 func problem(w http.ResponseWriter, status int, detail, requestID string) {
 	w.Header().Set("Content-Type", "application/problem+json")

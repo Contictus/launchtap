@@ -70,6 +70,7 @@ func TestConfigEnvironmentMapping(t *testing.T) {
 		"PrivyVerificationKey":       "PRIVY_VERIFICATION_KEY",
 		"LogLevel":                   "LOG_LEVEL",
 		"APIAddr":                    "API_ADDR",
+		"APIAllowedOrigins":          "API_ALLOWED_ORIGINS",
 		"IndexerHealthAddr":          "INDEXER_HEALTH_ADDR",
 		"IndexerChunkSize":           "INDEXER_CHUNK_SIZE",
 		"IndexerLogAddressBatchSize": "INDEXER_LOG_ADDRESS_BATCH_SIZE",
@@ -91,6 +92,22 @@ func TestConfigEnvironmentMapping(t *testing.T) {
 		if got := field.Tag.Get("env"); got != want[field.Name] {
 			t.Errorf("Config.%s env tag = %q, want %q", field.Name, got, want[field.Name])
 		}
+	}
+}
+
+func TestAPIAllowedOrigins(t *testing.T) {
+	env := validEnvironment()
+	env["API_ALLOWED_ORIGINS"] = "https://app.example,http://localhost:3000"
+	got, err := Load(mapGetenv(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.APIAllowedOrigins) != 2 {
+		t.Fatalf("origins=%v", got.APIAllowedOrigins)
+	}
+	env["API_ALLOWED_ORIGINS"] = "*"
+	if _, err := Load(mapGetenv(env)); err == nil {
+		t.Fatal("wildcard origin accepted")
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/Contictus/launchtap/backend/deployments"
 	"github.com/Contictus/launchtap/backend/internal/apiserver"
 	"github.com/Contictus/launchtap/backend/internal/config"
+	"github.com/Contictus/launchtap/backend/internal/quote"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
 )
 
@@ -41,12 +42,33 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
-	ready := apiserver.ReadyFunc(func(ctx context.Context) error { return pool.Ping(ctx) })
-	server := apiserver.New(apiserver.DefaultConfig(), ready, slog.Default())
+	readyStore := storepostgres.NewAdapter(pool)
+	ready := apiserver.ReadyFunc(func(ctx context.Context) error {
+		if err := pool.Ping(ctx); err != nil {
+			return err
+		}
+		state, err := readyStore.GetSyncState(ctx, int64(c.ChainID), c.DeploymentID)
+		if err != nil {
+			return err
+		}
+		if !state.ObservedNumber.Valid || state.ObservedHash == nil || !state.ObservedAt.Valid {
+			return errors.New("indexed watermark is incomplete")
+		}
+		return nil
+	})
+	apiConfig := apiserver.DefaultConfig()
+	apiConfig.AllowedOrigins = c.APIAllowedOrigins
+	server := apiserver.New(apiConfig, ready, slog.Default())
 	server.RegisterTokenRoutes(apiserver.TokenRoutes{Reader: storepostgres.TokenReader{Pool: pool, DeploymentID: c.DeploymentID}, ChainID: int64(c.ChainID)})
 	server.RegisterCandleRoutes(apiserver.CandleRoutes{Reader: storepostgres.CandleReader{Pool: pool, DeploymentID: c.DeploymentID}, ChainID: int64(c.ChainID)})
+	tokens := storepostgres.TokenReader{Pool: pool, DeploymentID: c.DeploymentID}
+	market := storepostgres.MarketReader{Pool: pool, DeploymentID: c.DeploymentID}
+	protocol := storepostgres.ProtocolReader{Pool: pool, DeploymentID: c.DeploymentID}
+	server.RegisterPublicRoutes(apiserver.PublicRoutes{Tokens: tokens, Market: market, Protocol: protocol, ChainID: int64(c.ChainID)})
+	server.RegisterQuoteRoutes(apiserver.QuoteRoutes{Provider: quote.Service{Reader: tokens, ChainID: int64(c.ChainID)}})
+	server.HTTP.Addr = c.APIAddr
 	errCh := make(chan error, 1)
-	go func() { errCh <- http.ListenAndServe(c.APIAddr, server.Handler) }()
+	go func() { errCh <- server.HTTP.ListenAndServe() }()
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), apiserver.DefaultConfig().ShutdownTimeout)

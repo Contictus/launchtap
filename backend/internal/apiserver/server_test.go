@@ -1,10 +1,14 @@
 package apiserver
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestHealthAndReadiness(t *testing.T) {
@@ -19,6 +23,34 @@ func TestHealthAndReadiness(t *testing.T) {
 		if w.Header().Get("X-Request-ID") == "" {
 			t.Fatalf("%s missing request id", path)
 		}
+	}
+}
+
+func TestServerBoundaries(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AllowedOrigins = []string{"https://app.example"}
+	var logs bytes.Buffer
+	s := New(cfg, ReadyFunc(func(context.Context) error { return nil }), slog.New(slog.NewJSONHandler(&logs, nil)))
+	if s.HTTP.ReadHeaderTimeout != 5*time.Second || s.HTTP.ReadTimeout != 15*time.Second || s.HTTP.WriteTimeout != 15*time.Second || s.HTTP.IdleTimeout != 60*time.Second || s.HTTP.MaxHeaderBytes != 32<<10 {
+		t.Fatal("server timeout or header limits changed")
+	}
+	req := httptest.NewRequest(http.MethodOptions, "/v1/healthz", nil)
+	req.Header.Set("Origin", "https://app.example")
+	req.Header.Set("Authorization", "Bearer secret")
+	w := httptest.NewRecorder()
+	s.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "https://app.example" {
+		t.Fatalf("preflight status=%d headers=%v", w.Code, w.Header())
+	}
+	if strings.Contains(logs.String(), "secret") {
+		t.Fatal("access log leaked authorization")
+	}
+	bad := httptest.NewRequest(http.MethodOptions, "/v1/healthz", nil)
+	bad.Header.Set("Origin", "https://evil.example")
+	badW := httptest.NewRecorder()
+	s.Handler.ServeHTTP(badW, bad)
+	if badW.Code != http.StatusForbidden {
+		t.Fatalf("disallowed origin status=%d", badW.Code)
 	}
 }
 
