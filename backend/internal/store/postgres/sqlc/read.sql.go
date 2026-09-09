@@ -91,6 +91,87 @@ func (q *Queries) ListCandlesAggregated(ctx context.Context, arg ListCandlesAggr
 	return items, nil
 }
 
+const listTokenCardsMarketCap = `-- name: ListTokenCardsMarketCap :many
+SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.launch_block_time, t.total_supply,
+       COALESCE(s.market_cap_eth_wad, 0::numeric) AS market_cap_eth_wad, COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
+       COALESCE(s.holder_count, 0)::BIGINT AS holder_count, m.description, m.image_url, m.x_url, m.telegram_url, t.launch_block_hash
+FROM tokens AS t LEFT JOIN token_metadata AS m USING (chain_id, token_address) LEFT JOIN token_stats AS s USING (chain_id, token_address)
+WHERE t.chain_id = $1 AND t.phase = $2
+  AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%')
+  AND ($4::numeric IS NULL OR (COALESCE(s.market_cap_eth_wad,0::numeric), t.token_address) < ($4::numeric, $5::bytea))
+ORDER BY COALESCE(s.market_cap_eth_wad,0::numeric) DESC, t.token_address DESC LIMIT $6::integer
+`
+
+type ListTokenCardsMarketCapParams struct {
+	ChainID      int64
+	Phase        string
+	Search       string
+	AfterMetric  pgtype.Numeric
+	AfterAddress []byte
+	PageSize     int32
+}
+
+type ListTokenCardsMarketCapRow struct {
+	TokenAddress      Address
+	Name              string
+	Symbol            string
+	Phase             string
+	LaunchBlockNumber int64
+	LaunchBlockTime   pgtype.Timestamptz
+	TotalSupply       Uint256
+	MarketCapEthWad   Uint256
+	Volume24hEthWad   Uint256
+	HolderCount       int64
+	Description       pgtype.Text
+	ImageUrl          pgtype.Text
+	XUrl              pgtype.Text
+	TelegramUrl       pgtype.Text
+	LaunchBlockHash   Hash
+}
+
+func (q *Queries) ListTokenCardsMarketCap(ctx context.Context, arg ListTokenCardsMarketCapParams) ([]ListTokenCardsMarketCapRow, error) {
+	rows, err := q.db.Query(ctx, listTokenCardsMarketCap,
+		arg.ChainID,
+		arg.Phase,
+		arg.Search,
+		arg.AfterMetric,
+		arg.AfterAddress,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTokenCardsMarketCapRow{}
+	for rows.Next() {
+		var i ListTokenCardsMarketCapRow
+		if err := rows.Scan(
+			&i.TokenAddress,
+			&i.Name,
+			&i.Symbol,
+			&i.Phase,
+			&i.LaunchBlockNumber,
+			&i.LaunchBlockTime,
+			&i.TotalSupply,
+			&i.MarketCapEthWad,
+			&i.Volume24hEthWad,
+			&i.HolderCount,
+			&i.Description,
+			&i.ImageUrl,
+			&i.XUrl,
+			&i.TelegramUrl,
+			&i.LaunchBlockHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTokenCardsNewest = `-- name: ListTokenCardsNewest :many
 SELECT t.token_address, t.name, t.symbol, t.phase,
        t.launch_block_number, t.launch_block_time, t.total_supply,
@@ -156,6 +237,168 @@ func (q *Queries) ListTokenCardsNewest(ctx context.Context, arg ListTokenCardsNe
 	items := []ListTokenCardsNewestRow{}
 	for rows.Next() {
 		var i ListTokenCardsNewestRow
+		if err := rows.Scan(
+			&i.TokenAddress,
+			&i.Name,
+			&i.Symbol,
+			&i.Phase,
+			&i.LaunchBlockNumber,
+			&i.LaunchBlockTime,
+			&i.TotalSupply,
+			&i.MarketCapEthWad,
+			&i.Volume24hEthWad,
+			&i.HolderCount,
+			&i.Description,
+			&i.ImageUrl,
+			&i.XUrl,
+			&i.TelegramUrl,
+			&i.LaunchBlockHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTokenCardsOldest = `-- name: ListTokenCardsOldest :many
+SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.launch_block_time, t.total_supply,
+       COALESCE(s.market_cap_eth_wad, 0::numeric) AS market_cap_eth_wad, COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
+       COALESCE(s.holder_count, 0)::BIGINT AS holder_count, m.description, m.image_url, m.x_url, m.telegram_url, t.launch_block_hash
+FROM tokens AS t LEFT JOIN token_metadata AS m USING (chain_id, token_address) LEFT JOIN token_stats AS s USING (chain_id, token_address)
+WHERE t.chain_id = $1 AND t.phase = $2
+  AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%')
+  AND ($4::bigint IS NULL OR (t.launch_block_number, t.token_address) > ($4::bigint, $5::bytea))
+ORDER BY t.launch_block_number ASC, t.token_address ASC LIMIT $6::integer
+`
+
+type ListTokenCardsOldestParams struct {
+	ChainID      int64
+	Phase        string
+	Search       string
+	AfterBlock   pgtype.Int8
+	AfterAddress []byte
+	PageSize     int32
+}
+
+type ListTokenCardsOldestRow struct {
+	TokenAddress      Address
+	Name              string
+	Symbol            string
+	Phase             string
+	LaunchBlockNumber int64
+	LaunchBlockTime   pgtype.Timestamptz
+	TotalSupply       Uint256
+	MarketCapEthWad   Uint256
+	Volume24hEthWad   Uint256
+	HolderCount       int64
+	Description       pgtype.Text
+	ImageUrl          pgtype.Text
+	XUrl              pgtype.Text
+	TelegramUrl       pgtype.Text
+	LaunchBlockHash   Hash
+}
+
+func (q *Queries) ListTokenCardsOldest(ctx context.Context, arg ListTokenCardsOldestParams) ([]ListTokenCardsOldestRow, error) {
+	rows, err := q.db.Query(ctx, listTokenCardsOldest,
+		arg.ChainID,
+		arg.Phase,
+		arg.Search,
+		arg.AfterBlock,
+		arg.AfterAddress,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTokenCardsOldestRow{}
+	for rows.Next() {
+		var i ListTokenCardsOldestRow
+		if err := rows.Scan(
+			&i.TokenAddress,
+			&i.Name,
+			&i.Symbol,
+			&i.Phase,
+			&i.LaunchBlockNumber,
+			&i.LaunchBlockTime,
+			&i.TotalSupply,
+			&i.MarketCapEthWad,
+			&i.Volume24hEthWad,
+			&i.HolderCount,
+			&i.Description,
+			&i.ImageUrl,
+			&i.XUrl,
+			&i.TelegramUrl,
+			&i.LaunchBlockHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTokenCardsVolume = `-- name: ListTokenCardsVolume :many
+SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.launch_block_time, t.total_supply,
+       COALESCE(s.market_cap_eth_wad, 0::numeric) AS market_cap_eth_wad, COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
+       COALESCE(s.holder_count, 0)::BIGINT AS holder_count, m.description, m.image_url, m.x_url, m.telegram_url, t.launch_block_hash
+FROM tokens AS t LEFT JOIN token_metadata AS m USING (chain_id, token_address) LEFT JOIN token_stats AS s USING (chain_id, token_address)
+WHERE t.chain_id = $1 AND t.phase = $2
+  AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%')
+  AND ($4::numeric IS NULL OR (COALESCE(s.volume_24h_eth_wad,0::numeric), t.token_address) < ($4::numeric, $5::bytea))
+ORDER BY COALESCE(s.volume_24h_eth_wad,0::numeric) DESC, t.token_address DESC LIMIT $6::integer
+`
+
+type ListTokenCardsVolumeParams struct {
+	ChainID      int64
+	Phase        string
+	Search       string
+	AfterMetric  pgtype.Numeric
+	AfterAddress []byte
+	PageSize     int32
+}
+
+type ListTokenCardsVolumeRow struct {
+	TokenAddress      Address
+	Name              string
+	Symbol            string
+	Phase             string
+	LaunchBlockNumber int64
+	LaunchBlockTime   pgtype.Timestamptz
+	TotalSupply       Uint256
+	MarketCapEthWad   Uint256
+	Volume24hEthWad   Uint256
+	HolderCount       int64
+	Description       pgtype.Text
+	ImageUrl          pgtype.Text
+	XUrl              pgtype.Text
+	TelegramUrl       pgtype.Text
+	LaunchBlockHash   Hash
+}
+
+func (q *Queries) ListTokenCardsVolume(ctx context.Context, arg ListTokenCardsVolumeParams) ([]ListTokenCardsVolumeRow, error) {
+	rows, err := q.db.Query(ctx, listTokenCardsVolume,
+		arg.ChainID,
+		arg.Phase,
+		arg.Search,
+		arg.AfterMetric,
+		arg.AfterAddress,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTokenCardsVolumeRow{}
+	for rows.Next() {
+		var i ListTokenCardsVolumeRow
 		if err := rows.Scan(
 			&i.TokenAddress,
 			&i.Name,

@@ -74,7 +74,10 @@ type Querier interface {
 	LaunchFeeClaimMatchesEvent(ctx context.Context, arg LaunchFeeClaimMatchesEventParams) (pgtype.Bool, error)
 	LaunchPauseEventMatchesEvent(ctx context.Context, arg LaunchPauseEventMatchesEventParams) (pgtype.Bool, error)
 	ListCandlesAggregated(ctx context.Context, arg ListCandlesAggregatedParams) ([]ListCandlesAggregatedRow, error)
+	ListTokenCardsMarketCap(ctx context.Context, arg ListTokenCardsMarketCapParams) ([]ListTokenCardsMarketCapRow, error)
 	ListTokenCardsNewest(ctx context.Context, arg ListTokenCardsNewestParams) ([]ListTokenCardsNewestRow, error)
+	ListTokenCardsOldest(ctx context.Context, arg ListTokenCardsOldestParams) ([]ListTokenCardsOldestRow, error)
+	ListTokenCardsVolume(ctx context.Context, arg ListTokenCardsVolumeParams) ([]ListTokenCardsVolumeRow, error)
 	ListTokenIdentities(ctx context.Context, chainID int64) ([]ListTokenIdentitiesRow, error)
 	ListTokenPhaseCounts(ctx context.Context, chainID int64) ([]ListTokenPhaseCountsRow, error)
 	MarkPairTokenDirty(ctx context.Context, arg MarkPairTokenDirtyParams) error

@@ -343,7 +343,7 @@ type TokenImage struct {
 	ContentType  string
 	Content      []byte
 	ByteSize     int32
-	Sha256       []byte
+	Sha256       Hash
 	Revision     int64
 	UpdatedAt    pgtype.Timestamptz
 }
