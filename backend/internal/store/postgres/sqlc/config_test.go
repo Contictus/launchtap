@@ -75,6 +75,11 @@ func assertMigrationOverrides(t *testing.T, migration string, overrides []config
 			case "NUMERIC(78,0)":
 				assertOverride(t, qualified, "Uint256", false, overrides)
 			case "BYTEA":
+				// Image content is intentionally variable-length binary data; the
+				// migration bounds it by byte_size rather than a fixed-width codec.
+				if qualified == "token_images.content" {
+					continue
+				}
 				lengthPattern := regexp.MustCompile(`octet_length\(` + regexp.QuoteMeta(column) + `\) = (20|32)`)
 				lengthMatch := lengthPattern.FindStringSubmatch(body)
 				if lengthMatch == nil {

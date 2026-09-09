@@ -73,6 +73,8 @@ type Querier interface {
 	InsertTransfer(ctx context.Context, arg InsertTransferParams) (int64, error)
 	LaunchFeeClaimMatchesEvent(ctx context.Context, arg LaunchFeeClaimMatchesEventParams) (pgtype.Bool, error)
 	LaunchPauseEventMatchesEvent(ctx context.Context, arg LaunchPauseEventMatchesEventParams) (pgtype.Bool, error)
+	ListCandlesAggregated(ctx context.Context, arg ListCandlesAggregatedParams) ([]ListCandlesAggregatedRow, error)
+	ListTokenCardsNewest(ctx context.Context, arg ListTokenCardsNewestParams) ([]ListTokenCardsNewestRow, error)
 	ListTokenIdentities(ctx context.Context, chainID int64) ([]ListTokenIdentitiesRow, error)
 	ListTokenPhaseCounts(ctx context.Context, chainID int64) ([]ListTokenPhaseCountsRow, error)
 	MarkPairTokenDirty(ctx context.Context, arg MarkPairTokenDirtyParams) error
@@ -91,6 +93,8 @@ type Querier interface {
 	RecordIndexerReorg(ctx context.Context, arg RecordIndexerReorgParams) (int64, error)
 	RefundClaimMatchesEvent(ctx context.Context, arg RefundClaimMatchesEventParams) (pgtype.Bool, error)
 	RefundCreditMatchesEvent(ctx context.Context, arg RefundCreditMatchesEventParams) (pgtype.Bool, error)
+	ReplaceTokenImage(ctx context.Context, arg ReplaceTokenImageParams) (int64, error)
+	ReplaceTokenMetadata(ctx context.Context, arg ReplaceTokenMetadataParams) (int64, error)
 	TokenLaunchMatchesEvent(ctx context.Context, arg TokenLaunchMatchesEventParams) (pgtype.Bool, error)
 	TradeMatchesEvent(ctx context.Context, arg TradeMatchesEventParams) (pgtype.Bool, error)
 	TradingPauseEventMatchesEvent(ctx context.Context, arg TradingPauseEventMatchesEventParams) (pgtype.Bool, error)
