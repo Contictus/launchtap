@@ -55,8 +55,8 @@ SELECT min(c.bucket_start_time) AS bucket_start_time,
        max(c.high_price_wad) AS high_price_wad,
        min(c.low_price_wad) AS low_price_wad,
        (array_agg(c.close_price_wad ORDER BY c.bucket_start_time DESC))[1] AS close_price_wad,
-       sum(c.gross_eth_volume) AS gross_eth_volume,
-       sum(c.token_volume) AS token_volume,
+       sum(c.gross_eth_volume)::numeric AS gross_eth_volume,
+       sum(c.token_volume)::numeric AS token_volume,
        sum(c.trade_count)::BIGINT AS trade_count
 FROM candles AS c
 WHERE c.chain_id = sqlc.arg(chain_id)
