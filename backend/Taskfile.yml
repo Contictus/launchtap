@@ -74,6 +74,11 @@ tasks:
     cmds:
       - go run ./cmd/check-deployments
 
+  openapi-diff:
+    desc: Validate the committed deterministic OpenAPI contract.
+    cmds:
+      - go run ./cmd/check-openapi
+
   anvil-indexer-e2e:
     desc: Index a real local Factory launch from Anvil through PostgreSQL.
     cmds:
@@ -94,4 +99,5 @@ tasks:
       - curve-vectors-diff
       - event-abis-diff
       - deployments-diff
+      - openapi-diff
       - anvil-indexer-e2e
