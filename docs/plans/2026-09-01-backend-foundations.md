@@ -3,10 +3,9 @@
 > **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
 > and independent review. This is an implementation task list, not implementation code.
 
-**Status:** Design closed and implemented. All 12 tasks are on `dev`; the repository verification
+**Status:** Design closed and implemented. All 12 tasks are complete; the repository verification
 gate is green (`task verify` is the one reproducible gate, spec §11), and `AGENTS.md`'s
-command/tool tables are filled in. Backend Foundations is complete and will be included in the
-next verified `dev`→`main` milestone together with accepted indexer work.
+command/tool tables are filled in. Backend Foundations is complete and merged to `main`.
 
 **Goal:** Build the backend substrate without prematurely implementing indexer feature
 routing or API endpoints: Go tooling, fail-closed deployment config, PostgreSQL control and

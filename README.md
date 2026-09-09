@@ -12,15 +12,17 @@ indexes canonical chain data and never holds trading funds.
 | Contract Foundations (Tasks 1–12) | Complete |
 | Backend Foundations (Tasks 1–12) | Complete |
 | Backend Indexer (Plan 2, Tasks 1–5) | Code complete; live Robinhood evidence pending |
-| API and identity (Plan 3, Tasks 1–7) | Complete on `dev` |
-| Web client | Not started |
+| API and identity (Plan 3, Tasks 1–7) | Complete |
+| Web client (Plan 4) | Planned; implementation not started |
 
 Plan 2 still needs the external Robinhood probe and reviewed chain-46630 deployment
 manifest before live operation. Its Anvil end-to-end indexer scenario and health surface are
 implemented and included in the backend verification gate. Production Privy credentials,
 origins, hosting configuration, ETH/USD enrichment, and governance inputs remain external
-release prerequisites. Plan 2 and Plan 3 will land on `main` in the next verified milestone
-merge.
+release prerequisites. Plan 2 and Plan 3 form the verified backend milestone. Plan 4 is
+specified in
+[`docs/plans/2026-09-09-web-client.md`](docs/plans/2026-09-09-web-client.md); implementation has
+not started.
 
 ## Repository layout
 
@@ -77,5 +79,7 @@ never runs migrations during startup. Docker is required for PostgreSQL integrat
 6. [`docs/plans/2026-09-01-backend-foundations.md`](docs/plans/2026-09-01-backend-foundations.md)
 7. [`docs/plans/2026-09-05-backend-indexer.md`](docs/plans/2026-09-05-backend-indexer.md)
 8. [`docs/plans/2026-09-08-backend-api-identity.md`](docs/plans/2026-09-08-backend-api-identity.md)
+9. [`docs/specs/2026-09-09-web-client-design.md`](docs/specs/2026-09-09-web-client-design.md)
+10. [`docs/plans/2026-09-09-web-client.md`](docs/plans/2026-09-09-web-client.md)
 
 `dev` is the active implementation branch. `main` contains verified milestones only.

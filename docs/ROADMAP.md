@@ -18,33 +18,37 @@ The Go module, validated configuration, deployment registry, PostgreSQL migratio
 event ledger, projections, sqlc adapters, transaction primitive, and pure Go curve mirror are
 implemented and covered by the repository gates.
 
-### Backend Indexer — implementation delivered; acceptance in progress
+### Backend Indexer — code complete; live acceptance deferred
 
 RPC access, ABI decoding, staged discovery, canonical event persistence, incremental
 projections, advisory ownership, chunk processing, reorg recovery, aggregate recomputation,
-dirty-work polling, notifications, and the initial health endpoint are present on `dev`.
+dirty-work polling, notifications, and the health endpoint are implemented and verified.
 
-The milestone is not closed until the following evidence exists:
+The deterministic implementation gate now includes the Anvil indexer path and live-state health
+surface. Public-network operation still requires:
 
 1. Robinhood mainnet/testnet RPC probe note with finality and `eth_getLogs` measurements.
 2. Reviewed chain-46630 dependency and Launchpad deployment manifest.
-3. Anvil-backed indexer end-to-end test covering launch, trades, graduation, pair activity,
-   reorg, and finality promotion.
-4. Runtime health values populated from live indexer state, not only startup defaults.
-
-## Next milestone — API and identity (Plan 3)
+### API and identity (Plan 3) — code complete
 
 Plan 3 consumes canonical and derived backend state. It owns Huma REST endpoints, finality
 and `asOfBlock` response metadata, Privy access-token and linked-wallet verification, quote
 DTOs, pagination, and SSE streams. It does not redefine ledger semantics or curve formulas.
-Its pre-flight defines seven tasks in
+Its seven completed tasks are defined in
 [`docs/plans/2026-09-08-backend-api-identity.md`](plans/2026-09-08-backend-api-identity.md).
 
-## Later milestone — web delivery
+## Next milestone — web delivery (Plan 4)
 
-The web client will provide Explore, graduated-token lists, token detail and trading views,
-charts, forum/memestock features, analytics, wallet connection, and user-facing error and
-finality states. It will consume Plan 3 contracts rather than query PostgreSQL directly.
+The core web client will provide Explore, graduated-token lists, token detail and trading views,
+charts, analytics, wallet connection, creator metadata, docs, and user-facing transaction and
+finality states. It consumes Plan 3 contracts rather than querying PostgreSQL directly. Its
+design and eight-task plan are in
+[`docs/specs/2026-09-09-web-client-design.md`](specs/2026-09-09-web-client-design.md) and
+[`docs/plans/2026-09-09-web-client.md`](plans/2026-09-09-web-client.md). Implementation has not
+started.
+
+Forum/Memestock remains a later milestone because its persistence, authorization, moderation,
+and API contracts do not exist yet; Plan 4 does not claim it with static fixtures.
 
 ## Deferred operational work
 

@@ -3,7 +3,7 @@
 > **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
 > and independent review. This is an implementation task list, not implementation code.
 
-**Status:** Code implementation is complete on `dev` for all five tasks. This includes ABI
+**Status:** Code implementation is complete for all five tasks. This includes ABI
 artifacts and staged discovery, persistence and incremental projections, indexer ownership and
 chunk processing, reorg recovery, aggregation workers, notifications, the health surface, and
 the automated Anvil end-to-end gate. Task 1's external RPC probe and reviewed chain-46630

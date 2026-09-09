@@ -328,9 +328,12 @@ These do not change contract or backend correctness and are fail-closed or nulla
      `curve/` math (differential test) + `store/` (schema + migration + sqlc + UoW).
      **12 tasks, complete and merged to `main` (tag `v0.2.0`).**
   2. `docs/plans/2026-09-05-backend-indexer.md` — chain infra + sync loop + feature
-     ingestion + aggregation. **5 tasks, written, not started; cross-cutting decisions
-     locked, per-task pre-flights pending.**
-  3. API (apiserver + Privy auth + read endpoints + SSE) — to write.
+     ingestion + aggregation. **5 tasks, code complete; live Robinhood acceptance deferred.**
+  3. `docs/plans/2026-09-08-backend-api-identity.md` — Huma API + Privy auth + read
+     endpoints + SSE. **7 tasks, complete.**
+- `docs/specs/2026-09-09-web-client-design.md` and
+  `docs/plans/2026-09-09-web-client.md` define Plan 4 core web delivery. **8 tasks, planned;
+  implementation not started.** Forum/Memestock remains a separate later plan.
 
 ## Sub-project A — economy & contract parameters (DESIGN CLOSED)
 
@@ -471,9 +474,11 @@ Status: ✅ decided · 🔴 repo-wide, before any code · 🟡 before sub-projec
 - [x] **Backend language** — ✅ Go
 - [x] **Backend API layer** — ✅ REST/JSON via `huma` (no tRPC, no gRPC)
 - [x] **Backend architecture** — ✅ modular monolith, 2 processes, hexagonal + feature modules
-- [x] Repo structure — monorepo: `contracts/ backend/ web/ docs/`; web workspace tooling
-  is selected only when frontend implementation starts
-- [ ] Frontend stack — Next.js (App Router) + TS + Tailwind + shadcn/ui (proposed, not confirmed)
+- [x] Repo structure — monorepo: `contracts/ backend/ web/ docs/`; web workspace tooling is
+  selected in the Plan 4 design and pinned when Task 1 implementation starts
+- [x] Frontend stack — Next.js App Router + strict TypeScript + Tailwind + source-owned
+  shadcn/ui primitives; Privy + wagmi + viem + TanStack Query; Lightweight Charts. Exact
+  versions are pinned in Plan 4 Task 1.
 - [x] DB tooling — pgx/v5 + sqlc + goose; TimescaleDB deferred
 - [ ] Hosting — web: Vercel Hobby · indexer+DB: Railway/Render/Fly/Neon free (deferred)
 - [x] CI + test policy — GitHub Actions; Foundry, Go build/race/lint/sqlc/migration and

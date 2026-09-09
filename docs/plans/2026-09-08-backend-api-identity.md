@@ -4,7 +4,7 @@
 > review. This document closes the planning boundary for Backend Plan 3. It is not
 > implementation code.
 
-**Status:** Complete on `dev`. All seven tasks and locked decisions 1–16 are implemented,
+**Status:** Complete. All seven tasks and locked decisions 1–16 are implemented,
 including the API-facing aggregate fixes, snapshot-bound reads, Huma/OpenAPI surface, public
 market and curve endpoints, Privy authorization boundaries, metadata and image delivery, SSE,
 runtime hardening, and the verification gate. The external Robinhood RPC probe, chain-46630
