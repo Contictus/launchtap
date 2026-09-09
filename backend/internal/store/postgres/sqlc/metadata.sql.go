@@ -32,7 +32,7 @@ type ReplaceTokenImageParams struct {
 	ContentType      string
 	Content          []byte
 	ByteSize         int32
-	Sha256           []byte
+	Sha256           Hash
 	UpdatedAt        pgtype.Timestamptz
 	Creator          Address
 	ExpectedRevision int64
