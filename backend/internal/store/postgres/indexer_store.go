@@ -43,6 +43,9 @@ func (s IndexerStore) Transaction(ctx context.Context, fn func(context.Context, 
 func (a *Adapter) ReadState(ctx context.Context, chainID int64, deployment string) (indexer.State, error) {
 	state, err := a.GetSyncState(ctx, chainID, deployment)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return indexer.State{ChainID: chainID, DeploymentID: deployment}, nil
+		}
 		return indexer.State{}, fmt.Errorf("read indexer state: %w", err)
 	}
 	return indexer.State{ChainID: chainID, DeploymentID: deployment, Observed: syncBlock(chainID, state.ObservedNumber, state.ObservedHash, state.ObservedAt), Safe: syncBlock(chainID, state.SafeNumber, state.SafeHash, state.SafeAt), Finalized: syncBlock(chainID, state.FinalizedNumber, state.FinalizedHash, state.FinalizedAt)}, nil

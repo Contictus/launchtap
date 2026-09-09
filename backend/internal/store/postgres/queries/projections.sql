@@ -57,7 +57,6 @@ WITH deltas AS (
         SELECT $3::bytea AS holder, -$4::numeric AS delta
         WHERE $3::bytea <> decode(repeat('00',20),'hex')
         UNION ALL SELECT $5::bytea AS holder, $4::numeric AS delta
-        WHERE $5::bytea <> decode(repeat('00',20),'hex')
     ) AS legs GROUP BY holder
 ), valid AS (
     SELECT NOT EXISTS (
