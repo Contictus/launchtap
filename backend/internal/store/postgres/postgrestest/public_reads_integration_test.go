@@ -1,0 +1,76 @@
+//go:build integration
+
+package postgrestest
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/Contictus/launchtap/backend/internal/pagination"
+	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
+	"github.com/Contictus/launchtap/backend/internal/token"
+	"github.com/Contictus/launchtap/backend/internal/trading"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func TestPublicReadsUseOneCanonicalSnapshot(t *testing.T) {
+	database := NewMigrated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, database.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	const chainID int64 = 46630
+	const deployment = "api-read-test"
+	at := time.Date(2026, 9, 9, 8, 0, 0, 0, time.UTC)
+	blockHash := hashBytes(0x61)
+	tokenBytes := addressBytes(0x62)
+	mustInsertBlock(t, ctx, database.DB, chainID, 100, blockHash, hashBytes(0x60), at, "safe")
+	insertProjectionLaunch(t, ctx, database.DB, chainID, 100, blockHash, at, hashBytes(0x63), projectionLaunchFixture{token: tokenBytes, curve: addressBytes(0x64), pair: addressBytes(0x65), weth: addressBytes(0x66)})
+	insertProjectionTrade(t, ctx, database.DB, chainID, 100, blockHash, at, hashBytes(0x67), 1, tokenBytes, 100, 110, 900000)
+	if _, err := database.DB.ExecContext(ctx, `SELECT rebuild_token_projections($1,$2)`, chainID, tokenBytes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.DB.ExecContext(ctx, `INSERT INTO sync_state(chain_id,deployment_id,observed_number,observed_hash,observed_at,safe_number,safe_hash,safe_at) VALUES($1,$2,100,$3,$4,100,$3,$4)`, chainID, deployment, blockHash, at); err != nil {
+		t.Fatal(err)
+	}
+	tokens := storepostgres.TokenReader{Pool: pool, DeploymentID: deployment}
+	detail, err := tokens.Get(ctx, chainID, common.BytesToAddress(tokenBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Snapshot.BlockNumber != 100 || detail.Finality != "safe" || detail.ETHReserve.String() != "110" {
+		t.Fatalf("detail=%+v", detail)
+	}
+	page, err := tokens.List(ctx, token.ListQuery{ChainID: chainID, Phase: "curve", Sort: "newest", Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Finality != "safe" {
+		t.Fatalf("page=%+v", page)
+	}
+	one, err := tokens.List(ctx, token.ListQuery{ChainID: chainID, Phase: "curve", Sort: "newest", Limit: 1})
+	if err != nil || one.NextCursor == "" {
+		t.Fatalf("first cursor page=%+v err=%v", one, err)
+	}
+	decoded, err := pagination.Decode(one.NextCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = tokens.List(ctx, token.ListQuery{ChainID: chainID, Phase: "graduated", Sort: "newest", Limit: 1, Cursor: &decoded})
+	if !errors.Is(err, pagination.ErrInvalidCursor) {
+		t.Fatalf("changed phase accepted: %v", err)
+	}
+	trades, err := (storepostgres.MarketReader{Pool: pool, DeploymentID: deployment}).ListTrades(ctx, trading.Query{ChainID: chainID, Token: common.BytesToAddress(tokenBytes), Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trades.Items) != 1 || trades.Items[0].ETHVolume.String() != "100" {
+		t.Fatalf("trades=%+v", trades)
+	}
+}

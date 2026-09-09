@@ -112,6 +112,20 @@ type IndexedBlock struct {
 	FinalityStatus string
 }
 
+type IndexerReorg struct {
+	ReorgID              int64
+	ChainID              int64
+	DeploymentID         string
+	DetectedTipNumber    int64
+	DetectedTipHash      Hash
+	CommonAncestorNumber int64
+	CommonAncestorHash   Hash
+	Depth                int64
+	DetectedAt           pgtype.Timestamptz
+	Outcome              string
+	CompletedAt          pgtype.Timestamptz
+}
+
 type LaunchFeeClaim struct {
 	ChainID          int64
 	BlockNumber      int64
@@ -323,6 +337,17 @@ type Token struct {
 	TokenIsToken0         bool
 }
 
+type TokenImage struct {
+	ChainID      int64
+	TokenAddress Address
+	ContentType  string
+	Content      []byte
+	ByteSize     int32
+	Sha256       Hash
+	Revision     int64
+	UpdatedAt    pgtype.Timestamptz
+}
+
 type TokenLaunch struct {
 	ChainID          int64
 	BlockNumber      int64
@@ -359,6 +384,7 @@ type TokenMetadatum struct {
 	XUrl         pgtype.Text
 	TelegramUrl  pgtype.Text
 	UpdatedAt    pgtype.Timestamptz
+	Revision     int64
 }
 
 type TokenReserf struct {

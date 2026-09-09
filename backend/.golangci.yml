@@ -36,6 +36,45 @@ linters:
             - strconv
             - strings
             - testing
+            - time
+        chain-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/chain/*.go"
+            - "**/internal/chain/**/*.go"
+          allow:
+            - $gostd
+            - github.com/Contictus/launchtap/backend/deployments
+            - github.com/ethereum/go-ethereum
+            - github.com/ethereum/go-ethereum/accounts/abi
+            - github.com/ethereum/go-ethereum/common
+            - github.com/ethereum/go-ethereum/core/types
+            - github.com/ethereum/go-ethereum/crypto
+            - github.com/ethereum/go-ethereum/ethclient
+            - github.com/ethereum/go-ethereum/rpc
+        ledger-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/ledger/*.go"
+            - "**/internal/ledger/**/*.go"
+          allow:
+            - $gostd
+            - github.com/ethereum/go-ethereum/common
+        privyauth-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/privyauth/*.go"
+            - "**/internal/privyauth/**/*.go"
+          allow:
+            - $gostd
+            - github.com/ethereum/go-ethereum/common
+        realtime-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/realtime/*.go"
+            - "**/internal/realtime/**/*.go"
+          allow:
+            - $gostd
         deployments-boundary:
           list-mode: strict
           files:
@@ -70,6 +109,7 @@ linters:
             - "**/internal/holder/*.go"
             - "**/internal/candle/*.go"
             - "**/internal/stats/*.go"
+            - "**/internal/quote/*.go"
             - "**/internal/metadata/*.go"
             - "**/domain/*.go"
             - "**/application/*.go"

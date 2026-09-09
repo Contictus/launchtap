@@ -240,7 +240,7 @@ payload column against the value it just tried to insert. Identical → idempote
 no error. Different → a typed conflict/invariant error, never silently swallowed and
 never silently overwritten. Task 8 builds this wrapper for `trades`, `launch_pause_events`,
 and `indexed_blocks` (representative scope, below); the same pattern applies to the other
-15 event tables when Plan 2 needs them.
+16 event tables when Plan 2 needs them.
 
 **Representative scope, not all 21 tables.** Task 8 writes hand-crafted queries for
 exactly: `trades` (a per-token event carrying the graduation-ordering trigger),
@@ -248,9 +248,12 @@ exactly: `trades` (a per-token event carrying the graduation-ordering trigger),
 and `indexed_blocks` (the block ledger itself — insert/upsert, plus
 `GetIndexedBlockByNumber`/`GetIndexedBlockByHash` link lookups), plus watermark upsert
 queries (`sync_state`) and a wrapper for `rebuild_token_projections` (§5.2) and the
-dirty-work claim/complete queries below. The remaining 15 event tables get their insert
+dirty-work claim/complete queries below. The remaining 16 event tables get their insert
 query added on demand in Plan 2, by copying this proven pattern — not pre-built here with
-no consumer, matching this plan's own "no indexer runtime is wired" boundary.
+no consumer, matching this plan's own "no indexer runtime is wired" boundary. (There are 18
+event tables in §5.1; `indexed_blocks` is the block ledger, not one of them, so two of the
+18 are covered here and 16 remain — an earlier revision of this paragraph subtracted all
+three named tables from 18 and said 15.)
 
 **Common-ancestor walk stays out of Task 8's permanent API.** The candidate-chain
 parameter shape depends on what Plan 2's RPC-backed reorg detector actually has on hand at

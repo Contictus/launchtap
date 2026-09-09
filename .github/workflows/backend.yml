@@ -8,6 +8,8 @@ on:
       - "backend/**"
       - "contracts/deployments/**"
       - "contracts/vectors/**"
+      - "contracts/abi/v1/**"
+      - "contracts/fixtures/**"
       - ".gitattributes"
       - ".github/workflows/backend.yml"
   pull_request:
@@ -17,6 +19,8 @@ on:
       - "backend/**"
       - "contracts/deployments/**"
       - "contracts/vectors/**"
+      - "contracts/abi/v1/**"
+      - "contracts/fixtures/**"
       - ".gitattributes"
       - ".github/workflows/backend.yml"
   workflow_dispatch:
@@ -57,12 +61,19 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          submodules: recursive
 
       - name: Install Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
           cache: false
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+          cache: true
 
       - name: Run backend gate
         run: go run github.com/go-task/task/v3/cmd/task@v3.53.1 verify
@@ -76,5 +87,18 @@ jobs:
           go test -tags=integration -race -v -run '^TestMigrationsUpDownUp$' ./internal/store/postgres/... 2>&1 | tee "$output_file"
           grep -Fq -- '--- PASS: TestMigrationsUpDownUp' "$output_file"
           if grep -Eq -- '--- (SKIP|FAIL): TestMigrationsUpDownUp' "$output_file"; then
+            exit 1
+          fi
+
+      - name: Prove API integration and OpenAPI sentinels executed
+        shell: bash
+        run: |
+          set -o pipefail
+          output_file="$(mktemp)"
+          trap 'rm -f "$output_file"' EXIT
+          go test -tags=integration -race -v -run '^(TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically|TestOpenAPIContractIncludesPlan3Endpoints)$' ./internal/apiserver ./internal/store/postgres/postgrestest 2>&1 | tee "$output_file"
+          grep -Fq -- '--- PASS: TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically' "$output_file"
+          grep -Fq -- '--- PASS: TestOpenAPIContractIncludesPlan3Endpoints' "$output_file"
+          if grep -Eq -- '--- (SKIP|FAIL): (TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically|TestOpenAPIContractIncludesPlan3Endpoints)' "$output_file"; then
             exit 1
           fi

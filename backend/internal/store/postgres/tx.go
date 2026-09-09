@@ -7,17 +7,30 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const rollbackTimeout = 5 * time.Second
+
+// TransactionBeginner is implemented by both pgxpool.Pool and an owned pgx.Conn.
+// The transaction lifecycle remains identical for both connection sources.
+type TransactionBeginner interface {
+	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+}
+
+// CommitOutcomeError marks a commit that was not acknowledged successfully.
+// Callers must stop and replay from durable state, never report a clean shutdown.
+type CommitOutcomeError struct{ Err error }
+
+func (e *CommitOutcomeError) Error() string { return "commit outcome not confirmed: " + e.Err.Error() }
+func (e *CommitOutcomeError) Unwrap() error { return e.Err }
 
 // WithinTx runs fn against an Adapter bound to one READ COMMITTED transaction.
 // The callback must not retain the adapter after it returns.
 func WithinTx(
 	ctx context.Context,
-	pool *pgxpool.Pool,
+	pool TransactionBeginner,
 	fn func(context.Context, *Adapter) error,
 ) (err error) {
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
@@ -41,7 +54,7 @@ func WithinTx(
 		return rollbackWithCause(tx, fmt.Errorf("transaction context: %w", contextErr))
 	}
 	if commitErr := tx.Commit(ctx); commitErr != nil {
-		return rollbackWithCause(tx, fmt.Errorf("commit transaction: %w", commitErr))
+		return rollbackWithCause(tx, &CommitOutcomeError{Err: errors.Join(indexer.ErrUnknownTransactionOutcome, commitErr)})
 	}
 	return nil
 }

@@ -6,19 +6,112 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	AffectedTokensAbove(ctx context.Context, arg AffectedTokensAboveParams) ([]Address, error)
+	ApplyGraduationProjection(ctx context.Context, arg ApplyGraduationProjectionParams) error
+	ApplyMarketTradeCandles(ctx context.Context, arg ApplyMarketTradeCandlesParams) error
+	ApplyPoolSyncReserveProjection(ctx context.Context, arg ApplyPoolSyncReserveProjectionParams) error
+	ApplyTokenLaunchProjection(ctx context.Context, arg ApplyTokenLaunchProjectionParams) error
+	ApplyTradeReserveProjection(ctx context.Context, arg ApplyTradeReserveProjectionParams) error
+	ApplyTransferProjection(ctx context.Context, arg ApplyTransferProjectionParams) (pgtype.Bool, error)
 	ClaimAggregationDirty(ctx context.Context, arg ClaimAggregationDirtyParams) ([]ClaimAggregationDirtyRow, error)
+	ClearOrphanProjections(ctx context.Context, arg ClearOrphanProjectionsParams) error
+	ClearProtocolDaily(ctx context.Context, chainID int64) error
 	CompleteAggregationDirty(ctx context.Context, arg CompleteAggregationDirtyParams) (int64, error)
+	CompleteIndexerReorg(ctx context.Context, reorgID int64) (CompleteIndexerReorgRow, error)
+	CreatorFeeClaimMatchesEvent(ctx context.Context, arg CreatorFeeClaimMatchesEventParams) (pgtype.Bool, error)
+	DeleteCreatorFeeClaimsAbove(ctx context.Context, arg DeleteCreatorFeeClaimsAboveParams) (int64, error)
+	DeleteEngineConfigurationsAbove(ctx context.Context, arg DeleteEngineConfigurationsAboveParams) (int64, error)
+	DeleteFutureDefaultsConfigurationsAbove(ctx context.Context, arg DeleteFutureDefaultsConfigurationsAboveParams) (int64, error)
+	DeleteFutureTreasuryConfigurationsAbove(ctx context.Context, arg DeleteFutureTreasuryConfigurationsAboveParams) (int64, error)
+	DeleteGraduationsAbove(ctx context.Context, arg DeleteGraduationsAboveParams) (int64, error)
+	DeleteIndexedBlocksAbove(ctx context.Context, arg DeleteIndexedBlocksAboveParams) (int64, error)
+	DeleteLaunchFeeClaimsAbove(ctx context.Context, arg DeleteLaunchFeeClaimsAboveParams) (int64, error)
+	DeleteLaunchPauseEventsAbove(ctx context.Context, arg DeleteLaunchPauseEventsAboveParams) (int64, error)
+	DeletePoolBurnsAbove(ctx context.Context, arg DeletePoolBurnsAboveParams) (int64, error)
+	DeletePoolMintsAbove(ctx context.Context, arg DeletePoolMintsAboveParams) (int64, error)
+	DeletePoolSwapsAbove(ctx context.Context, arg DeletePoolSwapsAboveParams) (int64, error)
+	DeletePoolSyncsAbove(ctx context.Context, arg DeletePoolSyncsAboveParams) (int64, error)
+	DeleteProtocolFeeClaimsAbove(ctx context.Context, arg DeleteProtocolFeeClaimsAboveParams) (int64, error)
+	DeleteRefundClaimsAbove(ctx context.Context, arg DeleteRefundClaimsAboveParams) (int64, error)
+	DeleteRefundCreditsAbove(ctx context.Context, arg DeleteRefundCreditsAboveParams) (int64, error)
+	DeleteTokenLaunchesAbove(ctx context.Context, arg DeleteTokenLaunchesAboveParams) (int64, error)
+	DeleteTokenStats(ctx context.Context, arg DeleteTokenStatsParams) (int64, error)
+	DeleteTradesAbove(ctx context.Context, arg DeleteTradesAboveParams) (int64, error)
+	DeleteTradingPauseEventsAbove(ctx context.Context, arg DeleteTradingPauseEventsAboveParams) (int64, error)
+	DeleteTransfersAbove(ctx context.Context, arg DeleteTransfersAboveParams) (int64, error)
+	EngineConfigurationMatchesEvent(ctx context.Context, arg EngineConfigurationMatchesEventParams) (pgtype.Bool, error)
+	FindCommonAncestor(ctx context.Context, arg FindCommonAncestorParams) (FindCommonAncestorRow, error)
+	FutureDefaultsConfigurationMatchesEvent(ctx context.Context, arg FutureDefaultsConfigurationMatchesEventParams) (pgtype.Bool, error)
+	FutureTreasuryConfigurationMatchesEvent(ctx context.Context, arg FutureTreasuryConfigurationMatchesEventParams) (pgtype.Bool, error)
 	GetIndexedBlockByHash(ctx context.Context, arg GetIndexedBlockByHashParams) (IndexedBlock, error)
 	GetIndexedBlockByNumber(ctx context.Context, arg GetIndexedBlockByNumberParams) (IndexedBlock, error)
-	GetLaunchPauseEventByIdentity(ctx context.Context, arg GetLaunchPauseEventByIdentityParams) (LaunchPauseEvent, error)
+	GetProtocolStats(ctx context.Context, chainID int64) (GetProtocolStatsRow, error)
 	GetSyncState(ctx context.Context, arg GetSyncStateParams) (SyncState, error)
-	GetTradeByEventIdentity(ctx context.Context, arg GetTradeByEventIdentityParams) (Trade, error)
+	GetTokenCreatorForUpdate(ctx context.Context, arg GetTokenCreatorForUpdateParams) (Address, error)
+	GetTokenDetail(ctx context.Context, arg GetTokenDetailParams) (GetTokenDetailRow, error)
+	GetTokenImage(ctx context.Context, arg GetTokenImageParams) (GetTokenImageRow, error)
+	GetTokenQuoteState(ctx context.Context, arg GetTokenQuoteStateParams) (GetTokenQuoteStateRow, error)
+	GraduationMatchesEvent(ctx context.Context, arg GraduationMatchesEventParams) (pgtype.Bool, error)
+	HasCanonicalLaunch(ctx context.Context, arg HasCanonicalLaunchParams) (bool, error)
+	InsertCreatorFeeClaim(ctx context.Context, arg InsertCreatorFeeClaimParams) (int64, error)
+	InsertEngineConfiguration(ctx context.Context, arg InsertEngineConfigurationParams) (int64, error)
+	InsertFutureDefaultsConfiguration(ctx context.Context, arg InsertFutureDefaultsConfigurationParams) (int64, error)
+	InsertFutureTreasuryConfiguration(ctx context.Context, arg InsertFutureTreasuryConfigurationParams) (int64, error)
+	InsertGraduation(ctx context.Context, arg InsertGraduationParams) (int64, error)
+	InsertLaunchFeeClaim(ctx context.Context, arg InsertLaunchFeeClaimParams) (int64, error)
 	InsertLaunchPauseEvent(ctx context.Context, arg InsertLaunchPauseEventParams) (int64, error)
+	InsertPoolBurn(ctx context.Context, arg InsertPoolBurnParams) (int64, error)
+	InsertPoolMint(ctx context.Context, arg InsertPoolMintParams) (int64, error)
+	InsertPoolSwap(ctx context.Context, arg InsertPoolSwapParams) (int64, error)
+	InsertPoolSync(ctx context.Context, arg InsertPoolSyncParams) (int64, error)
+	InsertProtocolFeeClaim(ctx context.Context, arg InsertProtocolFeeClaimParams) (int64, error)
+	InsertRefundClaim(ctx context.Context, arg InsertRefundClaimParams) (int64, error)
+	InsertRefundCredit(ctx context.Context, arg InsertRefundCreditParams) (int64, error)
+	InsertTokenLaunch(ctx context.Context, arg InsertTokenLaunchParams) (int64, error)
 	InsertTrade(ctx context.Context, arg InsertTradeParams) (int64, error)
+	InsertTradingPauseEvent(ctx context.Context, arg InsertTradingPauseEventParams) (int64, error)
+	InsertTransfer(ctx context.Context, arg InsertTransferParams) (int64, error)
+	LaunchFeeClaimMatchesEvent(ctx context.Context, arg LaunchFeeClaimMatchesEventParams) (pgtype.Bool, error)
+	LaunchPauseEventMatchesEvent(ctx context.Context, arg LaunchPauseEventMatchesEventParams) (pgtype.Bool, error)
+	ListCandlesAggregated(ctx context.Context, arg ListCandlesAggregatedParams) ([]ListCandlesAggregatedRow, error)
+	ListMarketTrades(ctx context.Context, arg ListMarketTradesParams) ([]ListMarketTradesRow, error)
+	ListStoredCandles(ctx context.Context, arg ListStoredCandlesParams) ([]ListStoredCandlesRow, error)
+	ListTokenCardsMarketCap(ctx context.Context, arg ListTokenCardsMarketCapParams) ([]ListTokenCardsMarketCapRow, error)
+	ListTokenCardsNewest(ctx context.Context, arg ListTokenCardsNewestParams) ([]ListTokenCardsNewestRow, error)
+	ListTokenCardsOldest(ctx context.Context, arg ListTokenCardsOldestParams) ([]ListTokenCardsOldestRow, error)
+	ListTokenCardsVolume(ctx context.Context, arg ListTokenCardsVolumeParams) ([]ListTokenCardsVolumeRow, error)
+	ListTokenHolders(ctx context.Context, arg ListTokenHoldersParams) ([]ListTokenHoldersRow, error)
+	ListTokenIdentities(ctx context.Context, chainID int64) ([]ListTokenIdentitiesRow, error)
+	ListTokenPhaseCounts(ctx context.Context, chainID int64) ([]ListTokenPhaseCountsRow, error)
+	MarkPairTokenDirty(ctx context.Context, arg MarkPairTokenDirtyParams) error
+	MarkTokenDirty(ctx context.Context, arg MarkTokenDirtyParams) error
+	NotifyAPIRefresh(ctx context.Context, payload string) error
+	PoolBurnMatchesEvent(ctx context.Context, arg PoolBurnMatchesEventParams) (pgtype.Bool, error)
+	PoolMintMatchesEvent(ctx context.Context, arg PoolMintMatchesEventParams) (pgtype.Bool, error)
+	PoolSwapMatchesEvent(ctx context.Context, arg PoolSwapMatchesEventParams) (pgtype.Bool, error)
+	PoolSyncMatchesEvent(ctx context.Context, arg PoolSyncMatchesEventParams) (pgtype.Bool, error)
+	PromoteIndexedBlocks(ctx context.Context, arg PromoteIndexedBlocksParams) error
+	ProtocolFeeClaimMatchesEvent(ctx context.Context, arg ProtocolFeeClaimMatchesEventParams) (pgtype.Bool, error)
+	ReadOperationalHealth(ctx context.Context, arg ReadOperationalHealthParams) (ReadOperationalHealthRow, error)
 	RebuildTokenProjections(ctx context.Context, arg RebuildTokenProjectionsParams) error
+	RecomputeProtocolDaily(ctx context.Context, chainID int64) error
+	RecomputeProtocolStats(ctx context.Context, chainID int64) error
+	RecomputeTokenStats(ctx context.Context, arg RecomputeTokenStatsParams) error
+	RecordIndexerReorg(ctx context.Context, arg RecordIndexerReorgParams) (int64, error)
+	RefundClaimMatchesEvent(ctx context.Context, arg RefundClaimMatchesEventParams) (pgtype.Bool, error)
+	RefundCreditMatchesEvent(ctx context.Context, arg RefundCreditMatchesEventParams) (pgtype.Bool, error)
+	ReplaceTokenImage(ctx context.Context, arg ReplaceTokenImageParams) (int64, error)
+	ReplaceTokenMetadata(ctx context.Context, arg ReplaceTokenMetadataParams) (int64, error)
+	TokenExists(ctx context.Context, arg TokenExistsParams) (bool, error)
+	TokenLaunchMatchesEvent(ctx context.Context, arg TokenLaunchMatchesEventParams) (pgtype.Bool, error)
+	TradeMatchesEvent(ctx context.Context, arg TradeMatchesEventParams) (pgtype.Bool, error)
+	TradingPauseEventMatchesEvent(ctx context.Context, arg TradingPauseEventMatchesEventParams) (pgtype.Bool, error)
+	TransferMatchesEvent(ctx context.Context, arg TransferMatchesEventParams) (pgtype.Bool, error)
 	UpsertIndexedBlock(ctx context.Context, arg UpsertIndexedBlockParams) (int64, error)
 	UpsertSyncState(ctx context.Context, arg UpsertSyncStateParams) (SyncState, error)
 }

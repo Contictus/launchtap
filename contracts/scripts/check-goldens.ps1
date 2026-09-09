@@ -141,6 +141,19 @@ try {
     ))
     Compare-OrWrite (Join-Path $contractsRoot "abi/v1/ILaunchEvents.json") $eventAbi
 
+    $pairEventAbiObject = Invoke-ForgeJson @("inspect", "IUniswapV2Pair", "abi", "--json")
+    $pairEventAbi = @($pairEventAbiObject | Where-Object { $_.type -eq "event" })
+    if (@($pairEventAbi).Count -ne 4) {
+        Fail "IUniswapV2Pair event ABI must contain exactly Mint, Burn, Swap, and Sync"
+    }
+    $pairEventNames = @($pairEventAbi | ForEach-Object { [string] $_.name } | Sort-Object)
+    if (($pairEventNames -join "`n") -ne ((@("Burn", "Mint", "Swap", "Sync") | Sort-Object) -join "`n")) {
+        Fail "IUniswapV2Pair event ABI has drifted"
+    }
+    Compare-OrWrite `
+        (Join-Path $contractsRoot "abi/v1/IUniswapV2PairEvents.json") `
+        (ConvertTo-StableJson $pairEventAbi)
+
     $tokenAbiObject = Invoke-ForgeJson @("inspect", "LaunchToken", "abi", "--json")
     $tokenCallables = @(
         foreach ($entry in $tokenAbiObject) {

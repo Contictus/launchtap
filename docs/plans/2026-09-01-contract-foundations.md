@@ -3,8 +3,10 @@
 > **Workflow:** `AGENTS.md` governs pre-flight, implementation, verification, commit,
 > and independent review. Every task in this plan is security-sensitive.
 
-**Status:** Design closed; do not start until the user authorizes implementation and the
-contract pre-flight finds no blocker.
+**Status:** Complete. All 12 tasks were implemented, independently reviewed, and merged to
+`main`. The contract release gate covers build, unit and invariant tests, deployment artifact
+verification, and the pinned Robinhood mainnet-fork acceptance path. Live testnet deployment
+remains an operational prerequisite tracked outside this completed implementation plan.
 
 **Goal:** Implement and verify the immutable V1 launch engine defined by
 `docs/specs/2026-09-01-contract-core-design.md`, including deterministic integer behavior,

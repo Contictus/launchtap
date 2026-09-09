@@ -11,72 +11,400 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getLaunchPauseEventByIdentity = `-- name: GetLaunchPauseEventByIdentity :one
-SELECT chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, paused
-FROM launch_pause_events
-WHERE chain_id = $1 AND tx_hash = $2 AND log_index = $3
+const creatorFeeClaimMatchesEvent = `-- name: CreatorFeeClaimMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND token_address=$8 AND creator=$9 AND amount=$10
+FROM creator_fee_claims WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
 `
 
-type GetLaunchPauseEventByIdentityParams struct {
-	ChainID  int64
-	TxHash   Hash
-	LogIndex int32
+type CreatorFeeClaimMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Creator          Address
+	Amount           Uint256
 }
 
-func (q *Queries) GetLaunchPauseEventByIdentity(ctx context.Context, arg GetLaunchPauseEventByIdentityParams) (LaunchPauseEvent, error) {
-	row := q.db.QueryRow(ctx, getLaunchPauseEventByIdentity, arg.ChainID, arg.TxHash, arg.LogIndex)
-	var i LaunchPauseEvent
-	err := row.Scan(
-		&i.ChainID,
-		&i.BlockNumber,
-		&i.BlockHash,
-		&i.BlockTime,
-		&i.TransactionIndex,
-		&i.TxHash,
-		&i.LogIndex,
-		&i.Paused,
+func (q *Queries) CreatorFeeClaimMatchesEvent(ctx context.Context, arg CreatorFeeClaimMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, creatorFeeClaimMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Creator,
+		arg.Amount,
 	)
-	return i, err
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
-const getTradeByEventIdentity = `-- name: GetTradeByEventIdentity :one
-SELECT
-    chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index,
-    token_address, trader, is_buy, eth_gross, eth_refund, token_amount, protocol_fee,
-    creator_fee, new_eth_reserve, new_token_reserve
-FROM trades
-WHERE chain_id = $1 AND tx_hash = $2 AND log_index = $3
+const engineConfigurationMatchesEvent = `-- name: EngineConfigurationMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND engine_version=$8 AND implementation=$9 AND enabled=$10
+FROM engine_configurations WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
 `
 
-type GetTradeByEventIdentityParams struct {
-	ChainID  int64
-	TxHash   Hash
-	LogIndex int32
+type EngineConfigurationMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	EngineVersion    int32
+	Implementation   Address
+	Enabled          bool
 }
 
-func (q *Queries) GetTradeByEventIdentity(ctx context.Context, arg GetTradeByEventIdentityParams) (Trade, error) {
-	row := q.db.QueryRow(ctx, getTradeByEventIdentity, arg.ChainID, arg.TxHash, arg.LogIndex)
-	var i Trade
-	err := row.Scan(
-		&i.ChainID,
-		&i.BlockNumber,
-		&i.BlockHash,
-		&i.BlockTime,
-		&i.TransactionIndex,
-		&i.TxHash,
-		&i.LogIndex,
-		&i.TokenAddress,
-		&i.Trader,
-		&i.IsBuy,
-		&i.EthGross,
-		&i.EthRefund,
-		&i.TokenAmount,
-		&i.ProtocolFee,
-		&i.CreatorFee,
-		&i.NewEthReserve,
-		&i.NewTokenReserve,
+func (q *Queries) EngineConfigurationMatchesEvent(ctx context.Context, arg EngineConfigurationMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, engineConfigurationMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.EngineVersion,
+		arg.Implementation,
+		arg.Enabled,
 	)
-	return i, err
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const futureDefaultsConfigurationMatchesEvent = `-- name: FutureDefaultsConfigurationMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND config_hash=$8
+FROM future_defaults_configurations WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type FutureDefaultsConfigurationMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	ConfigHash       Hash
+}
+
+func (q *Queries) FutureDefaultsConfigurationMatchesEvent(ctx context.Context, arg FutureDefaultsConfigurationMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, futureDefaultsConfigurationMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.ConfigHash,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const futureTreasuryConfigurationMatchesEvent = `-- name: FutureTreasuryConfigurationMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND previous_treasury=$8 AND new_treasury=$9
+FROM future_treasury_configurations WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type FutureTreasuryConfigurationMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PreviousTreasury Address
+	NewTreasury      Address
+}
+
+func (q *Queries) FutureTreasuryConfigurationMatchesEvent(ctx context.Context, arg FutureTreasuryConfigurationMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, futureTreasuryConfigurationMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PreviousTreasury,
+		arg.NewTreasury,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const graduationMatchesEvent = `-- name: GraduationMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND token_address=$8 AND lp_pair=$9 AND eth_to_pool=$10 AND tokens_to_pool=$11 AND lp_liquidity_burned=$12
+FROM graduations WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type GraduationMatchesEventParams struct {
+	ChainID           int64
+	BlockNumber       int64
+	BlockHash         Hash
+	BlockTime         pgtype.Timestamptz
+	TransactionIndex  int32
+	TxHash            Hash
+	LogIndex          int32
+	TokenAddress      Address
+	LpPair            Address
+	EthToPool         Uint256
+	TokensToPool      Uint256
+	LpLiquidityBurned Uint256
+}
+
+func (q *Queries) GraduationMatchesEvent(ctx context.Context, arg GraduationMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, graduationMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.LpPair,
+		arg.EthToPool,
+		arg.TokensToPool,
+		arg.LpLiquidityBurned,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const insertCreatorFeeClaim = `-- name: InsertCreatorFeeClaim :execrows
+INSERT INTO creator_fee_claims (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, token_address, creator, amount)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertCreatorFeeClaimParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Creator          Address
+	Amount           Uint256
+}
+
+func (q *Queries) InsertCreatorFeeClaim(ctx context.Context, arg InsertCreatorFeeClaimParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertCreatorFeeClaim,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Creator,
+		arg.Amount,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertEngineConfiguration = `-- name: InsertEngineConfiguration :execrows
+INSERT INTO engine_configurations (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, engine_version, implementation, enabled)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertEngineConfigurationParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	EngineVersion    int32
+	Implementation   Address
+	Enabled          bool
+}
+
+func (q *Queries) InsertEngineConfiguration(ctx context.Context, arg InsertEngineConfigurationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertEngineConfiguration,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.EngineVersion,
+		arg.Implementation,
+		arg.Enabled,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertFutureDefaultsConfiguration = `-- name: InsertFutureDefaultsConfiguration :execrows
+INSERT INTO future_defaults_configurations (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, config_hash)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertFutureDefaultsConfigurationParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	ConfigHash       Hash
+}
+
+func (q *Queries) InsertFutureDefaultsConfiguration(ctx context.Context, arg InsertFutureDefaultsConfigurationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertFutureDefaultsConfiguration,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.ConfigHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertFutureTreasuryConfiguration = `-- name: InsertFutureTreasuryConfiguration :execrows
+INSERT INTO future_treasury_configurations (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, previous_treasury, new_treasury)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertFutureTreasuryConfigurationParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PreviousTreasury Address
+	NewTreasury      Address
+}
+
+func (q *Queries) InsertFutureTreasuryConfiguration(ctx context.Context, arg InsertFutureTreasuryConfigurationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertFutureTreasuryConfiguration,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PreviousTreasury,
+		arg.NewTreasury,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertGraduation = `-- name: InsertGraduation :execrows
+INSERT INTO graduations (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, token_address, lp_pair, eth_to_pool, tokens_to_pool, lp_liquidity_burned)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertGraduationParams struct {
+	ChainID           int64
+	BlockNumber       int64
+	BlockHash         Hash
+	BlockTime         pgtype.Timestamptz
+	TransactionIndex  int32
+	TxHash            Hash
+	LogIndex          int32
+	TokenAddress      Address
+	LpPair            Address
+	EthToPool         Uint256
+	TokensToPool      Uint256
+	LpLiquidityBurned Uint256
+}
+
+func (q *Queries) InsertGraduation(ctx context.Context, arg InsertGraduationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertGraduation,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.LpPair,
+		arg.EthToPool,
+		arg.TokensToPool,
+		arg.LpLiquidityBurned,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertLaunchFeeClaim = `-- name: InsertLaunchFeeClaim :execrows
+INSERT INTO launch_fee_claims (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, treasury, amount)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertLaunchFeeClaimParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	Treasury         Address
+	Amount           Uint256
+}
+
+func (q *Queries) InsertLaunchFeeClaim(ctx context.Context, arg InsertLaunchFeeClaimParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertLaunchFeeClaim,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.Treasury,
+		arg.Amount,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertLaunchPauseEvent = `-- name: InsertLaunchPauseEvent :execrows
@@ -107,6 +435,347 @@ func (q *Queries) InsertLaunchPauseEvent(ctx context.Context, arg InsertLaunchPa
 		arg.TxHash,
 		arg.LogIndex,
 		arg.Paused,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertPoolBurn = `-- name: InsertPoolBurn :execrows
+INSERT INTO pool_burns (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, pair_address, sender, amount0, amount1, to_address)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertPoolBurnParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Sender           Address
+	Amount0          Uint256
+	Amount1          Uint256
+	ToAddress        Address
+}
+
+func (q *Queries) InsertPoolBurn(ctx context.Context, arg InsertPoolBurnParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertPoolBurn,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Sender,
+		arg.Amount0,
+		arg.Amount1,
+		arg.ToAddress,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertPoolMint = `-- name: InsertPoolMint :execrows
+INSERT INTO pool_mints (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, pair_address, sender, amount0, amount1)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertPoolMintParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Sender           Address
+	Amount0          Uint256
+	Amount1          Uint256
+}
+
+func (q *Queries) InsertPoolMint(ctx context.Context, arg InsertPoolMintParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertPoolMint,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Sender,
+		arg.Amount0,
+		arg.Amount1,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertPoolSwap = `-- name: InsertPoolSwap :execrows
+INSERT INTO pool_swaps (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, pair_address, sender, amount0_in, amount1_in, amount0_out, amount1_out, to_address)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertPoolSwapParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Sender           Address
+	Amount0In        Uint256
+	Amount1In        Uint256
+	Amount0Out       Uint256
+	Amount1Out       Uint256
+	ToAddress        Address
+}
+
+func (q *Queries) InsertPoolSwap(ctx context.Context, arg InsertPoolSwapParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertPoolSwap,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Sender,
+		arg.Amount0In,
+		arg.Amount1In,
+		arg.Amount0Out,
+		arg.Amount1Out,
+		arg.ToAddress,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertPoolSync = `-- name: InsertPoolSync :execrows
+INSERT INTO pool_syncs (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, pair_address, reserve0, reserve1)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertPoolSyncParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Reserve0         Uint256
+	Reserve1         Uint256
+}
+
+func (q *Queries) InsertPoolSync(ctx context.Context, arg InsertPoolSyncParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertPoolSync,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Reserve0,
+		arg.Reserve1,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertProtocolFeeClaim = `-- name: InsertProtocolFeeClaim :execrows
+INSERT INTO protocol_fee_claims (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, token_address, treasury, amount)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertProtocolFeeClaimParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Treasury         Address
+	Amount           Uint256
+}
+
+func (q *Queries) InsertProtocolFeeClaim(ctx context.Context, arg InsertProtocolFeeClaimParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertProtocolFeeClaim,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Treasury,
+		arg.Amount,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertRefundClaim = `-- name: InsertRefundClaim :execrows
+INSERT INTO refund_claims (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, token_address, account, amount)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertRefundClaimParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Account          Address
+	Amount           Uint256
+}
+
+func (q *Queries) InsertRefundClaim(ctx context.Context, arg InsertRefundClaimParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRefundClaim,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Account,
+		arg.Amount,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertRefundCredit = `-- name: InsertRefundCredit :execrows
+INSERT INTO refund_credits (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, token_address, account, amount)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertRefundCreditParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Account          Address
+	Amount           Uint256
+}
+
+func (q *Queries) InsertRefundCredit(ctx context.Context, arg InsertRefundCreditParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRefundCredit,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Account,
+		arg.Amount,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertTokenLaunch = `-- name: InsertTokenLaunch :execrows
+INSERT INTO token_launches (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, token_address, curve_address, creator, lp_pair, weth, protocol_treasury, engine_version, name, symbol, total_supply, virtual_eth, virtual_token, curve_tokens, lp_tokens, graduation_eth, launch_fee_paid, trade_fee_bps, protocol_share_bps)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertTokenLaunchParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	CurveAddress     Address
+	Creator          Address
+	LpPair           Address
+	Weth             Address
+	ProtocolTreasury Address
+	EngineVersion    int32
+	Name             string
+	Symbol           string
+	TotalSupply      Uint256
+	VirtualEth       Uint256
+	VirtualToken     Uint256
+	CurveTokens      Uint256
+	LpTokens         Uint256
+	GraduationEth    Uint256
+	LaunchFeePaid    Uint256
+	TradeFeeBps      int32
+	ProtocolShareBps int32
+}
+
+func (q *Queries) InsertTokenLaunch(ctx context.Context, arg InsertTokenLaunchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertTokenLaunch,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.CurveAddress,
+		arg.Creator,
+		arg.LpPair,
+		arg.Weth,
+		arg.ProtocolTreasury,
+		arg.EngineVersion,
+		arg.Name,
+		arg.Symbol,
+		arg.TotalSupply,
+		arg.VirtualEth,
+		arg.VirtualToken,
+		arg.CurveTokens,
+		arg.LpTokens,
+		arg.GraduationEth,
+		arg.LaunchFeePaid,
+		arg.TradeFeeBps,
+		arg.ProtocolShareBps,
 	)
 	if err != nil {
 		return 0, err
@@ -171,4 +840,599 @@ func (q *Queries) InsertTrade(ctx context.Context, arg InsertTradeParams) (int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const insertTradingPauseEvent = `-- name: InsertTradingPauseEvent :execrows
+INSERT INTO trading_pause_events (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, paused)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertTradingPauseEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	Paused           bool
+}
+
+func (q *Queries) InsertTradingPauseEvent(ctx context.Context, arg InsertTradingPauseEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertTradingPauseEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.Paused,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertTransfer = `-- name: InsertTransfer :execrows
+INSERT INTO transfers (chain_id, block_number, block_hash, block_time, transaction_index, tx_hash, log_index, token_address, from_address, to_address, value)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (chain_id, tx_hash, log_index) DO NOTHING
+`
+
+type InsertTransferParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	FromAddress      Address
+	ToAddress        Address
+	Value            Uint256
+}
+
+func (q *Queries) InsertTransfer(ctx context.Context, arg InsertTransferParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertTransfer,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.FromAddress,
+		arg.ToAddress,
+		arg.Value,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const launchFeeClaimMatchesEvent = `-- name: LaunchFeeClaimMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND treasury=$8 AND amount=$9
+FROM launch_fee_claims WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type LaunchFeeClaimMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	Treasury         Address
+	Amount           Uint256
+}
+
+func (q *Queries) LaunchFeeClaimMatchesEvent(ctx context.Context, arg LaunchFeeClaimMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, launchFeeClaimMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.Treasury,
+		arg.Amount,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const launchPauseEventMatchesEvent = `-- name: LaunchPauseEventMatchesEvent :one
+SELECT chain_id = $1 AND block_number = $2 AND block_hash = $3 AND block_time = $4
+   AND transaction_index = $5 AND tx_hash = $6 AND log_index = $7 AND paused = $8
+FROM launch_pause_events WHERE chain_id = $1 AND tx_hash = $6 AND log_index = $7
+`
+
+type LaunchPauseEventMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	Paused           bool
+}
+
+func (q *Queries) LaunchPauseEventMatchesEvent(ctx context.Context, arg LaunchPauseEventMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, launchPauseEventMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.Paused,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const poolBurnMatchesEvent = `-- name: PoolBurnMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND pair_address=$8 AND sender=$9 AND amount0=$10 AND amount1=$11 AND to_address=$12
+FROM pool_burns WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type PoolBurnMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Sender           Address
+	Amount0          Uint256
+	Amount1          Uint256
+	ToAddress        Address
+}
+
+func (q *Queries) PoolBurnMatchesEvent(ctx context.Context, arg PoolBurnMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, poolBurnMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Sender,
+		arg.Amount0,
+		arg.Amount1,
+		arg.ToAddress,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const poolMintMatchesEvent = `-- name: PoolMintMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND pair_address=$8 AND sender=$9 AND amount0=$10 AND amount1=$11
+FROM pool_mints WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type PoolMintMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Sender           Address
+	Amount0          Uint256
+	Amount1          Uint256
+}
+
+func (q *Queries) PoolMintMatchesEvent(ctx context.Context, arg PoolMintMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, poolMintMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Sender,
+		arg.Amount0,
+		arg.Amount1,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const poolSwapMatchesEvent = `-- name: PoolSwapMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND pair_address=$8 AND sender=$9 AND amount0_in=$10 AND amount1_in=$11 AND amount0_out=$12 AND amount1_out=$13 AND to_address=$14
+FROM pool_swaps WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type PoolSwapMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Sender           Address
+	Amount0In        Uint256
+	Amount1In        Uint256
+	Amount0Out       Uint256
+	Amount1Out       Uint256
+	ToAddress        Address
+}
+
+func (q *Queries) PoolSwapMatchesEvent(ctx context.Context, arg PoolSwapMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, poolSwapMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Sender,
+		arg.Amount0In,
+		arg.Amount1In,
+		arg.Amount0Out,
+		arg.Amount1Out,
+		arg.ToAddress,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const poolSyncMatchesEvent = `-- name: PoolSyncMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND pair_address=$8 AND reserve0=$9 AND reserve1=$10
+FROM pool_syncs WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type PoolSyncMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	PairAddress      Address
+	Reserve0         Uint256
+	Reserve1         Uint256
+}
+
+func (q *Queries) PoolSyncMatchesEvent(ctx context.Context, arg PoolSyncMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, poolSyncMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.PairAddress,
+		arg.Reserve0,
+		arg.Reserve1,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const protocolFeeClaimMatchesEvent = `-- name: ProtocolFeeClaimMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND token_address=$8 AND treasury=$9 AND amount=$10
+FROM protocol_fee_claims WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type ProtocolFeeClaimMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Treasury         Address
+	Amount           Uint256
+}
+
+func (q *Queries) ProtocolFeeClaimMatchesEvent(ctx context.Context, arg ProtocolFeeClaimMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, protocolFeeClaimMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Treasury,
+		arg.Amount,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const refundClaimMatchesEvent = `-- name: RefundClaimMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND token_address=$8 AND account=$9 AND amount=$10
+FROM refund_claims WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type RefundClaimMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Account          Address
+	Amount           Uint256
+}
+
+func (q *Queries) RefundClaimMatchesEvent(ctx context.Context, arg RefundClaimMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, refundClaimMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Account,
+		arg.Amount,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const refundCreditMatchesEvent = `-- name: RefundCreditMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND token_address=$8 AND account=$9 AND amount=$10
+FROM refund_credits WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type RefundCreditMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Account          Address
+	Amount           Uint256
+}
+
+func (q *Queries) RefundCreditMatchesEvent(ctx context.Context, arg RefundCreditMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, refundCreditMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Account,
+		arg.Amount,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const tokenLaunchMatchesEvent = `-- name: TokenLaunchMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND token_address=$8 AND curve_address=$9 AND creator=$10 AND lp_pair=$11 AND weth=$12 AND protocol_treasury=$13 AND engine_version=$14 AND name=$15 AND symbol=$16 AND total_supply=$17 AND virtual_eth=$18 AND virtual_token=$19 AND curve_tokens=$20 AND lp_tokens=$21 AND graduation_eth=$22 AND launch_fee_paid=$23 AND trade_fee_bps=$24 AND protocol_share_bps=$25
+FROM token_launches WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type TokenLaunchMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	CurveAddress     Address
+	Creator          Address
+	LpPair           Address
+	Weth             Address
+	ProtocolTreasury Address
+	EngineVersion    int32
+	Name             string
+	Symbol           string
+	TotalSupply      Uint256
+	VirtualEth       Uint256
+	VirtualToken     Uint256
+	CurveTokens      Uint256
+	LpTokens         Uint256
+	GraduationEth    Uint256
+	LaunchFeePaid    Uint256
+	TradeFeeBps      int32
+	ProtocolShareBps int32
+}
+
+func (q *Queries) TokenLaunchMatchesEvent(ctx context.Context, arg TokenLaunchMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, tokenLaunchMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.CurveAddress,
+		arg.Creator,
+		arg.LpPair,
+		arg.Weth,
+		arg.ProtocolTreasury,
+		arg.EngineVersion,
+		arg.Name,
+		arg.Symbol,
+		arg.TotalSupply,
+		arg.VirtualEth,
+		arg.VirtualToken,
+		arg.CurveTokens,
+		arg.LpTokens,
+		arg.GraduationEth,
+		arg.LaunchFeePaid,
+		arg.TradeFeeBps,
+		arg.ProtocolShareBps,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const tradeMatchesEvent = `-- name: TradeMatchesEvent :one
+SELECT chain_id = $1 AND block_number = $2 AND block_hash = $3 AND block_time = $4
+   AND transaction_index = $5 AND tx_hash = $6 AND log_index = $7
+   AND token_address = $8 AND trader = $9 AND is_buy = $10 AND eth_gross = $11
+   AND eth_refund = $12 AND token_amount = $13 AND protocol_fee = $14 AND creator_fee = $15
+   AND new_eth_reserve = $16 AND new_token_reserve = $17
+FROM trades WHERE chain_id = $1 AND tx_hash = $6 AND log_index = $7
+`
+
+type TradeMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	Trader           Address
+	IsBuy            bool
+	EthGross         Uint256
+	EthRefund        Uint256
+	TokenAmount      Uint256
+	ProtocolFee      Uint256
+	CreatorFee       Uint256
+	NewEthReserve    Uint256
+	NewTokenReserve  Uint256
+}
+
+func (q *Queries) TradeMatchesEvent(ctx context.Context, arg TradeMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, tradeMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.Trader,
+		arg.IsBuy,
+		arg.EthGross,
+		arg.EthRefund,
+		arg.TokenAmount,
+		arg.ProtocolFee,
+		arg.CreatorFee,
+		arg.NewEthReserve,
+		arg.NewTokenReserve,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const tradingPauseEventMatchesEvent = `-- name: TradingPauseEventMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND paused=$8
+FROM trading_pause_events WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type TradingPauseEventMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	Paused           bool
+}
+
+func (q *Queries) TradingPauseEventMatchesEvent(ctx context.Context, arg TradingPauseEventMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, tradingPauseEventMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.Paused,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const transferMatchesEvent = `-- name: TransferMatchesEvent :one
+SELECT chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_time=$4 AND transaction_index=$5 AND tx_hash=$6 AND log_index=$7 AND token_address=$8 AND from_address=$9 AND to_address=$10 AND value=$11
+FROM transfers WHERE chain_id=$1 AND tx_hash=$6 AND log_index=$7
+`
+
+type TransferMatchesEventParams struct {
+	ChainID          int64
+	BlockNumber      int64
+	BlockHash        Hash
+	BlockTime        pgtype.Timestamptz
+	TransactionIndex int32
+	TxHash           Hash
+	LogIndex         int32
+	TokenAddress     Address
+	FromAddress      Address
+	ToAddress        Address
+	Value            Uint256
+}
+
+func (q *Queries) TransferMatchesEvent(ctx context.Context, arg TransferMatchesEventParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, transferMatchesEvent,
+		arg.ChainID,
+		arg.BlockNumber,
+		arg.BlockHash,
+		arg.BlockTime,
+		arg.TransactionIndex,
+		arg.TxHash,
+		arg.LogIndex,
+		arg.TokenAddress,
+		arg.FromAddress,
+		arg.ToAddress,
+		arg.Value,
+	)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }

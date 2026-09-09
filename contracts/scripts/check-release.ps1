@@ -69,6 +69,7 @@ foreach ($gate in @(
     "check-dependencies.ps1",
     "check-goldens.ps1",
     "check-vectors.ps1",
+    "check-event-fixtures.ps1",
     "check-deployments.ps1",
     "check-deployment-simulation.ps1",
     "check-release.ps1",

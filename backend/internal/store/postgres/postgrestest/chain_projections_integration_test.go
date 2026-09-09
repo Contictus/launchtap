@@ -41,7 +41,7 @@ func TestChainProjectionsSchema(t *testing.T) {
 			"aggregation_dirty_pkey", "aggregation_dirty_claim_together",
 			"aggregation_dirty_claim_not_ahead", "aggregation_dirty_token_fk",
 		},
-		"token_metadata": {"token_metadata_pkey", "token_metadata_token_launch_fk"},
+		"token_metadata": {"token_metadata_pkey"},
 		"candles":        {"candles_pkey", "candles_interval_valid", "candles_token_fk"},
 		"token_stats":    {"token_stats_pkey", "token_stats_token_fk"},
 		"protocol_daily": {"protocol_daily_pkey", "protocol_daily_volume_eth_nonnegative"},
@@ -116,7 +116,8 @@ func assertProjectionColumns(t testing.TB, ctx context.Context, database *sql.DB
 		"token_reserves":    {"chain_id", "token_address", "reserve_source", "eth_reserve", "token_reserve", "source_block_number", "source_block_hash", "source_block_time", "source_tx_hash", "source_log_index"},
 		"holder_balances":   {"chain_id", "token_address", "holder_address", "balance", "first_acquired_block_number"},
 		"aggregation_dirty": {"chain_id", "token_address", "generation", "claimed_generation", "claimed_at", "claimed_by"},
-		"token_metadata":    {"chain_id", "token_address", "description", "image_url", "x_url", "telegram_url", "updated_at"},
+		"token_metadata":    {"chain_id", "token_address", "description", "image_url", "x_url", "telegram_url", "updated_at", "revision"},
+		"token_images":      {"chain_id", "token_address", "content_type", "content", "byte_size", "sha256", "revision", "updated_at"},
 		"candles":           {"chain_id", "token_address", "interval", "bucket_start_time", "open_price_wad", "high_price_wad", "low_price_wad", "close_price_wad", "gross_eth_volume", "token_volume", "trade_count"},
 		"token_stats":       {"chain_id", "token_address", "spot_price_eth_wad", "market_cap_eth_wad", "fdv_eth_wad", "liquidity_eth_wad", "ath_price_eth_wad", "ath_at", "volume_24h_eth_wad", "price_change_24h_bps", "holder_count", "spot_price_usd", "market_cap_usd", "fdv_usd", "liquidity_usd", "ath_usd", "volume_24h_usd", "updated_at"},
 		"protocol_daily":    {"chain_id", "day", "volume_eth_wad", "volume_usd", "launches_count", "trades_count", "graduations_count"},
@@ -219,7 +220,9 @@ func testProjectionConstraintRejections(t *testing.T, ctx context.Context, datab
 		INSERT INTO token_metadata (chain_id, token_address, updated_at)
 		VALUES ($1, $2, now())
 	`, chainID, addressBytes(0x61))
-	assertPostgresConstraint(t, err, "23503", "token_metadata_token_launch_fk")
+	if err != nil {
+		t.Fatalf("metadata without canonical launch: %v", err)
+	}
 
 	_, err = database.ExecContext(ctx, `
 		INSERT INTO candles (
@@ -293,7 +296,9 @@ func testUnknownProjectionAddresses(t testing.TB, ctx context.Context, database 
 	assertPostgresConstraint(t, err, "23503", "aggregation_dirty_token_fk")
 
 	_, err = database.ExecContext(ctx, `INSERT INTO token_metadata (chain_id, token_address, updated_at) VALUES ($1, $2, now())`, chainID, unknown)
-	assertPostgresConstraint(t, err, "23503", "token_metadata_token_launch_fk")
+	if err != nil {
+		t.Fatalf("orphan metadata: %v", err)
+	}
 
 	_, err = database.ExecContext(ctx, `
 		INSERT INTO candles (

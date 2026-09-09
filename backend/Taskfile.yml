@@ -59,10 +59,33 @@ tasks:
     cmds:
       - go run ./cmd/sync-curve-vectors --check
 
+  event-abis-sync:
+    desc: Copy the authoritative Solidity event ABIs and Foundry fixtures into the backend chain package.
+    cmds:
+      - go run ./cmd/sync-event-abis
+
+  event-abis-diff:
+    desc: Fail when backend event ABIs or Foundry fixtures differ from their contracts sources.
+    cmds:
+      - go run ./cmd/sync-event-abis --check
+
   deployments-diff:
     desc: Fail when the backend deployment-manifest copy differs from the contracts source.
     cmds:
-      - diff --recursive --brief --exclude=.generated ../contracts/deployments deployments/testdata
+      - go run ./cmd/check-deployments
+
+  openapi-diff:
+    desc: Validate the committed deterministic OpenAPI contract.
+    cmds:
+      - go run ./cmd/check-openapi
+
+  anvil-indexer-e2e:
+    desc: Index a real local Factory launch from Anvil through PostgreSQL.
+    cmds:
+      - cmd: powershell -ExecutionPolicy Bypass -File scripts/run-anvil-indexer-e2e.ps1
+        platforms: [windows]
+      - cmd: pwsh -File scripts/run-anvil-indexer-e2e.ps1
+        platforms: [linux, darwin]
 
   verify:
     desc: Run the full backend gate -- format, build, test, integration, lint, and drift checks.
@@ -74,4 +97,7 @@ tasks:
       - fmt-check
       - sqlc-diff
       - curve-vectors-diff
+      - event-abis-diff
       - deployments-diff
+      - openapi-diff
+      - anvil-indexer-e2e

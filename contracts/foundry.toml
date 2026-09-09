@@ -18,6 +18,7 @@ evm_version = "cancun"
 deny = "warnings"
 fs_permissions = [
     { access = "read-write", path = "./vectors" },
+    { access = "read-write", path = "./fixtures" },
     { access = "read", path = "./deployments" },
 ]
 

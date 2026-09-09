@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 
+	"github.com/Contictus/launchtap/backend/internal/ledger"
 	"github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -22,47 +23,11 @@ type (
 	Address = sqlc.Address
 	Hash    = sqlc.Hash
 	Uint256 = sqlc.Uint256
+
+	IndexedBlock     = ledger.IndexedBlock
+	Trade            = ledger.Trade
+	LaunchPauseEvent = ledger.LaunchPauseEvent
 )
-
-type IndexedBlock struct {
-	ChainID        int64
-	BlockNumber    int64
-	BlockHash      Hash
-	ParentHash     Hash
-	BlockTime      pgtype.Timestamptz
-	FinalityStatus string
-}
-
-type Trade struct {
-	ChainID          int64
-	BlockNumber      int64
-	BlockHash        Hash
-	BlockTime        pgtype.Timestamptz
-	TransactionIndex int32
-	TxHash           Hash
-	LogIndex         int32
-	TokenAddress     Address
-	Trader           Address
-	IsBuy            bool
-	EthGross         Uint256
-	EthRefund        Uint256
-	TokenAmount      Uint256
-	ProtocolFee      Uint256
-	CreatorFee       Uint256
-	NewEthReserve    Uint256
-	NewTokenReserve  Uint256
-}
-
-type LaunchPauseEvent struct {
-	ChainID          int64
-	BlockNumber      int64
-	BlockHash        Hash
-	BlockTime        pgtype.Timestamptz
-	TransactionIndex int32
-	TxHash           Hash
-	LogIndex         int32
-	Paused           bool
-}
 
 type SyncState struct {
 	ChainID         int64

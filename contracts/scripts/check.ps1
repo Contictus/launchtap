@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "release", "pins", "fmt", "build", "goldens", "vectors", "deployments", "simulation", "review", "test", "lint", "size", "slither", "fork")]
+    [ValidateSet("all", "release", "pins", "fmt", "build", "goldens", "vectors", "event-fixtures", "deployments", "simulation", "review", "test", "lint", "size", "slither", "fork")]
     [string] $Target = "all"
 )
 
@@ -63,6 +63,9 @@ try {
     }
     if ($Target -in @("all", "release", "vectors")) {
         Invoke-Checked { & "$PSScriptRoot/check-vectors.ps1" }
+    }
+    if ($Target -in @("all", "release", "event-fixtures")) {
+        Invoke-Checked { & "$PSScriptRoot/check-event-fixtures.ps1" }
     }
     if ($Target -in @("all", "release", "deployments")) {
         Invoke-Checked { & "$PSScriptRoot/check-deployments.ps1" }
