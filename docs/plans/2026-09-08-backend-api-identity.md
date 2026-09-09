@@ -4,12 +4,13 @@
 > review. This document closes the planning boundary for Backend Plan 3. It is not
 > implementation code.
 
-**Status:** Pre-flight approved by the builder. Seven tasks and decisions 1–16 are locked.
-Implementation starts with Task 1 because the current aggregate and runtime surfaces are not
-yet safe to expose as a public API. The external Robinhood RPC probe, chain-46630 deployment
-manifest, production Privy credentials, production origins, ETH/USD source, and production
-governance inputs are explicitly deferred; they do not block local implementation or
-deterministic tests.
+**Status:** Complete on `dev`. All seven tasks and locked decisions 1–16 are implemented,
+including the API-facing aggregate fixes, snapshot-bound reads, Huma/OpenAPI surface, public
+market and curve endpoints, Privy authorization boundaries, metadata and image delivery, SSE,
+runtime hardening, and the verification gate. The external Robinhood RPC probe, chain-46630
+deployment manifest, production Privy credentials, production origins and hosting, ETH/USD
+source, and production governance inputs remain explicitly deferred release prerequisites;
+they do not represent missing local implementation or deterministic test coverage.
 
 **Goal:** Deliver a stateless REST/JSON API under `/v1` with a generated OpenAPI contract,
 reorg-aware pagination, public market reads, informational curve quotes, Privy-authenticated

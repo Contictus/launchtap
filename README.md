@@ -11,15 +11,16 @@ indexes canonical chain data and never holds trading funds.
 | --- | --- |
 | Contract Foundations (Tasks 1–12) | Complete |
 | Backend Foundations (Tasks 1–12) | Complete |
-| Backend Indexer Task 2 | Complete |
-| Backend Indexer Task 3 | Complete |
-| Backend Indexer Tasks 4–5 | Implemented; acceptance pending |
-| API and identity (Plan 3) | Pre-flight approved; implementation not started |
+| Backend Indexer (Plan 2, Tasks 1–5) | Code complete; live Robinhood evidence pending |
+| API and identity (Plan 3, Tasks 1–7) | Complete on `dev` |
 | Web client | Not started |
 
 Plan 2 still needs the external Robinhood probe and reviewed chain-46630 deployment
-manifest. The Anvil end-to-end indexer scenario and full observability gate must pass before
-this milestone is merged to `main`.
+manifest before live operation. Its Anvil end-to-end indexer scenario and health surface are
+implemented and included in the backend verification gate. Production Privy credentials,
+origins, hosting configuration, ETH/USD enrichment, and governance inputs remain external
+release prerequisites. Plan 2 and Plan 3 will land on `main` in the next verified milestone
+merge.
 
 ## Repository layout
 
