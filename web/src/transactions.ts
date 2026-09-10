@@ -1,3 +1,5 @@
+import { parseDecimal } from "@/amounts";
+
 export type TransactionStatus =
   | "disconnected"
   | "provider-loading"
@@ -15,6 +17,56 @@ export type TransactionStatus =
   | "safe"
   | "finalized";
 export type TransactionState = { status: TransactionStatus; hash?: `0x${string}`; error?: string };
+
+export type CanonicalObservationAction = "launch" | "trade" | "claim" | "refund";
+export type CanonicalObservationRecord = {
+  tx_hash?: string;
+  launch_tx_hash?: string;
+  finality?: string;
+};
+
+/**
+ * A receipt is not canonical history. This pure observer requires the submitted hash to occur in
+ * the fresh, relevant API record before it can advance finality. Missing records deliberately
+ * regress an earlier observation so a reorg cannot remain invisible.
+ */
+export function observeCanonicalTransaction(args: {
+  state: TransactionState;
+  submittedHash: string;
+  action: CanonicalObservationAction;
+  records: readonly CanonicalObservationRecord[];
+  snapshotFinality?: string;
+}): TransactionState {
+  if (!args.submittedHash || !/^0x[0-9a-fA-F]{2,}$/.test(args.submittedHash)) return args.state;
+  const submitted = args.submittedHash.toLowerCase();
+  const matching = args.records.find((record) => {
+    const hash =
+      args.action === "launch" ? (record.launch_tx_hash ?? record.tx_hash) : record.tx_hash;
+    return typeof hash === "string" && hash.toLowerCase() === submitted;
+  });
+  if (!matching) {
+    if (["indexed", "safe", "finalized"].includes(args.state.status))
+      return {
+        ...args.state,
+        status: "indexing",
+        error: "Canonical record disappeared; refreshing after a reorganization.",
+      };
+    return args.state;
+  }
+  const finality = (matching.finality ?? args.snapshotFinality ?? "indexed").toLowerCase();
+  const status: TransactionStatus =
+    finality === "finalized" ? "finalized" : finality === "safe" ? "safe" : "indexed";
+  return { ...args.state, status, error: undefined };
+}
+
+export function parseSlippageBps(value: string): bigint | null {
+  try {
+    const bps = parseDecimal(value, 2);
+    return bps >= 0n && bps <= 10_000n ? bps : null;
+  } catch {
+    return null;
+  }
+}
 
 export type LaunchValidation = {
   name: string;
@@ -38,6 +90,15 @@ export function calculateLaunchValue(launchFee: bigint, developerBuyGross: bigin
 export function parseQuoteQuantity(value: string, field = "quote"): bigint {
   if (!/^(?:0|[1-9]\d*)$/.test(value)) throw new Error(`Invalid ${field}`);
   return BigInt(value);
+}
+
+export function parseRuntimeQuantity(value: unknown, field = "quote"): bigint {
+  if (typeof value === "bigint") {
+    if (value < 0n) throw new Error(`Invalid ${field}`);
+    return value;
+  }
+  if (typeof value === "string") return parseQuoteQuantity(value, field);
+  throw new Error(`Invalid ${field}`);
 }
 
 export function validateLaunchInput(input: LaunchValidation): LaunchValidationErrors {
@@ -108,8 +169,12 @@ export function canonicalObservationState(
   state: TransactionState,
   observed: boolean,
 ): TransactionState {
-  if (!observed || state.status !== "indexing") return state;
-  return { ...state, status: "indexed" };
+  return observeCanonicalTransaction({
+    state,
+    submittedHash: state.hash ?? "",
+    action: "trade",
+    records: observed ? [{ tx_hash: state.hash }] : [],
+  });
 }
 
 export type ExactWrite = {
@@ -146,6 +211,23 @@ function equalIntent(left: unknown, right: unknown): boolean {
 
 export type DecodedTransactionError = { code: string; message: string };
 
+export type TransactionFailure = "rejected-signature" | "rpc-failure" | "reverted";
+
+export function classifyTransactionFailure(
+  cause: unknown,
+  phase: "simulation" | "write" | "receipt" = "write",
+): TransactionFailure {
+  const text = cause instanceof Error ? cause.message : String(cause ?? "");
+  if (/user rejected|user denied|rejected|denied signature|4001/i.test(text))
+    return "rejected-signature";
+  if (
+    phase === "receipt" ||
+    /custom error|revert|execution reverted|slippage|deadline|wrongphase|nothingtoclaim/i.test(text)
+  )
+    return "reverted";
+  return "rpc-failure";
+}
+
 /** Decode only known, versioned contract errors. Provider payloads are never returned to UI. */
 export function decodeTransactionError(cause: unknown): DecodedTransactionError {
   const text = cause instanceof Error ? cause.message : "";
@@ -162,6 +244,7 @@ export function decodeTransactionError(cause: unknown): DecodedTransactionError 
     ERC20InsufficientAllowance:
       "Approval is lower than this sell amount. Approve the disclosed amount and resume.",
     ERC20InsufficientBalance: "The selected wallet does not have enough tokens for this action.",
+    InsufficientETHBalance: "The selected wallet does not have enough ETH for this action.",
     ReceiptReverted: "The transaction was mined but reverted. No state change was accepted.",
     QuoteChanged:
       "The on-chain quote changed before signing. Refresh and review the new minimum output.",

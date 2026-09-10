@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateLaunchValue,
+  classifyTransactionFailure,
   canonicalObservationState,
   claimIsExecutable,
   decodeTransactionError,
   minimumOutput,
+  observeCanonicalTransaction,
+  parseSlippageBps,
   parseQuoteQuantity,
+  parseRuntimeQuantity,
   reviewedRouterAddress,
   sameWriteIntent,
   transactionDeadline,
@@ -54,6 +58,17 @@ describe("task 6 transaction math and safety", () => {
     expect(() => parseQuoteQuantity("01")).toThrow();
     expect(() => parseQuoteQuantity("-1")).toThrow();
     expect(() => parseQuoteQuantity("1.5")).toThrow();
+    expect(parseRuntimeQuantity(12n)).toBe(12n);
+    expect(() => parseRuntimeQuantity(-1n)).toThrow();
+    expect(() => parseRuntimeQuantity({})).toThrow();
+  });
+
+  it("bounds slippage before render and never throws for an invalid percentage", () => {
+    expect(parseSlippageBps("5")).toBe(500n);
+    expect(parseSlippageBps("100")).toBe(10_000n);
+    expect(parseSlippageBps("100.01")).toBeNull();
+    expect(parseSlippageBps("-1")).toBeNull();
+    expect(parseSlippageBps("not-a-number")).toBeNull();
   });
 
   it("rejects invalid deadline and preserves exact simulation intent", () => {
@@ -119,5 +134,52 @@ describe("task 6 transaction math and safety", () => {
     const state = { status: "indexing" as const, hash: "0x123" as `0x${string}` };
     expect(canonicalObservationState(state, false).status).toBe("indexing");
     expect(canonicalObservationState(state, true).status).toBe("indexed");
+    expect(canonicalObservationState({ ...state, status: "safe" }, false).status).toBe("indexing");
+  });
+
+  it("requires the exact hash in the relevant canonical record and regresses after reorg", () => {
+    const state = { status: "indexing" as const, hash: "0xabc" as `0x${string}` };
+    expect(
+      observeCanonicalTransaction({
+        state,
+        submittedHash: "0xabc",
+        action: "trade",
+        records: [{ tx_hash: "0xdef" }],
+      }).status,
+    ).toBe("indexing");
+    expect(
+      observeCanonicalTransaction({
+        state,
+        submittedHash: "0xabc",
+        action: "trade",
+        records: [{ tx_hash: "0xABC", finality: "safe" }],
+      }).status,
+    ).toBe("safe");
+    expect(
+      observeCanonicalTransaction({
+        state: { status: "safe", hash: "0xabc" },
+        submittedHash: "0xabc",
+        action: "trade",
+        records: [],
+      }).status,
+    ).toBe("indexing");
+    expect(
+      observeCanonicalTransaction({
+        state,
+        submittedHash: "0xabc",
+        action: "launch",
+        records: [{ tx_hash: "0xabc" }],
+      }).status,
+    ).toBe("indexed");
+  });
+
+  it("classifies wallet rejection, provider failure, and contract/receipt reverts separately", () => {
+    expect(classifyTransactionFailure(new Error("User rejected the request"))).toBe(
+      "rejected-signature",
+    );
+    expect(classifyTransactionFailure(new Error("Failed to fetch"))).toBe("rpc-failure");
+    expect(classifyTransactionFailure(new Error("execution reverted: TradingPaused"))).toBe(
+      "reverted",
+    );
   });
 });

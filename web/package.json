@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:anvil": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/anvil-task6-gate.ps1",
     "web-api-sync": "node scripts/generate-api.mjs --write",
     "web-api-diff": "node scripts/generate-api.mjs --check",
     "web-contracts-sync": "node scripts/generate-contracts.mjs --write",

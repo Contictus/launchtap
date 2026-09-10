@@ -361,6 +361,23 @@ export function TokenDetail({
     useFixture,
   ]);
 
+  useEffect(() => {
+    const refreshAfterReorg = (event: Event) => {
+      const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
+      if (detail?.tokenAddress?.toLowerCase() !== tokenAddress) return;
+      const loaders = loadersRef.current;
+      if (!loaders) return;
+      void Promise.all([
+        loaders.loadToken(),
+        loaders.loadCandles(),
+        loaders.loadCollection("trades"),
+        loaders.loadCollection("holders"),
+      ]).catch(() => undefined);
+    };
+    window.addEventListener("launchpad:canonical-reorg", refreshAfterReorg);
+    return () => window.removeEventListener("launchpad:canonical-reorg", refreshAfterReorg);
+  }, [tokenAddress]);
+
   if (configuration.status !== "ready") return <TokenUnavailable address={tokenAddress} />;
   if (loading) return <TokenSkeleton />;
   if (tokenError instanceof ApiProblem && tokenError.status === 404)

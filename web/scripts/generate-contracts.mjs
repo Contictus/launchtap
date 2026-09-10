@@ -10,6 +10,9 @@ const allow = {
     "launch",
     "launchFee",
     "futureDefaults",
+    "launchesPaused",
+    "tradingPaused",
+    "TokenLaunched",
     "DeadlineExpired",
     "LaunchValueMismatch",
     "LaunchesPaused",
@@ -22,6 +25,9 @@ const allow = {
     "quoteSell",
     "claimCreatorFees",
     "claimRefund",
+    "unclaimedCreatorFees",
+    "pendingRefund",
+    "creator",
     "phase",
     "DeadlineExpired",
     "ERC20InsufficientAllowance",
@@ -49,57 +55,25 @@ async function abi(path, names) {
   const document = JSON.parse(await readFile(join(root, path), "utf8"));
   const entries = document.abi ?? document;
   return entries.filter(
-    (entry) => (entry.type === "function" || entry.type === "error") && names.has(entry.name),
+    (entry) =>
+      (entry.type === "function" || entry.type === "error" || entry.type === "event") &&
+      names.has(entry.name),
   );
 }
 
 const factory = await abi("contracts/abi/v1/LaunchFactory.json", allow.factory);
 const token = await abi("contracts/abi/v1/LaunchToken.json", allow.token);
 const curve = await abi("contracts/out/BondingCurveV1.sol/BondingCurveV1.json", allow.curve);
-const router = [
-  {
-    type: "function",
-    name: "WETH",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "getAmountsOut",
-    inputs: [
-      { name: "amountIn", type: "uint256" },
-      { name: "path", type: "address[]" },
-    ],
-    outputs: [{ name: "amounts", type: "uint256[]" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "swapExactETHForTokens",
-    inputs: [
-      { name: "amountOutMin", type: "uint256" },
-      { name: "path", type: "address[]" },
-      { name: "to", type: "address" },
-      { name: "deadline", type: "uint256" },
-    ],
-    outputs: [{ name: "amounts", type: "uint256[]" }],
-    stateMutability: "payable",
-  },
-  {
-    type: "function",
-    name: "swapExactTokensForETH",
-    inputs: [
-      { name: "amountIn", type: "uint256" },
-      { name: "amountOutMin", type: "uint256" },
-      { name: "path", type: "address[]" },
-      { name: "to", type: "address" },
-      { name: "deadline", type: "uint256" },
-    ],
-    outputs: [{ name: "amounts", type: "uint256[]" }],
-    stateMutability: "nonpayable",
-  },
-];
+const routerDocument = JSON.parse(
+  await readFile(join(root, "contracts/abi/v1/UniswapV2Router02.json"), "utf8"),
+);
+const router = routerDocument.filter(
+  (entry) =>
+    entry.type === "function" &&
+    new Set(["WETH", "getAmountsOut", "swapExactETHForTokens", "swapExactTokensForETH"]).has(
+      entry.name,
+    ),
+);
 
 const manifests = [];
 for (const name of ["robinhood-mainnet.json", "robinhood-testnet.disabled.json"]) {

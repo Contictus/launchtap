@@ -15,6 +15,6 @@ test.describe("Task 6 transaction safety shell", () => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/create");
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
-    await expect(page.getByText(/Non-custodial by design/)).toBeVisible();
+    await expect(page.locator(".hero-aside")).toContainText("Non-custodial by design");
   });
 });
