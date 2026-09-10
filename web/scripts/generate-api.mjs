@@ -9,7 +9,7 @@ const target = join(import.meta.dirname, "../src/api/generated.ts");
 const check = process.argv.includes("--check");
 
 const document = JSON.parse(await readFile(source, "utf8"));
-const generated = `${astToString(await openapiTS(document))}\n`;
+const generated = `${astToString(await openapiTS(document)).trimEnd()}\n`;
 await mkdir(join(import.meta.dirname, "../src/api"), { recursive: true });
 if (check) {
   const actual = await readFile(target, "utf8");
