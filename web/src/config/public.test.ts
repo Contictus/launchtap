@@ -15,4 +15,17 @@ describe("publicConfiguration", () => {
     };
     expect(publicConfiguration(env).status).toBe("fail-closed");
   });
+
+  it("rejects credentials or query material in public endpoints", () => {
+    expect(
+      publicConfiguration({
+        NEXT_PUBLIC_API_BASE_URL: "https://user:pass@example.test",
+        NEXT_PUBLIC_RPC_URL: "https://rpc.example?token=secret",
+      }).apiBaseUrl,
+    ).toBeNull();
+    expect(
+      publicConfiguration({ NEXT_PUBLIC_API_BASE_URL: "https://api.example?token=secret" })
+        .apiBaseUrl,
+    ).toBeNull();
+  });
 });
