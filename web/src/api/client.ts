@@ -21,7 +21,7 @@ export type AuthHeaders = { accessToken?: string; identityToken?: string };
 export class ApiClient {
   private readonly fetchImpl: typeof globalThis.fetch;
   constructor(private readonly options: { baseUrl: string; fetch?: typeof globalThis.fetch }) {
-    this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   }
 
   async request<T>(path: string, init: RequestInit = {}, auth?: AuthHeaders): Promise<T> {

@@ -49,6 +49,31 @@ describe("SSE invalidation", () => {
     expect(harness.sources.length).toBe(2);
   });
 
+  it("completes token, candles, and active collection refreshes before reconnecting", async () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    const harness = sourceHarness(order);
+    const stream = new SseInvalidationStream({
+      url: "https://api.example/events",
+      eventSourceFactory: harness.factory,
+      queryClient: { invalidateQueries: async () => undefined },
+      refetchSnapshot: async () => {
+        order.push("token");
+        await Promise.resolve();
+        order.push("candles");
+        await Promise.resolve();
+        order.push("collection");
+      },
+    });
+    stream.start();
+    harness.triggerError();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(order.slice(0, 4)).toEqual(["connect", "close", "token", "candles"]);
+    await Promise.resolve();
+    expect(order).toEqual(["connect", "close", "token", "candles", "collection", "connect"]);
+    stream.stop();
+  });
+
   it("retries REST after transient failure and reconnects only after success", async () => {
     vi.useFakeTimers();
     const order: string[] = [];

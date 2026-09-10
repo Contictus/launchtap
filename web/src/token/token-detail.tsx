@@ -9,8 +9,9 @@ import { ApiClient, type TokenDetailResponse } from "@/api/client";
 import { ApiProblem } from "@/api/problems";
 import { queryKeys } from "@/api/types";
 import { SseInvalidationStream } from "@/api/sse";
-import { formatDisplayAmount, parseBaseUnits } from "@/amounts";
+import { formatCanonicalBaseUnits } from "@/amounts";
 import { publicConfiguration } from "@/config/public";
+import { reviewedDeployments } from "@/contracts/generated";
 import { addressExplorerUrl } from "@/wallet/explorer";
 import {
   Badge,
@@ -26,7 +27,6 @@ import { shortAddress } from "./address";
 import { transformCandles, type CandleChartPoint } from "./chart-data";
 import {
   appendTokenCollectionPage,
-  collectionItems,
   type TokenCollection,
   type TokenCollectionFetcher,
 } from "./pagination";
@@ -35,14 +35,12 @@ import { isTokenEventForAddress } from "./sse-scope";
 
 type TokenDetailProps = { address: `0x${string}` };
 type Tab = "trades" | "holders";
-const intervals = ["1h", "4h", "1d", "1w"] as const;
+export const intervals = ["1m", "5m", "1h", "1d", "6h", "all"] as const;
+export const CANDLE_LIMIT = 100;
 
 function amount(raw: string) {
-  try {
-    return `${formatDisplayAmount(parseBaseUnits(raw), 18, 5)} ETH`;
-  } catch {
-    return "Unavailable";
-  }
+  const value = formatCanonicalBaseUnits(raw, 5);
+  return value === null ? "Unavailable" : `${value} ETH`;
 }
 
 function finalityTone(value: string): "success" | "warning" | "neutral" {
@@ -57,8 +55,22 @@ function finalityLabel(value: string) {
   return value ? `${value[0]?.toUpperCase()}${value.slice(1)}` : "Unavailable";
 }
 
-export function TokenDetail({ address }: TokenDetailProps) {
-  const configuration = publicConfiguration();
+export function TokenDetail({
+  address,
+  fixture = false,
+}: TokenDetailProps & { fixture?: boolean }) {
+  const baseConfiguration = publicConfiguration();
+  const useFixture = fixture && process.env.NEXT_PUBLIC_E2E_FIXTURE === "1";
+  const configuration = useFixture
+    ? {
+        ...baseConfiguration,
+        status: "ready" as const,
+        apiBaseUrl: "http://127.0.0.1:3000",
+        chainId: 4663,
+        deploymentId: "robinhood-mainnet",
+        deployment: reviewedDeployments[0] ?? null,
+      }
+    : baseConfiguration;
   const [token, setToken] = useState<TokenDetailResponse | null>(null);
   const [tokenError, setTokenError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,97 +85,244 @@ export function TokenDetail({ address }: TokenDetailProps) {
   const [collectionError, setCollectionError] = useState<Error | null>(null);
   const [resetNotice, setResetNotice] = useState(false);
   const clientRef = useRef<ApiClient | null>(null);
+  const tokenRef = useRef<TokenDetailResponse | null>(null);
+  const tokenAbortRef = useRef<AbortController | null>(null);
+  const candleAbortRef = useRef<AbortController | null>(null);
+  const collectionAbortRef = useRef<AbortController | null>(null);
+  const requestIds = useRef({ token: 0, candle: 0, collection: 0 });
+  const pagesRef = useRef<TokenCollection[]>([]);
+  const tabRef = useRef<Tab>("trades");
+  const loadersRef = useRef<{
+    loadToken: typeof loadToken;
+    loadCandles: typeof loadCandles;
+    loadCollection: typeof loadCollection;
+  } | null>(null);
   const tokenAddress = address.toLowerCase() as `0x${string}`;
   const collectionSnapshot = pages[0]?.snapshot;
   const explorer = addressExplorerUrl(configuration, tokenAddress);
 
-  useEffect(() => {
-    if (configuration.status !== "ready" || !configuration.apiBaseUrl) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    const client = new ApiClient({ baseUrl: configuration.apiBaseUrl });
-    clientRef.current = client;
-    setLoading(true);
-    setTokenError(null);
-    void client
-      .getToken(tokenAddress, controller.signal)
-      .then(setToken)
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted)
+  const loadToken = useCallback(
+    async (externalSignal?: AbortSignal) => {
+      const requestId = ++requestIds.current.token;
+      tokenAbortRef.current?.abort();
+      if (configuration.status !== "ready" || !configuration.apiBaseUrl) {
+        setLoading(false);
+        tokenRef.current = null;
+        return null;
+      }
+      const controller = new AbortController();
+      const forwardAbort = () => controller.abort();
+      externalSignal?.addEventListener("abort", forwardAbort, { once: true });
+      if (externalSignal?.aborted) controller.abort();
+      const client = new ApiClient({ baseUrl: configuration.apiBaseUrl });
+      clientRef.current = client;
+      tokenAbortRef.current = controller;
+      setLoading(true);
+      setTokenError(null);
+      try {
+        const next = await client.getToken(tokenAddress, controller.signal);
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.token &&
+          activeRouteRef.current === tokenAddress
+        ) {
+          tokenRef.current = next;
+          setToken(next);
+        }
+        return next;
+      } catch (cause) {
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.token &&
+          activeRouteRef.current === tokenAddress
+        )
           setTokenError(cause instanceof Error ? cause : new Error("Token unavailable"));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [configuration.apiBaseUrl, configuration.status, tokenAddress]);
+        throw cause;
+      } finally {
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.token &&
+          activeRouteRef.current === tokenAddress
+        )
+          setLoading(false);
+        if (tokenAbortRef.current === controller) tokenAbortRef.current = null;
+        externalSignal?.removeEventListener("abort", forwardAbort);
+      }
+    },
+    [configuration.apiBaseUrl, configuration.status, tokenAddress],
+  );
 
-  const loadCandles = useCallback(async () => {
-    if (!clientRef.current || !token) return;
-    const controller = new AbortController();
-    setChartLoading(true);
-    setChartError(null);
-    try {
-      const response = await clientRef.current.getCandles(
-        tokenAddress,
-        { interval, limit: 500 },
-        controller.signal,
-      );
-      setChartPoints(transformCandles(response.items));
-    } catch (cause) {
-      if (!controller.signal.aborted)
-        setChartError(cause instanceof Error ? cause : new Error("Chart unavailable"));
-    } finally {
-      if (!controller.signal.aborted) setChartLoading(false);
-    }
-    return () => controller.abort();
-  }, [interval, token, tokenAddress]);
-
-  useEffect(() => {
-    void loadCandles();
-  }, [loadCandles]);
+  const loadCandles = useCallback(
+    async (externalSignal?: AbortSignal) => {
+      const requestId = ++requestIds.current.candle;
+      candleAbortRef.current?.abort();
+      const client = clientRef.current;
+      if (!client || !tokenRef.current) return null;
+      const controller = new AbortController();
+      const forwardAbort = () => controller.abort();
+      externalSignal?.addEventListener("abort", forwardAbort, { once: true });
+      if (externalSignal?.aborted) controller.abort();
+      candleAbortRef.current = controller;
+      setChartLoading(true);
+      setChartError(null);
+      try {
+        const response = await client.getCandles(
+          tokenAddress,
+          { interval, limit: CANDLE_LIMIT },
+          controller.signal,
+        );
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.candle &&
+          activeRouteRef.current === tokenAddress
+        )
+          setChartPoints(transformCandles(response.items));
+        return response;
+      } catch (cause) {
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.candle &&
+          activeRouteRef.current === tokenAddress
+        )
+          setChartError(cause instanceof Error ? cause : new Error("Chart unavailable"));
+        throw cause;
+      } finally {
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.candle &&
+          activeRouteRef.current === tokenAddress
+        )
+          setChartLoading(false);
+        if (candleAbortRef.current === controller) candleAbortRef.current = null;
+        externalSignal?.removeEventListener("abort", forwardAbort);
+      }
+    },
+    [interval, tokenAddress],
+  );
 
   const loadCollection = useCallback(
-    async (selectedTab: Tab, cursor?: string, append = false) => {
-      if (!clientRef.current) return;
+    async (selectedTab: Tab, cursor?: string, append = false, externalSignal?: AbortSignal) => {
+      const requestId = ++requestIds.current.collection;
+      collectionAbortRef.current?.abort();
+      const client = clientRef.current;
+      if (!client) return null;
+      const controller = new AbortController();
+      const forwardAbort = () => controller.abort();
+      externalSignal?.addEventListener("abort", forwardAbort, { once: true });
+      if (externalSignal?.aborted) controller.abort();
+      collectionAbortRef.current = controller;
       const fetchPage: TokenCollectionFetcher = (nextCursor, signal) =>
         selectedTab === "trades"
-          ? clientRef.current!.getTrades(tokenAddress, { cursor: nextCursor, limit: 25 }, signal)
-          : clientRef.current!.getHolders(tokenAddress, { cursor: nextCursor, limit: 25 }, signal);
-      const currentPages = append && selectedTab === tab ? pages : [];
+          ? client.getTrades(tokenAddress, { cursor: nextCursor, limit: 25 }, signal)
+          : client.getHolders(tokenAddress, { cursor: nextCursor, limit: 25 }, signal);
+      const currentPages = append && selectedTab === tabRef.current ? pagesRef.current : [];
       setCollectionLoading(true);
       setCollectionError(null);
       try {
         const result =
           append && cursor
-            ? await appendTokenCollectionPage(fetchPage, currentPages, cursor)
-            : { pages: [await fetchPage(undefined)], reset: false };
-        setPages(result.pages);
-        setResetNotice(result.reset);
+            ? await appendTokenCollectionPage(fetchPage, currentPages, cursor, controller.signal)
+            : { pages: [await fetchPage(undefined, controller.signal)], reset: false };
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.collection &&
+          activeRouteRef.current === tokenAddress &&
+          selectedTab === tabRef.current
+        ) {
+          pagesRef.current = result.pages;
+          setPages(result.pages);
+          setResetNotice(result.reset);
+        }
       } catch (cause) {
-        setCollectionError(cause instanceof Error ? cause : new Error("History unavailable"));
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.collection &&
+          activeRouteRef.current === tokenAddress &&
+          selectedTab === tabRef.current
+        )
+          setCollectionError(cause instanceof Error ? cause : new Error("History unavailable"));
+        throw cause;
       } finally {
-        setCollectionLoading(false);
+        if (
+          !controller.signal.aborted &&
+          requestId === requestIds.current.collection &&
+          activeRouteRef.current === tokenAddress &&
+          selectedTab === tabRef.current
+        )
+          setCollectionLoading(false);
+        if (collectionAbortRef.current === controller) collectionAbortRef.current = null;
+        externalSignal?.removeEventListener("abort", forwardAbort);
       }
     },
-    [pages, tab, tokenAddress],
+    [tokenAddress],
   );
 
-  useEffect(() => {
-    if (token) void loadCollection(tab);
-  }, [loadCollection, tab, token]);
+  const activeRouteRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (configuration.status !== "ready" || !configuration.apiBaseUrl || !token) return;
+    tabRef.current = tab;
+  }, [tab]);
+  useEffect(() => {
+    loadersRef.current = { loadToken, loadCandles, loadCollection };
+  }, [loadCandles, loadCollection, loadToken]);
+
+  useEffect(() => {
+    // The route identity is an external-request guard, not render state.
+    // eslint-disable-next-line react-hooks/immutability
+    activeRouteRef.current = tokenAddress;
+    tokenAbortRef.current?.abort();
+    candleAbortRef.current?.abort();
+    collectionAbortRef.current?.abort();
+    tokenRef.current = null;
+    clientRef.current = null;
+    pagesRef.current = [];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setToken(null);
+    setTokenError(null);
+    setChartPoints([]);
+    setChartError(null);
+    setPages([]);
+    setResetNotice(false);
+    let active = true;
+    void (async () => {
+      const next = await loadToken();
+      if (!active || !next) return;
+      await loadCandles();
+      await loadCollection(tabRef.current);
+    })().catch(() => undefined);
+    return () => {
+      active = false;
+      tokenAbortRef.current?.abort();
+      candleAbortRef.current?.abort();
+      collectionAbortRef.current?.abort();
+    };
+    // This is one route-entry fetch sequence. Interval and tab changes use their own effects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadToken, tokenAddress]);
+
+  useEffect(() => {
+    if (!tokenRef.current) return;
+    void loadCandles().catch(() => undefined);
+  }, [loadCandles]);
+
+  useEffect(() => {
+    if (!tokenRef.current) return;
+    pagesRef.current = [];
+    setPages([]);
+    void loadCollection(tab).catch(() => undefined);
+  }, [loadCollection, tab]);
+
+  useEffect(() => {
+    if (useFixture || configuration.status !== "ready" || !configuration.apiBaseUrl) return;
     const stream = new SseInvalidationStream({
       url: `${configuration.apiBaseUrl}/v1/events`,
       queryClient: {
         invalidateQueries: async () => {
-          await loadCandles();
-          await loadCollection(tab);
+          const loaders = loadersRef.current;
+          if (!loaders) return;
+          await loaders.loadToken();
+          await loaders.loadCandles();
+          await loaders.loadCollection(tabRef.current);
         },
       },
       queryKeyForEvent: (event) => {
@@ -173,16 +332,22 @@ export function TokenDetail({ address }: TokenDetailProps) {
         )
           return undefined;
         if (!isTokenEventForAddress(event, tokenAddress)) return undefined;
+        const currentToken = tokenRef.current;
+        if (!currentToken) return undefined;
         return queryKeys.token(
           configuration.chainId,
           configuration.deploymentId,
           tokenAddress,
-          token.snapshot,
+          currentToken.snapshot,
         );
       },
-      refetchSnapshot: async () => {
-        const fresh = await clientRef.current?.getToken(tokenAddress);
-        if (fresh) setToken(fresh);
+      refetchSnapshot: async (signal) => {
+        const loaders = loadersRef.current;
+        if (!loaders) return;
+        const next = await loaders.loadToken(signal);
+        if (!next) throw new Error("Token unavailable");
+        await loaders.loadCandles(signal);
+        await loaders.loadCollection(tabRef.current, undefined, false, signal);
       },
     });
     return stream.start();
@@ -191,11 +356,8 @@ export function TokenDetail({ address }: TokenDetailProps) {
     configuration.chainId,
     configuration.deploymentId,
     configuration.status,
-    loadCandles,
-    loadCollection,
-    tab,
-    token,
     tokenAddress,
+    useFixture,
   ]);
 
   if (configuration.status !== "ready") return <TokenUnavailable address={tokenAddress} />;
@@ -205,7 +367,12 @@ export function TokenDetail({ address }: TokenDetailProps) {
   if (tokenError || !token) return <TokenLoadError onRetry={() => window.location.reload()} />;
 
   const progress = Math.max(0, Math.min(100, token.graduation_progress_bps / 100));
-  const pagesItems = collectionItems(pages.at(-1));
+  const pagesItems: unknown[] = [];
+  for (const page of pages) {
+    for (const item of page.items ?? []) pagesItems.push(item);
+  }
+  const tradeItems = pagesItems as unknown as components["schemas"]["TradeDTO"][];
+  const holderItems = pagesItems as unknown as components["schemas"]["HolderDTO"][];
   const nextCursor = pages.at(-1)?.next_cursor;
   const snapshot = token.snapshot;
   return (
@@ -373,22 +540,14 @@ export function TokenDetail({ address }: TokenDetailProps) {
               value: "trades",
               label: "Recent trades",
               panel: (
-                <Trades
-                  items={pagesItems as components["schemas"]["TradeDTO"][]}
-                  loading={collectionLoading}
-                  error={collectionError}
-                />
+                <Trades items={tradeItems} loading={collectionLoading} error={collectionError} />
               ),
             },
             {
               value: "holders",
               label: "Holders",
               panel: (
-                <Holders
-                  items={pagesItems as components["schemas"]["HolderDTO"][]}
-                  loading={collectionLoading}
-                  error={collectionError}
-                />
+                <Holders items={holderItems} loading={collectionLoading} error={collectionError} />
               ),
             },
           ]}
@@ -427,15 +586,11 @@ export function TokenDetail({ address }: TokenDetailProps) {
 }
 
 function safeTokenAmount(raw: string) {
-  try {
-    return formatDisplayAmount(parseBaseUnits(raw, 18), 18, 3);
-  } catch {
-    return "Unavailable";
-  }
+  return formatCanonicalBaseUnits(raw, 3) ?? "Unavailable";
 }
 
 function safeMarketValue(raw: string) {
-  return /^\d+(?:\.\d+)?$/.test(raw.trim()) ? raw.trim() : "Unavailable";
+  return formatCanonicalBaseUnits(raw, 6) ?? "Unavailable";
 }
 function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -547,7 +702,11 @@ function Holders({
         <div className="history-row holder-row" role="row" key={item.address}>
           <span className="mono">{shortAddress(item.address)}</span>
           <span className="mono">{safeTokenAmount(item.balance)}</span>
-          <span className="mono">{item.first_acquired_block.toLocaleString("en-US")}</span>
+          <span className="mono">
+            {Number.isSafeInteger(item.first_acquired_block)
+              ? item.first_acquired_block.toLocaleString("en-US")
+              : "Unavailable"}
+          </span>
         </div>
       ))}
     </div>

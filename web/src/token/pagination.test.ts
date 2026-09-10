@@ -28,4 +28,12 @@ describe("token collection pagination", () => {
     expect(result.reset).toBe(true);
     expect(result.pages).toHaveLength(1);
   });
+  it("retains page one while appending a page from the same snapshot", async () => {
+    const first = page("cursor");
+    const second = page();
+    const fetch = vi.fn().mockResolvedValue(second);
+    const result = await appendTokenCollectionPage(fetch, [first], "cursor");
+    expect(result.pages).toEqual([first, second]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

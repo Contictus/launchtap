@@ -9,7 +9,8 @@ export default defineConfig({
   reporter: "line",
   use: { baseURL: "http://127.0.0.1:3000", trace: "on-first-retry" },
   webServer: {
-    command: "npm run start",
+    // Build with the E2E-only fixture flag, then exercise the production server and CSP.
+    command: 'cmd /c "set NEXT_PUBLIC_E2E_FIXTURE=1&& npm run build && npm run start"',
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
   },

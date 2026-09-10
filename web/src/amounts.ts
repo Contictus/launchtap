@@ -1,10 +1,47 @@
 const DECIMAL = /^\d+(?:\.\d+)?$/;
 const INTEGER = /^\d+$/;
+const CANONICAL_INTEGER = /^(?:0|[1-9]\d*)$/;
 
 export function parseBaseUnits(value: string, decimals = 18): bigint {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255 || !INTEGER.test(value))
     throw new Error("Invalid integer amount");
   return BigInt(value);
+}
+
+export function parseCanonicalBaseUnits(value: string, decimals = 18): bigint {
+  if (
+    !Number.isInteger(decimals) ||
+    decimals < 0 ||
+    decimals > 255 ||
+    !CANONICAL_INTEGER.test(value)
+  )
+    throw new Error("Invalid integer amount");
+  return BigInt(value);
+}
+
+/** Convert a strict WAD integer into a bounded chart number only after bigint scaling. */
+export function wadToBoundedNumber(value: string, maxWhole = 1_000_000_000_000): number | null {
+  if (!Number.isSafeInteger(maxWhole) || maxWhole < 0) return null;
+  let wad: bigint;
+  try {
+    wad = parseCanonicalBaseUnits(value);
+  } catch {
+    return null;
+  }
+  const scale = 10n ** 18n;
+  const whole = wad / scale;
+  if (whole > BigInt(maxWhole)) return null;
+  const fraction = wad % scale;
+  const result = Number(whole) + Number(fraction) / 1e18;
+  return Number.isFinite(result) ? result : null;
+}
+
+export function formatCanonicalBaseUnits(value: string, maxFractionDigits = 6): string | null {
+  try {
+    return formatDisplayAmount(parseCanonicalBaseUnits(value), 18, maxFractionDigits);
+  } catch {
+    return null;
+  }
 }
 
 export function parseDecimal(value: string, decimals = 18): bigint {

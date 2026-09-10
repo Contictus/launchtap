@@ -1,4 +1,5 @@
 import type { components } from "@/api/generated";
+import { wadToBoundedNumber } from "@/amounts";
 
 export type CandleChartPoint = {
   time: number;
@@ -16,12 +17,12 @@ export function transformCandles(candles: readonly components["schemas"]["Candle
   for (const candle of candles) {
     const time = Date.parse(candle.start) / 1000;
     const values = [candle.open, candle.high, candle.low, candle.close, candle.eth_volume].map(
-      (value) => Number(value),
+      (value) => wadToBoundedNumber(value),
     );
     if (
       !Number.isFinite(time) ||
       !Number.isInteger(time) ||
-      values.some((value) => !Number.isFinite(value) || value < 0)
+      values.some((value) => value === null || !Number.isFinite(value) || value < 0)
     )
       continue;
     const [open, high, low, close, volume] = values as [number, number, number, number, number];

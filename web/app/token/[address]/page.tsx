@@ -2,11 +2,18 @@ import { parseTokenAddress } from "@/token/address";
 import { TokenDetail } from "@/token/token-detail";
 import Link from "next/link";
 
-export default async function TokenPage({ params }: { params: Promise<{ address: string }> }) {
+export default async function TokenPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ address: string }>;
+  searchParams?: Promise<{ fixture?: string }>;
+}) {
   const { address } = await params;
+  const query = searchParams ? await searchParams : undefined;
   const parsed = parseTokenAddress(address);
   if (!parsed) return <TokenNotFound />;
-  return <TokenDetail address={parsed} />;
+  return <TokenDetail address={parsed} fixture={query?.fixture === "populated"} />;
 }
 
 function TokenNotFound() {
