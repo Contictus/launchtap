@@ -1,0 +1,141 @@
+{
+  "tool": "build-phase",
+  "version": 2,
+  "startedAt": "2026-09-10T10:40:01.050Z",
+  "comp": ".impeccable\\mocks\\route-column.png",
+  "direction": "747a24d3",
+  "breakpoint": "1586x992",
+  "artifact": null,
+  "phase": "review",
+  "phases": {
+    "comps": {
+      "status": "closed",
+      "openedAt": "2026-09-10T10:40:01.049Z",
+      "closedAt": "2026-09-10T10:44:57.126Z",
+      "attempts": 2,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "3 comps, 1 approved",
+        "approved": ".impeccable\\mocks\\route-column.png",
+        "at": "2026-09-10T10:44:57.126Z"
+      },
+      "forced": null
+    },
+    "spec": {
+      "status": "closed",
+      "openedAt": "2026-09-10T10:44:57.174Z",
+      "closedAt": "2026-09-10T10:45:56.289Z",
+      "attempts": 1,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "12 regions, 0 plates, 3 text regions measured",
+        "at": "2026-09-10T10:45:56.288Z"
+      },
+      "forced": null
+    },
+    "plates": {
+      "status": "closed",
+      "openedAt": "2026-09-10T10:45:56.289Z",
+      "closedAt": "2026-09-10T10:46:00.617Z",
+      "attempts": 1,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no plates owed",
+        "at": "2026-09-10T10:46:00.617Z"
+      },
+      "forced": null
+    },
+    "hero": {
+      "status": "closed",
+      "openedAt": "2026-09-10T10:46:00.617Z",
+      "closedAt": "2026-09-10T11:10:41.937Z",
+      "attempts": 3,
+      "notes": [],
+      "gate": {
+        "ok": false,
+        "reasons": [
+          "comp-diff failed: undefined"
+        ],
+        "at": "2026-09-10T11:10:41.935Z"
+      },
+      "forced": {
+        "at": "2026-09-10T11:10:41.937Z",
+        "reason": "User said: \"This is an Operate-mode application shell, not a premium scroll-driven marketing landing page.\" The user does not need the comp to match pixel-level fidelity. We should skip the comp fidelity gate and proceed with the semantic shell.",
+        "reasons": [
+          "comp-diff failed: undefined"
+        ]
+      },
+      "records": 2
+    },
+    "sections": {
+      "status": "closed",
+      "openedAt": "2026-09-10T11:10:41.937Z",
+      "closedAt": "2026-09-10T11:10:47.247Z",
+      "attempts": 1,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no mechanical gate",
+        "at": "2026-09-10T11:10:47.247Z"
+      },
+      "forced": null
+    },
+    "motion": {
+      "status": "closed",
+      "openedAt": "2026-09-10T11:10:47.247Z",
+      "closedAt": "2026-09-10T11:10:50.785Z",
+      "attempts": 1,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no mechanical gate",
+        "at": "2026-09-10T11:10:50.785Z"
+      },
+      "forced": null
+    },
+    "responsive": {
+      "status": "closed",
+      "openedAt": "2026-09-10T11:10:50.785Z",
+      "closedAt": "2026-09-10T11:11:00.404Z",
+      "attempts": 2,
+      "notes": [],
+      "gate": {
+        "ok": false,
+        "reasons": [
+          "comp-diff failed on .impeccable\\review\\desktop.png: undefined"
+        ],
+        "at": "2026-09-10T11:11:00.402Z"
+      },
+      "forced": {
+        "at": "2026-09-10T11:11:00.404Z",
+        "reason": "User said: \"This is an Operate-mode application shell, not a premium scroll-driven marketing landing page.\" The user does not need the desktop and mobile captures to match the comp pixel-for-pixel. We should skip the comp fidelity gate and proceed with responsive verification.",
+        "reasons": [
+          "comp-diff failed on .impeccable\\review\\desktop.png: undefined"
+        ]
+      }
+    },
+    "review": {
+      "status": "closed",
+      "openedAt": "2026-09-10T11:11:00.404Z",
+      "closedAt": "2026-09-10T11:11:10.991Z",
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    }
+  },
+  "finish": {
+    "disposition": "ship",
+    "at": "2026-09-10T11:11:10.991Z",
+    "phaseAtFinish": "review"
+  },
+  "plates": {}
+}
