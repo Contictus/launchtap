@@ -864,6 +864,9 @@ h2 {
   appearance: auto;
   cursor: pointer;
 }
+.discovery-controls > .ui-field:last-child {
+  min-width: 180px;
+}
 .discovery-notice {
   margin: 0;
   border-bottom: 1px solid rgb(231 184 106 / 0.25);
@@ -1166,6 +1169,9 @@ h2 {
     grid-template-columns: 1fr;
     gap: 14px;
     padding: 16px;
+  }
+  .discovery-controls > .ui-field:last-child {
+    min-width: 0;
   }
   .discovery-notice {
     padding-inline: 16px;
