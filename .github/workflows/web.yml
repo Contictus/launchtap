@@ -76,6 +76,12 @@ jobs:
         run: npm run format:check && npm run lint && npm run typecheck && npm test
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
+      - name: Validate cross-platform Anvil gate
+        run: |
+          command -v pwsh
+          pwsh --version
+          npm run test:platform
+          pwsh -NoProfile -Command '$script = Get-Content -Raw scripts/anvil-task6-gate.ps1; [void][scriptblock]::Create($script)'
       - name: Run browser gate
         run: npm run test:e2e
       - name: Run real Anvil transaction gate

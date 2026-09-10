@@ -17,6 +17,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:platform": "node --test scripts/anvil-task6-platform.test.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:anvil": "node scripts/run-anvil-task6-gate.mjs",

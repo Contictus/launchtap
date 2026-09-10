@@ -1,4 +1,13 @@
+import fs from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
+
+const windowsChromePath =
+  process.platform === "win32" ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" : "";
+const configuredChromePath =
+  windowsChromePath && fs.existsSync(windowsChromePath) ? windowsChromePath : undefined;
+const desktopBrowserOptions = configuredChromePath
+  ? { launchOptions: { executablePath: configuredChromePath } }
+  : {};
 
 const fixtureFactory = process.env.TASK6_ANVIL_FACTORY ?? "";
 const fixtureWeth = process.env.TASK6_ANVIL_WETH ?? "";
@@ -44,9 +53,7 @@ export default defineConfig({
       name: "desktop",
       use: {
         ...devices["Desktop Chrome"],
-        launchOptions: {
-          executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-        },
+        ...desktopBrowserOptions,
       },
     },
     {
@@ -54,9 +61,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 360, height: 800 },
-        launchOptions: {
-          executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-        },
+        ...desktopBrowserOptions,
       },
     },
   ],

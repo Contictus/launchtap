@@ -28,6 +28,10 @@ $apiProcess = $null
 $indexerProcess = $null
 $postgresStarted = $false
 $oldGoCache = $env:GOCACHE
+$isWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+$powershellCommand = if ($isWindows) { "powershell.exe" } else { "pwsh" }
+$npmCommand = if ($isWindows) { "npm.cmd" } else { "npm" }
+$foundryExtension = if ($isWindows) { ".exe" } else { "" }
 
 function Get-FreeTcpPort {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
@@ -51,9 +55,9 @@ function Start-Child([string]$FilePath, [string]$Arguments, [hashtable]$Environm
     New-Item -ItemType File -Path $stderrLog -Force | Out-Null
     foreach ($entry in $Environment.GetEnumerator()) { Set-Item -Path ("Env:" + $entry.Key) -Value ([string]$entry.Value) }
     if ([string]::IsNullOrWhiteSpace($Arguments)) {
-        $child = Start-Process -FilePath $FilePath -WorkingDirectory $backendRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+        $child = Start-Process -FilePath $FilePath -WorkingDirectory $backendRoot -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
     } else {
-        $child = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $backendRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+        $child = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $backendRoot -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
     }
     if ($null -eq $child) { throw "Could not start $FilePath" }
     return $child
@@ -100,19 +104,21 @@ $databaseUrl = "postgres://postgres:postgres@127.0.0.1:$postgresPort/${databaseN
 $apiUrl = "http://127.0.0.1:$apiPort"
 $webUrl = "http://127.0.0.1:$webPort"
 
-foreach ($command in @("docker", "go", "npm")) {
+foreach ($command in @("docker", "go", $npmCommand, $powershellCommand)) {
     if ($null -eq (Get-Command $command -ErrorAction SilentlyContinue)) { throw "$command is required for the real Task 6 gate" }
 }
 $anvilCommand = Get-Command anvil -ErrorAction SilentlyContinue
 $forgeCommand = Get-Command forge -ErrorAction SilentlyContinue
 $castCommand = Get-Command cast -ErrorAction SilentlyContinue
-$anvilPath = if ($anvilCommand) { $anvilCommand.Path } else { "C:\Users\$env:USERNAME\.foundry\bin\anvil.exe" }
-$forgePath = if ($forgeCommand) { $forgeCommand.Path } else { "C:\Users\$env:USERNAME\.foundry\bin\forge.exe" }
-$castPath = if ($castCommand) { $castCommand.Path } else { "C:\Users\$env:USERNAME\.foundry\bin\cast.exe" }
+$userProfile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+$foundryBin = Join-Path $userProfile ".foundry/bin"
+$anvilPath = if ($anvilCommand) { $anvilCommand.Path } else { Join-Path $foundryBin "anvil$foundryExtension" }
+$forgePath = if ($forgeCommand) { $forgeCommand.Path } else { Join-Path $foundryBin "forge$foundryExtension" }
+$castPath = if ($castCommand) { $castCommand.Path } else { Join-Path $foundryBin "cast$foundryExtension" }
 foreach ($path in @($anvilPath, $forgePath, $castPath)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Foundry executable not found: $path" }
 }
-$env:Path = "$(Split-Path -Parent $anvilPath);$env:Path"
+$env:Path = "$(Split-Path -Parent $anvilPath)$([IO.Path]::PathSeparator)$env:Path"
 $env:GOCACHE = Join-Path $backendRoot ".cache/task6-go-build"
 
 try {
@@ -137,7 +143,7 @@ try {
     }
 
     $deploymentScript = Join-Path $contractsRoot "scripts/deploy.ps1"
-    Invoke-Checked "powershell.exe" @(
+    Invoke-Checked $powershellCommand @(
         "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $deploymentScript,
         "-Target", "anvil", "-RpcUrl", $rpcUrl, "-DeploymentId", $deploymentId,
         "-Sender", $sender, "-PauseAuthority", $pauseAuthority, "-Timelock", $timelock,
@@ -203,7 +209,7 @@ try {
     try {
         $playwrightArgs = @("run", "test:e2e", "--", "e2e/task6-anvil.spec.ts")
         if (-not [string]::IsNullOrWhiteSpace($PlaywrightGrep)) { $playwrightArgs += @("-g", $PlaywrightGrep) }
-        Invoke-Checked "npm.cmd" $playwrightArgs
+        Invoke-Checked $npmCommand $playwrightArgs
     }
     finally { Pop-Location }
 }
