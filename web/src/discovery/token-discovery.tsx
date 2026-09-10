@@ -24,6 +24,7 @@ import {
   type TokenListQueryState,
   type TokenPhase,
 } from "./query-state";
+import { loadTokenDiscoveryPage } from "./controller";
 import {
   Badge,
   Button,
@@ -99,17 +100,9 @@ export function TokenDiscovery({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<ApiProblem | Error | null>(null);
   const [resetNotice, setResetNotice] = useState(false);
+  const pagesRef = useRef<TokenListResponse[]>([]);
   const requestId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const loadPageRef = useRef<
-    | ((
-        state: TokenListQueryState,
-        cursor?: string,
-        append?: boolean,
-        externalSignal?: AbortSignal,
-      ) => Promise<void>)
-    | null
-  >(null);
   const latestState = useRef(urlState);
   const searchEditedRef = useRef(false);
   const chainSnapshotRef = useRef<Snapshot | undefined>(undefined);
@@ -170,45 +163,33 @@ export function TokenDiscovery({
       else {
         setLoading(true);
         setPages([]);
+        pagesRef.current = [];
         chainSnapshotRef.current = undefined;
       }
-      const query = { ...tokenListFilters(state), cursor };
+      const fetchPage = injectedFetcher
+        ? injectedFetcher
+        : (query: TokenListQuery, signal?: AbortSignal) =>
+            new ApiClient({ baseUrl: configuration.apiBaseUrl! }).getTokens(query, signal);
       try {
-        const response = await (injectedFetcher
-          ? injectedFetcher(query, controller.signal)
-          : new ApiClient({ baseUrl: configuration.apiBaseUrl }).getTokens(
-              query,
-              controller.signal,
-            ));
+        const result = await loadTokenDiscoveryPage({
+          fetchPage,
+          state,
+          cursor: append ? cursor : undefined,
+          existingPages: pagesRef.current,
+          signal: controller.signal,
+        });
         if (controller.signal.aborted || currentRequest !== requestId.current) return;
-        if (
-          append &&
-          chainSnapshotRef.current &&
-          snapshotIdentity(chainSnapshotRef.current) !== snapshotIdentity(response.snapshot)
-        ) {
-          setResetNotice(true);
-          setPages([]);
-          chainSnapshotRef.current = undefined;
-          await loadPageRef.current?.(state, undefined, false);
-          return;
-        }
-        if (!append) chainSnapshotRef.current = response.snapshot;
-        setPages((current) => (append ? [...current, response] : [response]));
-        setResetNotice(false);
+        pagesRef.current = result.pages;
+        chainSnapshotRef.current = result.pages[0]?.snapshot;
+        setPages(result.pages);
+        setResetNotice(result.reset);
       } catch (cause) {
         if (controller.signal.aborted || currentRequest !== requestId.current) return;
-        if (
-          cause instanceof ApiProblem &&
-          (cause.code === "cursor_invalidated" || cause.code === "invalid_cursor") &&
-          append
-        ) {
-          setResetNotice(true);
-          setPages([]);
-          await loadPageRef.current?.(state, undefined, false);
-          return;
-        }
         setError(cause instanceof Error ? cause : new Error("The token list could not be loaded."));
-        if (!append) setPages([]);
+        if (!append) {
+          pagesRef.current = [];
+          setPages([]);
+        }
       } finally {
         externalSignal?.removeEventListener("abort", abortFromOutside);
         if (currentRequest === requestId.current) {
@@ -219,10 +200,6 @@ export function TokenDiscovery({
     },
     [configuration.apiBaseUrl, configuration.status, injectedFetcher],
   );
-  useEffect(() => {
-    loadPageRef.current = loadPage;
-  }, [loadPage]);
-
   useEffect(() => {
     // Fetching is the intended synchronization with the external API when URL state changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
