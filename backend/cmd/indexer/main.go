@@ -33,7 +33,7 @@ func run() error {
 	if err := c.RequireIndexer(); err != nil {
 		return err
 	}
-	registry, err := deployments.LoadEmbedded()
+	registry, err := loadDeploymentRegistry()
 	if err != nil {
 		return err
 	}
@@ -149,4 +149,11 @@ func run() error {
 	default:
 	}
 	return runErr
+}
+
+func loadDeploymentRegistry() (*deployments.Registry, error) {
+	if manifest := os.Getenv("DEPLOYMENT_MANIFEST_PATH"); manifest != "" {
+		return deployments.LoadEmbeddedWithManifest(manifest)
+	}
+	return deployments.LoadEmbedded()
 }

@@ -20,7 +20,7 @@ type ObservationReader struct {
 func (r ObservationReader) Get(ctx context.Context, chainID int64, deploymentID string, txHash common.Hash) (observation.Observation, error) {
 	var out observation.Observation
 	err := withReadSnapshotBeginner(ctx, r.Pool, chainID, deploymentID, func(ctx context.Context, a *Adapter, snapshot ReadSnapshot) error {
-		rows, err := a.queries.GetCanonicalTransaction(ctx, sqlc.GetCanonicalTransactionParams{ChainID: chainID, TxHash: sqlc.Hash(txHash)})
+		rows, err := a.queries.GetCanonicalTransaction(ctx, sqlc.GetCanonicalTransactionParams{ChainID: chainID, TxHash: sqlc.Hash(txHash), DeploymentID: deploymentID})
 		if err != nil {
 			return err
 		}

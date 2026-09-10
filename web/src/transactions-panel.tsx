@@ -106,7 +106,9 @@ async function observeFreshSnapshot(
         next.status === "indexing" &&
         ["indexed", "safe", "finalized"].includes(observedState.status)
       ) {
-        window.dispatchEvent(new CustomEvent("launchpad:canonical-reorg", { detail: { tokenAddress } }));
+        window.dispatchEvent(
+          new CustomEvent("launchpad:canonical-reorg", { detail: { tokenAddress } }),
+        );
       }
       observedState = next;
       if (attempt === delays.length - 1) return;
@@ -190,6 +192,7 @@ function TradingPanelReady({
   const executionLockRef = useRef(false);
   const claimLockRef = useRef(false);
   const configuration = publicConfiguration();
+  const curveExplorer = addressExplorerUrl(configuration, safeCurveAddress);
   const readiness = useWalletReadiness();
   const account = useAccount();
   const chainId = useChainId();
@@ -771,7 +774,15 @@ function TradingPanelReady({
       </div>
       <p className="transaction-risk">
         Non-custodial: your selected wallet signs directly. Transactions are irreversible and may
-        lose value. Contract <span className="mono">{token.curve}</span>.
+        lose value. Contract{" "}
+        {curveExplorer ? (
+          <a href={curveExplorer} target="_blank" rel="noreferrer" className="mono">
+            {token.curve}
+          </a>
+        ) : (
+          <span className="mono">{token.curve}</span>
+        )}
+        .
       </p>
       {confirming ? (
         <div className="transaction-confirmation" role="region" aria-label="Trade confirmation">
@@ -798,11 +809,28 @@ function TradingPanelReady({
             <dt>Network</dt>
             <dd>{configuration.deployment?.name}</dd>
             <dt>Contract</dt>
-            <dd className="mono">{token.curve}</dd>
+            <dd className="mono">
+              {curveExplorer ? (
+                <a href={curveExplorer} target="_blank" rel="noreferrer">
+                  {token.curve}
+                </a>
+              ) : (
+                token.curve
+              )}
+            </dd>
             {side === "sell" ? (
               <>
                 <dt>Approval spender</dt>
-                <dd className="mono">{token.curve} (exact sell amount only)</dd>
+                <dd className="mono">
+                  {curveExplorer ? (
+                    <a href={curveExplorer} target="_blank" rel="noreferrer">
+                      {token.curve}
+                    </a>
+                  ) : (
+                    token.curve
+                  )}{" "}
+                  (exact sell amount only)
+                </dd>
               </>
             ) : null}
           </dl>
@@ -916,6 +944,7 @@ function GraduatedSwapPanel({
   const { data: walletClient } = useWalletClient();
   const readiness = useWalletReadiness();
   const configuration = publicConfiguration();
+  const routerExplorer = addressExplorerUrl(configuration, router);
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [input, setInput] = useState("");
   const [slippage, setSlippage] = useState("5");
@@ -1141,9 +1170,24 @@ function GraduatedSwapPanel({
   );
   return (
     <div className="graduated-swap">
+      {chainId !== configuration.chainId ? (
+        <div className="transaction-warning" role="alert">
+          Wrong network. Switch to {configuration.deployment?.name} before signing.
+          <Button size="sm" onClick={() => void readiness.switchNetwork()}>
+            Switch network
+          </Button>
+        </div>
+      ) : null}
       <p className="transaction-risk">
-        Reviewed router only: <span className="mono">{router}</span>. Approval, if needed, is
-        limited to this router and this sell amount.
+        Reviewed router only:{" "}
+        {routerExplorer ? (
+          <a href={routerExplorer} target="_blank" rel="noreferrer" className="mono">
+            {router}
+          </a>
+        ) : (
+          <span className="mono">{router}</span>
+        )}
+        . Approval, if needed, is limited to this router and this sell amount.
       </p>
       <div className="trade-tabs" role="tablist" aria-label="Graduated trade side">
         <button
@@ -1214,7 +1258,15 @@ function GraduatedSwapPanel({
             <dt>Network</dt>
             <dd>{configuration.deployment?.name}</dd>
             <dt>Contract</dt>
-            <dd className="mono">{router}</dd>
+            <dd className="mono">
+              {routerExplorer ? (
+                <a href={routerExplorer} target="_blank" rel="noreferrer">
+                  {router}
+                </a>
+              ) : (
+                router
+              )}
+            </dd>
             <dt>Input / minimum</dt>
             <dd className="mono">
               {input} / {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
@@ -1222,7 +1274,10 @@ function GraduatedSwapPanel({
             <dt>Slippage</dt>
             <dd className="mono">{slippageBps === null ? "Invalid" : `${slippage}%`}</dd>
             <dt>Fee</dt>
-            <dd className="mono">Protocol/router fee is included in the authoritative quote.</dd>
+            <dd className="mono">
+              0 ETH router fee (Uniswap V2 has no protocol fee). Pool price impact is reflected in
+              the quoted output.
+            </dd>
             <dt>Deadline</dt>
             <dd className="mono">
               {transactionDeadline(currentUnixSeconds(), DEFAULT_TTL).toString()} (Unix seconds)
@@ -1230,7 +1285,16 @@ function GraduatedSwapPanel({
             {side === "sell" ? (
               <>
                 <dt>Approval spender</dt>
-                <dd className="mono">{router} (exact sell amount only)</dd>
+                <dd className="mono">
+                  {routerExplorer ? (
+                    <a href={routerExplorer} target="_blank" rel="noreferrer">
+                      {router}
+                    </a>
+                  ) : (
+                    router
+                  )}{" "}
+                  (exact sell amount only)
+                </dd>
               </>
             ) : null}
           </dl>
@@ -1388,29 +1452,30 @@ function LaunchPanelReady() {
           deadline,
         },
       ] as const;
-      const [latestLaunchFee, latestLaunchesPaused, latestTradingPaused, latestEngineEnabled] = await Promise.all([
-        publicClient.readContract({
-          address: deployment.factory as Address,
-          abi: browserAbis.factory,
-          functionName: "launchFee",
-        }) as Promise<bigint>,
-        publicClient.readContract({
-          address: deployment.factory as Address,
-          abi: browserAbis.factory,
-          functionName: "launchesPaused",
-        }) as Promise<boolean>,
-        publicClient.readContract({
-          address: deployment.factory as Address,
-          abi: browserAbis.factory,
-          functionName: "tradingPaused",
-        }) as Promise<boolean>,
-        publicClient.readContract({
-          address: deployment.factory as Address,
-          abi: browserAbis.factory,
-          functionName: "engineEnabled",
-          args: [1],
-        }) as Promise<boolean>,
-      ]);
+      const [latestLaunchFee, latestLaunchesPaused, latestTradingPaused, latestEngineEnabled] =
+        await Promise.all([
+          publicClient.readContract({
+            address: deployment.factory as Address,
+            abi: browserAbis.factory,
+            functionName: "launchFee",
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: deployment.factory as Address,
+            abi: browserAbis.factory,
+            functionName: "launchesPaused",
+          }) as Promise<boolean>,
+          publicClient.readContract({
+            address: deployment.factory as Address,
+            abi: browserAbis.factory,
+            functionName: "tradingPaused",
+          }) as Promise<boolean>,
+          publicClient.readContract({
+            address: deployment.factory as Address,
+            abi: browserAbis.factory,
+            functionName: "engineEnabled",
+            args: [1],
+          }) as Promise<boolean>,
+        ]);
       if (!latestEngineEnabled) throw new Error("EngineDisabled");
       if (latestLaunchesPaused) throw new Error("LaunchesPaused");
       if (buyUnits! > 0n && latestTradingPaused) throw new Error("TradingPaused");
@@ -1552,7 +1617,9 @@ function LaunchPanelReady() {
           {launchChainId !== configuration.chainId ? (
             <div className="transaction-warning" role="alert">
               Wrong network. Switch to {deployment.name} before signing.
-              <Button size="sm" onClick={switchNetwork}>Switch network</Button>
+              <Button size="sm" onClick={switchNetwork}>
+                Switch network
+              </Button>
             </div>
           ) : null}
           <div className="transaction-form">

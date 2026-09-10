@@ -30,6 +30,8 @@ export function publicConfiguration(
     NEXT_PUBLIC_E2E_FIXTURE: process.env.NEXT_PUBLIC_E2E_FIXTURE,
     NEXT_PUBLIC_TASK6_ANVIL_FACTORY: process.env.NEXT_PUBLIC_TASK6_ANVIL_FACTORY,
     NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: process.env.NEXT_PUBLIC_TASK6_ANVIL_RPC_URL,
+    NEXT_PUBLIC_TASK6_ANVIL_API_URL: process.env.NEXT_PUBLIC_TASK6_ANVIL_API_URL,
+    NEXT_PUBLIC_TASK6_ANVIL_WEB_URL: process.env.NEXT_PUBLIC_TASK6_ANVIL_WEB_URL,
     NEXT_PUBLIC_PRIVY_APP_ID: process.env.NEXT_PUBLIC_PRIVY_APP_ID,
     NEXT_PUBLIC_DEPLOYMENT_ID: process.env.NEXT_PUBLIC_DEPLOYMENT_ID,
     NEXT_PUBLIC_CHAIN_ID: process.env.NEXT_PUBLIC_CHAIN_ID,
@@ -40,14 +42,17 @@ export function publicConfiguration(
   if (env.NEXT_PUBLIC_E2E_FIXTURE === "1") {
     const factory = nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_FACTORY);
     const fixtureRpc = publicEndpoint(nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_RPC_URL));
-    const rpcUrl = publicEndpoint("http://127.0.0.1:3000/e2e/rpc");
-    if (factory && /^0x[0-9a-fA-F]{40}$/.test(factory) && fixtureRpc && rpcUrl) {
+    const fixtureApi = publicEndpoint(nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_API_URL));
+    const webBase =
+      publicEndpoint(nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_WEB_URL)) ?? "http://127.0.0.1:3000";
+    const rpcUrl = publicEndpoint(`${webBase}/e2e/rpc`);
+    if (factory && /^0x[0-9a-fA-F]{40}$/.test(factory) && fixtureRpc && fixtureApi && rpcUrl) {
       return {
         status: "ready",
         privyAppId: "cl_e2e_fixture_1234567890",
         chainId: 31337,
         deploymentId: "task6-anvil",
-        apiBaseUrl: "http://127.0.0.1:3000",
+        apiBaseUrl: fixtureApi,
         rpcUrl,
         deployment: {
           deploymentId: "task6-anvil",

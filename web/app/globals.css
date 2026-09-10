@@ -1359,6 +1359,10 @@ h2 {
   .transaction-progress {
     padding-inline: 16px;
   }
+  .create-page,
+  .token-page {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom));
+  }
   .transaction-warning {
     align-items: flex-start;
     flex-direction: column;

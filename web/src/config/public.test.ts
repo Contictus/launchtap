@@ -16,6 +16,18 @@ describe("publicConfiguration", () => {
     expect(publicConfiguration(env).status).toBe("fail-closed");
   });
 
+  it("uses the real backend URL for the Anvil fixture instead of a receipt fixture", () => {
+    const configuration = publicConfiguration({
+      NEXT_PUBLIC_E2E_FIXTURE: "1",
+      NEXT_PUBLIC_TASK6_ANVIL_FACTORY: "0x0000000000000000000000000000000000000001",
+      NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: "http://127.0.0.1:8545",
+      NEXT_PUBLIC_TASK6_ANVIL_API_URL: "http://127.0.0.1:18080",
+      NEXT_PUBLIC_TASK6_ANVIL_WEB_URL: "http://127.0.0.1:3000",
+    });
+    expect(configuration.status).toBe("ready");
+    expect(configuration.apiBaseUrl).toBe("http://127.0.0.1:18080");
+  });
+
   it("rejects credentials or query material in public endpoints", () => {
     expect(
       publicConfiguration({

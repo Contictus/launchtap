@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const fixtureFactory = process.env.TASK6_ANVIL_FACTORY ?? "";
 const fixtureRpc = process.env.TASK6_ANVIL_RPC_URL ?? "";
+const fixtureApi = process.env.TASK6_ANVIL_API_URL ?? "";
+const webPort = Number(process.env.TASK6_WEB_PORT ?? "3000");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -10,7 +12,7 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: "line",
-  use: { baseURL: "http://127.0.0.1:3000", trace: "on-first-retry" },
+  use: { baseURL: `http://127.0.0.1:${webPort}`, trace: "on-first-retry" },
   webServer: {
     // Build with the E2E-only fixture flag, then exercise the production server and CSP.
     command: "npm run build && npm run start",
@@ -18,10 +20,14 @@ export default defineConfig({
       NEXT_PUBLIC_E2E_FIXTURE: "1",
       TASK6_ANVIL_FACTORY: fixtureFactory,
       TASK6_ANVIL_RPC_URL: fixtureRpc,
+      TASK6_ANVIL_API_URL: fixtureApi,
       NEXT_PUBLIC_TASK6_ANVIL_FACTORY: fixtureFactory,
       NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: fixtureRpc,
+      NEXT_PUBLIC_TASK6_ANVIL_API_URL: fixtureApi,
+      NEXT_PUBLIC_TASK6_ANVIL_WEB_URL: `http://127.0.0.1:${webPort}`,
+      PORT: String(webPort),
     },
-    url: "http://127.0.0.1:3000",
+    url: `http://127.0.0.1:${webPort}`,
     reuseExistingServer: false,
   },
   projects: [
