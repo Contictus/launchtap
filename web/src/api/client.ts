@@ -4,6 +4,14 @@ import { mapProblem } from "./problems";
 export type ProtocolDailyResponse =
   paths["/stats/protocol/daily"]["get"]["responses"][200]["content"]["application/json"];
 export type ProtocolDailyItem = components["schemas"]["ProtocolDailyDTO"];
+export type TokenListResponse = components["schemas"]["TokenListBody"];
+export type TokenListQuery = {
+  phase?: string;
+  q?: string;
+  sort?: string;
+  cursor?: string;
+  limit?: number;
+};
 export type AuthHeaders = { accessToken?: string; identityToken?: string };
 
 export class ApiClient {
@@ -49,6 +57,17 @@ export class ApiClient {
       `/v1/tokens/${encodeURIComponent(address)}`,
     );
   }
+
+  getTokens(options: TokenListQuery = {}, signal?: AbortSignal) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    }
+    return this.request<TokenListResponse>(
+      `/v1/tokens${query.size ? `?${query.toString()}` : ""}`,
+      { signal },
+    );
+  }
 }
 
 export function getProtocolDaily(
@@ -56,4 +75,8 @@ export function getProtocolDaily(
   options: { from?: string; to?: string; limit?: number } = {},
 ) {
   return new ApiClient({ baseUrl }).getProtocolDaily(options);
+}
+
+export function getTokens(baseUrl: string, options: TokenListQuery = {}, signal?: AbortSignal) {
+  return new ApiClient({ baseUrl }).getTokens(options, signal);
 }

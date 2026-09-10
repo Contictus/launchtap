@@ -31,4 +31,31 @@ describe("generated API wrapper", () => {
       "Sensitive values",
     );
   });
+
+  it("serializes token-list filters through the generated response boundary", async () => {
+    let requested = "";
+    const client = new ApiClient({
+      baseUrl: "https://api.example",
+      fetch: async (input) => {
+        requested = String(input);
+        return new Response(
+          JSON.stringify({
+            items: [],
+            snapshot: { chain_id: 1, as_of_block: 4, as_of_block_hash: "0x", finality: "safe" },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await client.getTokens({
+      phase: "graduated",
+      q: "red & blue",
+      sort: "volume_24h",
+      cursor: "next",
+      limit: 20,
+    });
+    expect(requested).toBe(
+      "https://api.example/v1/tokens?phase=graduated&q=red+%26+blue&sort=volume_24h&cursor=next&limit=20",
+    );
+  });
 });

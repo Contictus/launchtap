@@ -837,6 +837,182 @@ h2 {
   background: linear-gradient(90deg, var(--surface-strong), #1d334b, var(--surface-strong));
   background-size: 220% 100%;
 }
+.discovery-page .page-hero {
+  padding-bottom: 32px;
+}
+.discovery-panel {
+  overflow: hidden;
+}
+.discovery-controls-head {
+  align-items: center;
+}
+.snapshot-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--quiet);
+  font-size: 0.7rem;
+}
+.discovery-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 0.34fr) minmax(180px, 0.42fr);
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 20px 24px;
+}
+.discovery-controls select {
+  appearance: auto;
+  cursor: pointer;
+}
+.discovery-notice {
+  margin: 0;
+  border-bottom: 1px solid rgb(231 184 106 / 0.25);
+  background: rgb(231 184 106 / 0.08);
+  color: var(--amber);
+  padding: 11px 24px;
+  font-size: 0.78rem;
+}
+.discovery-state {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  padding: 28px 24px;
+}
+.discovery-state .ui-unavailable {
+  width: min(100%, 680px);
+  margin-top: 0;
+  border-top: 0;
+}
+.token-list {
+  display: grid;
+}
+.token-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.85fr);
+  gap: 24px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 18px 24px;
+}
+.token-card:last-child {
+  border-bottom: 0;
+}
+.token-card-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+.token-image {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--quiet);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.58rem;
+  text-align: center;
+}
+.token-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.token-identity {
+  min-width: 0;
+}
+.token-identity h3 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--bone);
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.token-symbol {
+  margin: 3px 0 1px;
+  color: var(--violet);
+  font-size: 0.72rem;
+}
+.token-address {
+  overflow: hidden;
+  margin: 0;
+  color: var(--quiet);
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.token-card-main > .ui-badge {
+  margin-left: auto;
+}
+.token-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.token-metrics div {
+  min-width: 0;
+}
+.token-metrics dt {
+  overflow: hidden;
+  color: var(--quiet);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.61rem;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.token-metrics dd {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: var(--bone);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.discovery-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  padding: 16px 24px;
+}
+.discovery-count,
+.discovery-end {
+  color: var(--quiet);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+}
+.discovery-end {
+  color: var(--green);
+}
+.token-card-skeleton {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 86px;
+}
+.token-skeleton-copy {
+  display: grid;
+  width: min(320px, 50%);
+  gap: 8px;
+}
+.token-skeleton-copy .ui-skeleton:nth-child(1) {
+  width: 70%;
+}
+.token-skeleton-copy .ui-skeleton:nth-child(2) {
+  width: 38%;
+}
+.token-skeleton-copy .ui-skeleton:nth-child(3) {
+  width: 90%;
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -981,5 +1157,36 @@ h2 {
   }
   .footer-links {
     flex-wrap: wrap;
+  }
+  .discovery-controls-head {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .discovery-controls {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 16px;
+  }
+  .discovery-notice {
+    padding-inline: 16px;
+  }
+  .discovery-state {
+    min-height: 240px;
+    padding-inline: 16px;
+  }
+  .token-card {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+  .token-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 10px;
+    padding-left: 62px;
+  }
+  .discovery-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
   }
 }

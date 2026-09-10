@@ -1,15 +1,24 @@
-import { RoutePlaceholder } from "@/components/route-placeholder";
+import { Suspense } from "react";
+import { TokenDiscovery } from "@/discovery/token-discovery";
 
 export default function GraduatedPage() {
   return (
-    <RoutePlaceholder
-      eyebrow="Graduated"
-      title="Graduated routes."
-      summary="Review completed launch routes when the indexed deployment is connected."
-      emptyTitle="No graduated routes yet"
-      emptyDescription="Graduation history will appear here once the API is available."
-      unavailableTitle="Graduated discovery unavailable"
-      unavailableDescription="A reviewed API and deployment are required before graduated routes can be shown."
-    />
+    <Suspense fallback={<DiscoveryFallback />}>
+      <TokenDiscovery
+        defaultPhase="graduated"
+        title="Graduated routes."
+        summary="Review completed launch routes from the canonical indexed snapshot."
+      />
+    </Suspense>
+  );
+}
+
+function DiscoveryFallback() {
+  return (
+    <div className="page-stack discovery-page" aria-busy="true">
+      <div className="discovery-state">
+        <p className="mono">Loading graduated routes…</p>
+      </div>
+    </div>
   );
 }
