@@ -738,7 +738,7 @@ export const browserAbis = {
 export type BrowserAbiName = keyof typeof browserAbis;
 
 export type ReviewedDeployment = {
-  deploymentId: string; chainId: number; name: string; enabled: boolean;
+  deploymentId: string; chainId: number; name: string; enabled: boolean; factory: string | null;
   explorerBase: string | null; weth: string | null; uniswapV2Factory: string | null;
   uniswapV2Router02: string | null;
 };
@@ -749,6 +749,7 @@ export const reviewedDeployments: readonly ReviewedDeployment[] = [
     "chainId": 4663,
     "name": "Robinhood Chain",
     "enabled": false,
+    "factory": null,
     "explorerBase": "https://robinhoodchain.blockscout.com",
     "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
     "uniswapV2Factory": "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f",
@@ -759,6 +760,7 @@ export const reviewedDeployments: readonly ReviewedDeployment[] = [
     "chainId": 46630,
     "name": "robinhood-testnet",
     "enabled": false,
+    "factory": null,
     "explorerBase": null,
     "weth": null,
     "uniswapV2Factory": null,

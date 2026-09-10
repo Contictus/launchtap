@@ -1,13 +1,22 @@
-import { RoutePlaceholder } from "@/components/route-placeholder";
+import { LaunchPanel } from "@/transactions-panel";
 
 export default function CreatePage() {
   return (
-    <RoutePlaceholder
-      eyebrow="Create"
-      title="Create a launch."
-      summary="Prepare a fixed-supply token launch after deployment and wallet foundations are reviewed."
-      unavailableTitle="Launch creation unavailable"
-      unavailableDescription="Wallet readiness, contract configuration, and transaction simulation arrive in the next foundation task."
-    />
+    <div className="page-stack create-page">
+      <div className="page-hero">
+        <div>
+          <p className="section-kicker">Create</p>
+          <h1>Launch a fixed-supply token.</h1>
+          <p className="hero-summary">
+            Review the factory state, exact launch value, and wallet call before signing.
+          </p>
+        </div>
+        <p className="hero-aside">
+          Non-custodial by design. Missing reviewed deployment configuration keeps launch
+          unavailable.
+        </p>
+      </div>
+      <LaunchPanel />
+    </div>
   );
 }

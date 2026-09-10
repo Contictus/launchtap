@@ -15,6 +15,157 @@ export type TransactionStatus =
   | "safe"
   | "finalized";
 export type TransactionState = { status: TransactionStatus; hash?: `0x${string}`; error?: string };
+
+export type LaunchValidation = {
+  name: string;
+  symbol: string;
+  imageUrl?: string;
+  xUrl?: string;
+  telegramUrl?: string;
+  developerBuyGross: bigint;
+};
+
+export type LaunchValidationErrors = Partial<
+  Record<"name" | "symbol" | "imageUrl" | "xUrl" | "telegramUrl" | "developerBuyGross", string>
+>;
+
+/** The payable launch amount is exact: no rounding or caller supplied excess is accepted. */
+export function calculateLaunchValue(launchFee: bigint, developerBuyGross: bigint): bigint {
+  if (launchFee < 0n || developerBuyGross < 0n) throw new Error("Amounts cannot be negative");
+  return launchFee + developerBuyGross;
+}
+
+export function validateLaunchInput(input: LaunchValidation): LaunchValidationErrors {
+  const errors: LaunchValidationErrors = {};
+  const name = input.name.trim();
+  const symbol = input.symbol.trim();
+  if (!name) errors.name = "Enter a token name.";
+  else if (name.length > 64) errors.name = "Token name must be 64 characters or fewer.";
+  if (!symbol) errors.symbol = "Enter a token symbol.";
+  else if (!/^[A-Za-z0-9]{1,16}$/.test(symbol))
+    errors.symbol = "Use 1–16 letters or numbers for the symbol.";
+  for (const [key, value] of [
+    ["imageUrl", input.imageUrl],
+    ["xUrl", input.xUrl],
+    ["telegramUrl", input.telegramUrl],
+  ] as const) {
+    if (!value?.trim()) continue;
+    try {
+      if (new URL(value).protocol !== "https:") throw new Error();
+    } catch {
+      errors[key] = "Use a valid HTTPS URL.";
+    }
+  }
+  if (input.developerBuyGross < 0n) errors.developerBuyGross = "Amount cannot be negative.";
+  return errors;
+}
+
+/** Floors minimum output, protecting the user at the integer boundary. */
+export function minimumOutput(expectedOutput: bigint, slippageBps: bigint): bigint {
+  if (expectedOutput < 0n) throw new Error("Output cannot be negative");
+  if (slippageBps < 0n || slippageBps > 10_000n) throw new Error("Invalid slippage");
+  return (expectedOutput * (10_000n - slippageBps)) / 10_000n;
+}
+
+export function transactionDeadline(nowSeconds: bigint, ttlSeconds: bigint): bigint {
+  if (nowSeconds < 0n || ttlSeconds <= 0n) throw new Error("Invalid deadline");
+  return nowSeconds + ttlSeconds;
+}
+
+export function reviewedRouterAddress(
+  deployment: {
+    enabled: boolean;
+    chainId: number;
+    uniswapV2Router02: string | null;
+  },
+  expectedChainId: number | null,
+): `0x${string}` | null {
+  if (
+    !deployment.enabled ||
+    deployment.chainId !== expectedChainId ||
+    !deployment.uniswapV2Router02
+  )
+    return null;
+  return /^0x[0-9a-fA-F]{40}$/.test(deployment.uniswapV2Router02)
+    ? (deployment.uniswapV2Router02 as `0x${string}`)
+    : null;
+}
+
+export function claimIsExecutable(args: {
+  serverEligible: boolean;
+  onChainEligible: boolean;
+  selectedWalletReady: boolean;
+}): boolean {
+  return args.serverEligible && args.onChainEligible && args.selectedWalletReady;
+}
+
+export function canonicalObservationState(
+  state: TransactionState,
+  observed: boolean,
+): TransactionState {
+  if (!observed || state.status !== "indexing") return state;
+  return { ...state, status: "indexed" };
+}
+
+export type ExactWrite = {
+  account: string;
+  target: string;
+  value: bigint;
+  args: readonly unknown[];
+  deadline?: bigint;
+  minimumOutput?: bigint;
+};
+
+/** Used by tests and executors to ensure simulation and signing use byte-for-byte equal intent. */
+export function sameWriteIntent(left: ExactWrite, right: ExactWrite): boolean {
+  if (
+    left.account.toLowerCase() !== right.account.toLowerCase() ||
+    left.target.toLowerCase() !== right.target.toLowerCase() ||
+    left.value !== right.value ||
+    left.deadline !== right.deadline ||
+    left.minimumOutput !== right.minimumOutput ||
+    left.args.length !== right.args.length
+  )
+    return false;
+  return left.args.every((value, index) => equalIntent(value, right.args[index]));
+}
+
+function equalIntent(left: unknown, right: unknown): boolean {
+  if (typeof left === "bigint" || typeof right === "bigint") return left === right;
+  if (Array.isArray(left) && Array.isArray(right))
+    return (
+      left.length === right.length && left.every((value, index) => equalIntent(value, right[index]))
+    );
+  return left === right;
+}
+
+export type DecodedTransactionError = { code: string; message: string };
+
+/** Decode only known, versioned contract errors. Provider payloads are never returned to UI. */
+export function decodeTransactionError(cause: unknown): DecodedTransactionError {
+  const text = cause instanceof Error ? cause.message : "";
+  const messages: Record<string, string> = {
+    DeadlineExpired: "The deadline expired. Refresh the quote and try again.",
+    LaunchValueMismatch: "The launch value changed. Refresh the factory fee and try again.",
+    LaunchesPaused: "Launching is paused by the reviewed deployment.",
+    TradingPaused: "Trading is paused by the reviewed deployment.",
+    WrongPhase: "This token changed phase. Refresh the token before trading.",
+    SlippageExceeded:
+      "Price moved beyond your slippage limit. Increase the limit only if you accept the risk.",
+    Oversell: "The requested token amount exceeds the curve balance.",
+    NothingToClaim: "There is no claimable balance for this wallet.",
+    ERC20InsufficientAllowance:
+      "Approval is lower than this sell amount. Approve the disclosed amount and resume.",
+    ERC20InsufficientBalance: "The selected wallet does not have enough tokens for this action.",
+  };
+  const code =
+    Object.keys(messages).find((name) => text.includes(name)) ?? "UnknownTransactionError";
+  return {
+    code: messages[code] ? code : "UnknownTransactionError",
+    message:
+      messages[code] ?? "The wallet or network rejected this transaction. No funds were moved.",
+  };
+}
 export type TransactionReadiness = {
   providerReady: boolean;
   configurationReady: boolean;

@@ -9,6 +9,7 @@ export type TokenDetailResponse = components["schemas"]["TokenDetailDTO"];
 export type CandleResponse = components["schemas"]["CandleBody"];
 export type TradesResponse = components["schemas"]["TradesBody"];
 export type HoldersResponse = components["schemas"]["HoldersBody"];
+export type QuoteResponse = components["schemas"]["QuoteBody"];
 export type TokenListQuery = {
   phase?: string;
   q?: string;
@@ -124,6 +125,15 @@ export class ApiClient {
       `/v1/tokens${query.size ? `?${query.toString()}` : ""}`,
       { signal },
     );
+  }
+
+  getQuote(address: string, input: components["schemas"]["QuoteInputBody"], signal?: AbortSignal) {
+    return this.request<QuoteResponse>(`/v1/tokens/${encodeURIComponent(address)}/quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal,
+    });
   }
 }
 

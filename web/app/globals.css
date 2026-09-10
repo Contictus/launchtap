@@ -1199,6 +1199,177 @@ h2 {
   }
 }
 
+/* Transaction surfaces keep the confirmation and safety copy in the reading path. */
+.transaction-panel {
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.transaction-panel > .ui-state {
+  margin: 22px 24px;
+}
+.transaction-form {
+  display: grid;
+  gap: 14px;
+  padding: 20px 24px;
+}
+.trade-tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 24px;
+}
+.trade-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-display), sans-serif;
+  font-weight: 600;
+}
+.trade-tabs button.is-active {
+  border-bottom-color: var(--red);
+  color: var(--bone);
+}
+.quote-summary {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 16px 24px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.quote-summary span {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+.quote-summary strong {
+  color: var(--bone);
+  font-weight: 600;
+}
+.quote-summary small {
+  color: var(--quiet);
+}
+.transaction-risk {
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 24px;
+  color: var(--amber);
+  font-size: 0.76rem;
+}
+.transaction-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid rgb(231 184 106 / 0.35);
+  background: rgb(231 184 106 / 0.08);
+  color: var(--amber);
+  padding: 12px 24px;
+  font-size: 0.78rem;
+}
+.transaction-warning .ui-button {
+  flex: 0 0 auto;
+}
+.transaction-panel > .ui-button {
+  margin: 18px 24px 24px;
+}
+.transaction-confirmation {
+  margin: 18px 24px 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--canvas);
+  padding: 18px;
+}
+.transaction-confirmation h3 {
+  margin-bottom: 14px;
+  font-size: 1.05rem;
+}
+.transaction-confirmation dl {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.32fr) 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 0.8rem;
+}
+.transaction-confirmation dt {
+  color: var(--quiet);
+}
+.transaction-confirmation dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--bone);
+}
+.transaction-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.transaction-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 14px 24px;
+  color: var(--quiet);
+  font-size: 0.7rem;
+}
+.transaction-progress .transaction-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.transaction-error {
+  color: var(--red-soft);
+  font-size: 0.78rem;
+}
+.claim-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding: 14px 24px;
+  color: var(--quiet);
+  font-size: 0.72rem;
+}
+.create-page .hero-aside {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+@media (max-width: 767px) {
+  .transaction-form,
+  .quote-summary,
+  .transaction-risk,
+  .transaction-warning,
+  .trade-tabs {
+    padding-inline: 16px;
+  }
+  .transaction-panel > .ui-button {
+    width: calc(100% - 32px);
+    margin-inline: 16px;
+  }
+  .transaction-confirmation {
+    margin-inline: 16px;
+  }
+  .transaction-progress {
+    padding-inline: 16px;
+  }
+  .transaction-warning {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .quote-summary span {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
 /* Token detail: dense route manifest, shared with the shell's dark operating world. */
 .token-page {
   max-width: 100%;

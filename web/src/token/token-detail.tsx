@@ -32,6 +32,7 @@ import {
 } from "./pagination";
 import { MarketChart } from "./market-chart";
 import { isTokenEventForAddress } from "./sse-scope";
+import { TradingPanel } from "@/transactions-panel";
 
 type TokenDetailProps = { address: `0x${string}` };
 type Tab = "trades" | "holders";
@@ -457,6 +458,17 @@ export function TokenDetail({
           </p>
         </div>
       </section>
+
+      <TradingPanel
+        token={{
+          address: token.address,
+          curve: token.curve,
+          pair: token.pair,
+          phase: token.phase,
+          name: token.name,
+          symbol: token.symbol,
+        }}
+      />
 
       <section className="workspace-panel market-panel" aria-labelledby="market-title">
         <div className="panel-head market-panel-head">

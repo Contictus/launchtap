@@ -111,6 +111,7 @@ for (const name of ["robinhood-mainnet.json", "robinhood-testnet.disabled.json"]
     chainId: document.chainId,
     name: document.name ?? document.target,
     enabled: document.enabled === true && Boolean(document.factory),
+    factory: document.factory ?? null,
     explorerBase: document.explorerBase ?? null,
     weth: document.weth ?? null,
     uniswapV2Factory: document.uniswapV2Factory ?? null,
@@ -124,7 +125,7 @@ const generated =
   `export const browserAbis = ${json({ factory, curve, token, router })} as const;\n\n` +
   `export type BrowserAbiName = keyof typeof browserAbis;\n\n` +
   `export type ReviewedDeployment = {\n` +
-  `  deploymentId: string; chainId: number; name: string; enabled: boolean;\n` +
+  `  deploymentId: string; chainId: number; name: string; enabled: boolean; factory: string | null;\n` +
   `  explorerBase: string | null; weth: string | null; uniswapV2Factory: string | null;\n` +
   `  uniswapV2Router02: string | null;\n` +
   `};\n\n` +
