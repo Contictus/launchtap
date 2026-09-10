@@ -23,6 +23,14 @@ contract LocalUniswapV2Pair {
 
     event Mint(address indexed sender, uint256 amount0, uint256 amount1);
     event Sync(uint112 reserve0, uint112 reserve1);
+    event Swap(
+        address indexed sender,
+        uint256 amount0In,
+        uint256 amount1In,
+        uint256 amount0Out,
+        uint256 amount1Out,
+        address indexed to
+    );
     event Transfer(address indexed from, address indexed to, uint256 amount);
 
     constructor() {
@@ -64,6 +72,31 @@ contract LocalUniswapV2Pair {
         _mint(to, liquidity);
         _update(balance0, balance1);
         emit Mint(msg.sender, amount0, amount1);
+    }
+
+    function swap(uint256 amount0Out, uint256 amount1Out, address to) external {
+        require(amount0Out > 0 || amount1Out > 0, "LocalV2: insufficient output");
+        require(amount0Out < _reserve0 && amount1Out < _reserve1, "LocalV2: liquidity");
+        if (amount0Out > 0) require(IERC20(token0).transfer(to, amount0Out), "LocalV2: transfer");
+        if (amount1Out > 0) require(IERC20(token1).transfer(to, amount1Out), "LocalV2: transfer");
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+        uint256 amount0In = balance0 > uint256(_reserve0) - amount0Out
+            ? balance0 - (uint256(_reserve0) - amount0Out)
+            : 0;
+        uint256 amount1In = balance1 > uint256(_reserve1) - amount1Out
+            ? balance1 - (uint256(_reserve1) - amount1Out)
+            : 0;
+        require(amount0In > 0 || amount1In > 0, "LocalV2: insufficient input");
+        uint256 balance0Adjusted = balance0 * 1000 - amount0In * 3;
+        uint256 balance1Adjusted = balance1 * 1000 - amount1In * 3;
+        require(
+            balance0Adjusted * balance1Adjusted
+                >= uint256(_reserve0) * uint256(_reserve1) * 1_000_000,
+            "LocalV2: invariant"
+        );
+        _update(balance0, balance1);
+        emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
     }
 
     function _mint(address to, uint256 amount) private {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseEventLogs } from "viem";
-import { useAccount, useChainId, useConnect, usePublicClient, useWalletClient } from "wagmi";
+import { useAccount, useConnect, usePublicClient, useWalletClient } from "wagmi";
 import { formatBaseUnits, parseDecimal } from "@/amounts";
 import { ApiClient } from "@/api/client";
 import { browserAbis, type ReviewedDeployment } from "@/contracts/generated";
@@ -75,8 +75,43 @@ async function observeFreshSnapshot(
   if (!baseUrl) return;
   const client = new ApiClient({ baseUrl });
   const delays = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
+  const monitorDurationMs = 60_000;
+  const startedAt = Date.now();
   let observedState = state;
-  for (let attempt = 0; attempt < delays.length; attempt++) {
+  let attempt = 0;
+  let inFlight = false;
+  let timer: number | undefined;
+  let stopped = false;
+
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (timer !== undefined) window.clearTimeout(timer);
+    window.removeEventListener("launchpad:canonical-reorg", refreshOnSignal);
+    window.removeEventListener("focus", refreshOnSignal);
+    window.removeEventListener("online", refreshOnSignal);
+    window.removeEventListener("pageshow", refreshOnSignal);
+    document.removeEventListener("visibilitychange", refreshOnSignal);
+  };
+  const schedule = () => {
+    if (stopped) return;
+    const remaining = monitorDurationMs - (Date.now() - startedAt);
+    if (remaining <= 0) {
+      stop();
+      return;
+    }
+    const delay = Math.min(delays[Math.min(attempt++, delays.length - 1)] ?? 15_000, remaining);
+    timer = window.setTimeout(() => {
+      timer = undefined;
+      void refresh();
+    }, delay);
+  };
+  const refresh = async () => {
+    if (stopped || inFlight || Date.now() - startedAt >= monitorDurationMs) {
+      if (!inFlight) stop();
+      return;
+    }
+    inFlight = true;
     try {
       const fresh = await client.getCanonicalTransaction(observedState.hash ?? "");
       const records = (fresh.events ?? []).map((event) => ({
@@ -91,10 +126,15 @@ async function observeFreshSnapshot(
         records,
         snapshotFinality: fresh.finality,
       });
+      const wasCanonical = ["indexed", "safe", "finalized"].includes(observedState.status);
       setState(next);
       observedState = next;
-      if (next.status === "finalized") return;
+      if (next.status === "indexing" && wasCanonical)
+        window.dispatchEvent(
+          new CustomEvent("launchpad:canonical-reorg", { detail: { tokenAddress } }),
+        );
     } catch {
+      const wasCanonical = ["indexed", "safe", "finalized"].includes(observedState.status);
       const next = observeCanonicalTransaction({
         state: observedState,
         submittedHash: observedState.hash ?? "",
@@ -102,20 +142,27 @@ async function observeFreshSnapshot(
         records: [],
       });
       setState(next);
-      if (
-        next.status === "indexing" &&
-        ["indexed", "safe", "finalized"].includes(observedState.status)
-      ) {
+      if (next.status === "indexing" && wasCanonical) {
         window.dispatchEvent(
           new CustomEvent("launchpad:canonical-reorg", { detail: { tokenAddress } }),
         );
       }
       observedState = next;
-      if (attempt === delays.length - 1) return;
+    } finally {
+      inFlight = false;
+      schedule();
     }
-    if (attempt < delays.length - 1)
-      await new Promise((resolve) => window.setTimeout(resolve, delays[attempt]));
-  }
+  };
+  const refreshOnSignal = () => {
+    if (document.visibilityState === "hidden") return;
+    void refresh();
+  };
+  window.addEventListener("launchpad:canonical-reorg", refreshOnSignal);
+  window.addEventListener("focus", refreshOnSignal);
+  window.addEventListener("online", refreshOnSignal);
+  window.addEventListener("pageshow", refreshOnSignal);
+  document.addEventListener("visibilitychange", refreshOnSignal);
+  await refresh();
 }
 
 function ReadinessGate({ children }: { children: React.ReactNode }) {
@@ -195,7 +242,7 @@ function TradingPanelReady({
   const curveExplorer = addressExplorerUrl(configuration, safeCurveAddress);
   const readiness = useWalletReadiness();
   const account = useAccount();
-  const chainId = useChainId();
+  const chainId = readiness.chainId;
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const reviewedRouter = reviewedRouterAddress(configuration.deployment!, configuration.chainId);
@@ -303,7 +350,9 @@ function TradingPanelReady({
   const execute = async () => {
     if (graduated) return;
     if (executionLockRef.current) return;
+    const resumingApproval = side === "sell" && approvalHash !== undefined;
     if (
+      !resumingApproval &&
       state.status !== "disconnected" &&
       state.status !== "reverted" &&
       state.status !== "rejected-signature" &&
@@ -323,6 +372,7 @@ function TradingPanelReady({
       setState({ status: chainId !== configuration.chainId ? "wrong-chain" : "disconnected" });
       return;
     }
+    setConfirming(false);
     executionLockRef.current = true;
     const accountAddress = account.address;
     const now = currentUnixSeconds();
@@ -435,7 +485,6 @@ function TradingPanelReady({
           const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash });
           if (approvalReceipt.status !== "success") throw new Error("ReceiptReverted");
           setState({ status: "mined", hash: hash as Address });
-          setState({ status: "disconnected" });
           return;
         }
       }
@@ -939,10 +988,10 @@ function GraduatedSwapPanel({
 }) {
   const tokenAddress = safeAddress(token.address);
   const account = useAccount();
-  const chainId = useChainId();
+  const readiness = useWalletReadiness();
+  const chainId = readiness.chainId;
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
-  const readiness = useWalletReadiness();
   const configuration = publicConfiguration();
   const routerExplorer = addressExplorerUrl(configuration, router);
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -1001,6 +1050,7 @@ function GraduatedSwapPanel({
       !readiness.selectedAccountVerified
     )
       return;
+    setConfirming(false);
     lockRef.current = true;
     let submittedHash: Address | undefined;
     let failurePhase: "preflight" | "simulation" | "write" | "receipt" = "preflight";
@@ -1338,7 +1388,7 @@ function LaunchPanelReady() {
   const readiness = useWalletReadiness();
   const account = useAccount();
   const { connect, connectors, isPending: connectPending } = useConnect();
-  const launchChainId = useChainId();
+  const launchChainId = readiness.chainId;
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const [name, setName] = useState("");
@@ -1430,6 +1480,7 @@ function LaunchPanelReady() {
       !readiness.selectedAccountVerified
     )
       return;
+    setConfirming(false);
     executionLockRef.current = true;
     let submittedHash: Address | undefined;
     let failurePhase: "preflight" | "simulation" | "write" | "receipt" = "preflight";

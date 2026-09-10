@@ -1,6 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const fixtureFactory = process.env.TASK6_ANVIL_FACTORY ?? "";
+const fixtureWeth = process.env.TASK6_ANVIL_WETH ?? "";
+const fixtureRouter = process.env.TASK6_ANVIL_ROUTER ?? "";
+const fixtureUniswapFactory = process.env.TASK6_ANVIL_UNISWAP_FACTORY ?? "";
 const fixtureRpc = process.env.TASK6_ANVIL_RPC_URL ?? "";
 const fixtureApi = process.env.TASK6_ANVIL_API_URL ?? "";
 const webPort = Number(process.env.TASK6_WEB_PORT ?? "3000");
@@ -19,9 +22,15 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_E2E_FIXTURE: "1",
       TASK6_ANVIL_FACTORY: fixtureFactory,
+      TASK6_ANVIL_WETH: fixtureWeth,
+      TASK6_ANVIL_ROUTER: fixtureRouter,
+      TASK6_ANVIL_UNISWAP_FACTORY: fixtureUniswapFactory,
       TASK6_ANVIL_RPC_URL: fixtureRpc,
       TASK6_ANVIL_API_URL: fixtureApi,
       NEXT_PUBLIC_TASK6_ANVIL_FACTORY: fixtureFactory,
+      NEXT_PUBLIC_TASK6_ANVIL_WETH: fixtureWeth,
+      NEXT_PUBLIC_TASK6_ANVIL_ROUTER: fixtureRouter,
+      NEXT_PUBLIC_TASK6_ANVIL_UNISWAP_FACTORY: fixtureUniswapFactory,
       NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: fixtureRpc,
       NEXT_PUBLIC_TASK6_ANVIL_API_URL: fixtureApi,
       NEXT_PUBLIC_TASK6_ANVIL_WEB_URL: `http://127.0.0.1:${webPort}`,

@@ -66,7 +66,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner(), ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID}
+	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner(), Owner: owner, ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID}
 	router := indexer.LedgerRouter{ChainID: int64(c.ChainID)}
 	health := new(indexer.HealthTracker)
 	health.Set(indexer.Health{ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, OwnershipHeld: true, RPCHealthy: true})

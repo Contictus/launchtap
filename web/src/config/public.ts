@@ -29,6 +29,9 @@ export function publicConfiguration(
   env: Record<string, string | undefined> = {
     NEXT_PUBLIC_E2E_FIXTURE: process.env.NEXT_PUBLIC_E2E_FIXTURE,
     NEXT_PUBLIC_TASK6_ANVIL_FACTORY: process.env.NEXT_PUBLIC_TASK6_ANVIL_FACTORY,
+    NEXT_PUBLIC_TASK6_ANVIL_WETH: process.env.NEXT_PUBLIC_TASK6_ANVIL_WETH,
+    NEXT_PUBLIC_TASK6_ANVIL_ROUTER: process.env.NEXT_PUBLIC_TASK6_ANVIL_ROUTER,
+    NEXT_PUBLIC_TASK6_ANVIL_UNISWAP_FACTORY: process.env.NEXT_PUBLIC_TASK6_ANVIL_UNISWAP_FACTORY,
     NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: process.env.NEXT_PUBLIC_TASK6_ANVIL_RPC_URL,
     NEXT_PUBLIC_TASK6_ANVIL_API_URL: process.env.NEXT_PUBLIC_TASK6_ANVIL_API_URL,
     NEXT_PUBLIC_TASK6_ANVIL_WEB_URL: process.env.NEXT_PUBLIC_TASK6_ANVIL_WEB_URL,
@@ -41,12 +44,27 @@ export function publicConfiguration(
 ): PublicConfiguration {
   if (env.NEXT_PUBLIC_E2E_FIXTURE === "1") {
     const factory = nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_FACTORY);
+    const fixtureWeth = nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_WETH);
+    const fixtureRouter = nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_ROUTER);
+    const fixtureUniswapFactory = nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_UNISWAP_FACTORY);
     const fixtureRpc = publicEndpoint(nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_RPC_URL));
     const fixtureApi = publicEndpoint(nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_API_URL));
     const webBase =
       publicEndpoint(nonEmpty(env.NEXT_PUBLIC_TASK6_ANVIL_WEB_URL)) ?? "http://127.0.0.1:3000";
     const rpcUrl = publicEndpoint(`${webBase}/e2e/rpc`);
-    if (factory && /^0x[0-9a-fA-F]{40}$/.test(factory) && fixtureRpc && fixtureApi && rpcUrl) {
+    if (
+      factory &&
+      fixtureWeth &&
+      fixtureRouter &&
+      fixtureUniswapFactory &&
+      /^0x[0-9a-fA-F]{40}$/.test(factory) &&
+      /^0x[0-9a-fA-F]{40}$/.test(fixtureWeth) &&
+      /^0x[0-9a-fA-F]{40}$/.test(fixtureRouter) &&
+      /^0x[0-9a-fA-F]{40}$/.test(fixtureUniswapFactory) &&
+      fixtureRpc &&
+      fixtureApi &&
+      rpcUrl
+    ) {
       return {
         status: "ready",
         privyAppId: "cl_e2e_fixture_1234567890",
@@ -61,9 +79,9 @@ export function publicConfiguration(
           enabled: true,
           factory,
           explorerBase: null,
-          weth: "0x0000000000000000000000000000000000000001",
-          uniswapV2Factory: null,
-          uniswapV2Router02: null,
+          weth: fixtureWeth,
+          uniswapV2Factory: fixtureUniswapFactory,
+          uniswapV2Router02: fixtureRouter,
         } as (typeof reviewedDeployments)[number],
       };
     }

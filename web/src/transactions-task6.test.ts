@@ -95,6 +95,11 @@ describe("task 6 transaction math and safety", () => {
     );
     expect(unknown.code).toBe("UnknownTransactionError");
     expect(unknown.message).not.toContain("hidden");
+    expect(
+      decodeTransactionError({
+        cause: { details: { originalError: { data: "0x1f43b80200000000" } } },
+      }),
+    ).toMatchObject({ code: "DeveloperBuyCapExceeded" });
   });
 
   it("fails closed for routers and claims without reviewed eligibility", () => {
@@ -181,12 +186,12 @@ describe("task 6 transaction math and safety", () => {
     expect(classifyTransactionFailure(new Error("execution reverted: TradingPaused"))).toBe(
       "reverted",
     );
-    expect(classifyTransactionFailure(new Error("execution reverted: UnknownEngine"), "preflight")).toBe(
-      "preflight-failure",
-    );
-    expect(classifyTransactionFailure(new Error("execution reverted: UnknownEngine"), "simulation")).toBe(
-      "simulation-reverted",
-    );
+    expect(
+      classifyTransactionFailure(new Error("execution reverted: UnknownEngine"), "preflight"),
+    ).toBe("preflight-failure");
+    expect(
+      classifyTransactionFailure(new Error("execution reverted: UnknownEngine"), "simulation"),
+    ).toBe("simulation-reverted");
     expect(classifyTransactionFailure(new Error("execution reverted"), "receipt")).toBe(
       "receipt-reverted",
     );

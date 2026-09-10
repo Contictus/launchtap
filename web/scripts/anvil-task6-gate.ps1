@@ -4,7 +4,8 @@ param(
     [int]$ApiPort = 0,
     [int]$IndexerHealthPort = 0,
     [int]$WebPort = 0,
-    [switch]$KeepAnvil
+    [switch]$KeepAnvil,
+    [string]$PlaywrightGrep = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,14 +44,17 @@ function Invoke-Checked([string]$FilePath, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$FilePath failed with exit code $LASTEXITCODE" }
 }
 function Start-Child([string]$FilePath, [string]$Arguments, [hashtable]$Environment) {
-    $start = [System.Diagnostics.ProcessStartInfo]::new()
-    $start.FileName = $FilePath
-    $start.Arguments = $Arguments
-    $start.WorkingDirectory = $backendRoot
-    $start.UseShellExecute = $false
-    $start.CreateNoWindow = $true
-    foreach ($entry in $Environment.GetEnumerator()) { $start.Environment[$entry.Key] = [string]$entry.Value }
-    $child = [System.Diagnostics.Process]::Start($start)
+    $label = [IO.Path]::GetFileNameWithoutExtension($FilePath)
+    $stdoutLog = Join-Path $backendRoot ".cache/task6-$PID-$label.stdout.log"
+    $stderrLog = Join-Path $backendRoot ".cache/task6-$PID-$label.stderr.log"
+    New-Item -ItemType File -Path $stdoutLog -Force | Out-Null
+    New-Item -ItemType File -Path $stderrLog -Force | Out-Null
+    foreach ($entry in $Environment.GetEnumerator()) { Set-Item -Path ("Env:" + $entry.Key) -Value ([string]$entry.Value) }
+    if ([string]::IsNullOrWhiteSpace($Arguments)) {
+        $child = Start-Process -FilePath $FilePath -WorkingDirectory $backendRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+    } else {
+        $child = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $backendRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+    }
     if ($null -eq $child) { throw "Could not start $FilePath" }
     return $child
 }
@@ -92,7 +96,7 @@ $indexerHealthPort = Require-Port $IndexerHealthPort
 $webPort = Require-Port $WebPort
 $rpcUrl = "http://127.0.0.1:$anvilPort"
 $databaseName = "task6_$PID"
-$databaseUrl = "postgres://postgres:postgres@127.0.0.1:$postgresPort/$databaseName?sslmode=disable"
+$databaseUrl = "postgres://postgres:postgres@127.0.0.1:$postgresPort/${databaseName}?sslmode=disable"
 $apiUrl = "http://127.0.0.1:$apiPort"
 $webUrl = "http://127.0.0.1:$webPort"
 
@@ -132,16 +136,33 @@ try {
         if ($attempt -eq 119) { throw "Anvil RPC did not become ready" }
     }
 
-    Invoke-Checked (Join-Path $contractsRoot "scripts/deploy.ps1") @("-Target", "anvil", "-RpcUrl", $rpcUrl, "-DeploymentId", $deploymentId, "-Sender", $sender, "-PauseAuthority", $pauseAuthority, "-Timelock", $timelock, "-ProtocolTreasury", $protocolTreasury, "-Broadcast", "-Unlocked", "-OutputPath", $manifestPath)
+    $deploymentScript = Join-Path $contractsRoot "scripts/deploy.ps1"
+    Invoke-Checked "powershell.exe" @(
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $deploymentScript,
+        "-Target", "anvil", "-RpcUrl", $rpcUrl, "-DeploymentId", $deploymentId,
+        "-Sender", $sender, "-PauseAuthority", $pauseAuthority, "-Timelock", $timelock,
+        "-ProtocolTreasury", $protocolTreasury, "-Broadcast", "-Unlocked", "-OutputPath", $manifestPath
+    )
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Authoritative deployment did not produce a manifest" }
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     $factory = [string]$manifest.factory
+    $weth = [string]$manifest.weth
+    $uniswapFactory = [string]$manifest.uniswapV2Factory
+    $router = [string]$manifest.uniswapV2Router02
     if ($factory -notmatch "^0x[0-9a-fA-F]{40}$") { throw "Invalid generated factory address" }
+    if ($weth -notmatch "^0x[0-9a-fA-F]{40}$") { throw "Invalid generated WETH address" }
+    if ($uniswapFactory -notmatch "^0x[0-9a-fA-F]{40}$") { throw "Invalid generated Uniswap V2 factory address" }
+    if ($router -notmatch "^0x[0-9a-fA-F]{40}$") { throw "Invalid generated router address" }
 
     $oldDatabaseUrl = $env:DATABASE_URL
     $env:DATABASE_URL = $databaseUrl
-    try { Invoke-Checked "go" @("run", "./cmd/migrate", "up") } finally {
-        if ($null -eq $oldDatabaseUrl) { Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue } else { $env:DATABASE_URL = $oldDatabaseUrl }
+    Push-Location $backendRoot
+    try {
+        try { Invoke-Checked "go" @("run", "./cmd/migrate", "up") } finally {
+            if ($null -eq $oldDatabaseUrl) { Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue } else { $env:DATABASE_URL = $oldDatabaseUrl }
+        }
+    } finally {
+        Pop-Location
     }
 
     $runtimeEnv = @{
@@ -155,24 +176,39 @@ try {
     }
     $apiBinary = Join-Path $backendRoot ".cache/task6-api.exe"
     $indexerBinary = Join-Path $backendRoot ".cache/task6-indexer.exe"
-    Invoke-Checked "go" @("build", "-o", $apiBinary, "./cmd/api")
-    Invoke-Checked "go" @("build", "-o", $indexerBinary, "./cmd/indexer")
+    Push-Location $backendRoot
+    try {
+        Invoke-Checked "go" @("build", "-o", $apiBinary, "./cmd/api")
+        Invoke-Checked "go" @("build", "-o", $indexerBinary, "./cmd/indexer")
+    } finally {
+        Pop-Location
+    }
     $apiProcess = Start-Child $apiBinary "" $runtimeEnv
     Wait-Http "$apiUrl/healthz"
     $indexerProcess = Start-Child $indexerBinary "" $runtimeEnv
+    Start-Sleep -Milliseconds 250
+    if ($indexerProcess.HasExited) { throw "Indexer exited immediately with code $($indexerProcess.ExitCode)" }
     Wait-Http "http://127.0.0.1:$indexerHealthPort/healthz"
+    if ($indexerProcess.HasExited) { throw "Indexer exited during readiness with code $($indexerProcess.ExitCode)" }
 
     $env:TASK6_ANVIL_REQUIRED = "1"
     $env:TASK6_ANVIL_RPC_URL = $rpcUrl
     $env:TASK6_ANVIL_FACTORY = $factory
+    $env:TASK6_ANVIL_WETH = $weth
+    $env:TASK6_ANVIL_UNISWAP_FACTORY = $uniswapFactory
+    $env:TASK6_ANVIL_ROUTER = $router
     $env:TASK6_ANVIL_API_URL = $apiUrl
     $env:TASK6_WEB_PORT = [string]$webPort
     Push-Location $webRoot
-    try { Invoke-Checked "npm.cmd" @("run", "test:e2e", "--", "e2e/task6-anvil.spec.ts") }
+    try {
+        $playwrightArgs = @("run", "test:e2e", "--", "e2e/task6-anvil.spec.ts")
+        if (-not [string]::IsNullOrWhiteSpace($PlaywrightGrep)) { $playwrightArgs += @("-g", $PlaywrightGrep) }
+        Invoke-Checked "npm.cmd" $playwrightArgs
+    }
     finally { Pop-Location }
 }
 finally {
-    Remove-Item Env:TASK6_ANVIL_REQUIRED, Env:TASK6_ANVIL_RPC_URL, Env:TASK6_ANVIL_FACTORY, Env:TASK6_ANVIL_API_URL, Env:TASK6_WEB_PORT -ErrorAction SilentlyContinue
+    Remove-Item Env:TASK6_ANVIL_REQUIRED, Env:TASK6_ANVIL_RPC_URL, Env:TASK6_ANVIL_FACTORY, Env:TASK6_ANVIL_WETH, Env:TASK6_ANVIL_UNISWAP_FACTORY, Env:TASK6_ANVIL_ROUTER, Env:TASK6_ANVIL_API_URL, Env:TASK6_WEB_PORT -ErrorAction SilentlyContinue
     Stop-Child $indexerProcess
     Stop-Child $apiProcess
     if ($postgresStarted) {

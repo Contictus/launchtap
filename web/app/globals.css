@@ -1355,6 +1355,7 @@ h2 {
   }
   .transaction-confirmation {
     margin-inline: 16px;
+    margin-bottom: calc(112px + env(safe-area-inset-bottom));
   }
   .transaction-progress {
     padding-inline: 16px;

@@ -2,6 +2,7 @@
 
 import { usePrivy } from "@privy-io/react-auth";
 import { useAccount, useChainId, useSwitchChain } from "wagmi";
+import { useEffect, useState } from "react";
 import { publicConfiguration } from "@/config/public";
 import type { TransactionReadiness } from "@/transactions";
 
@@ -15,6 +16,11 @@ export type LinkedWalletState =
   | "linked"
   | "linked-mismatch";
 export type LinkedWallet = { address: `0x${string}`; kind: "wallet" | "smart_wallet" };
+type ReadinessProvider = {
+  request: (args: { method: string }) => Promise<unknown>;
+  on?: (event: string, listener: (value: unknown) => void) => void;
+  removeListener?: (event: string, listener: (value: unknown) => void) => void;
+};
 
 export type WalletReadiness = {
   status: WalletReadinessStatus;
@@ -101,7 +107,26 @@ export function useWalletReadiness(): WalletReadiness {
   const configuration = publicConfiguration();
   const { ready: privyReady, authenticated, user } = usePrivy();
   const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+  const wagmiChainId = useChainId();
+  const [providerChainId, setProviderChainId] = useState<number | undefined>(wagmiChainId);
+  useEffect(() => {
+    const provider = (window as Window & { ethereum?: ReadinessProvider }).ethereum;
+    if (!provider) return;
+    const sync = () => {
+      void provider.request({ method: "eth_chainId" }).then((value) => {
+        if (typeof value === "string" && /^0x[0-9a-f]+$/i.test(value))
+          setProviderChainId(Number.parseInt(value, 16));
+      });
+    };
+    const onChainChanged = (value: unknown) => {
+      if (typeof value === "string" && /^0x[0-9a-f]+$/i.test(value))
+        setProviderChainId(Number.parseInt(value, 16));
+    };
+    sync();
+    provider.on?.("chainChanged", onChainChanged);
+    return () => provider.removeListener?.("chainChanged", onChainChanged);
+  }, []);
+  const chainId = providerChainId ?? wagmiChainId;
   const { switchChainAsync } = useSwitchChain();
   const configurationReady = configuration.status === "ready";
   const e2eFixture = configuration.deploymentId === "task6-anvil";
@@ -127,6 +152,22 @@ export function useWalletReadiness(): WalletReadiness {
     linkedWallets,
   });
   const selectedAccountVerified = deriveSelectedAccountVerified(status, linkedWalletState);
+  const switchNetwork = async () => {
+    const result = await switchToSupportedChain(configuration.chainId, switchChainAsync);
+    if (result.ok) {
+      const provider = (window as Window & { ethereum?: ReadinessProvider }).ethereum;
+      if (provider) {
+        try {
+          const value = await provider.request({ method: "eth_chainId" });
+          if (typeof value === "string" && /^0x[0-9a-f]+$/i.test(value))
+            setProviderChainId(Number.parseInt(value, 16));
+        } catch {
+          // The chainChanged event remains the authoritative update path.
+        }
+      }
+    }
+    return result;
+  };
   return {
     status,
     linkedWalletState,
@@ -147,6 +188,6 @@ export function useWalletReadiness(): WalletReadiness {
       selectedAccountVerified,
       linkedWalletState,
     },
-    switchNetwork: () => switchToSupportedChain(configuration.chainId, switchChainAsync),
+    switchNetwork,
   };
 }
