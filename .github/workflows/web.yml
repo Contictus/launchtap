@@ -67,7 +67,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Build contract artifacts
         working-directory: contracts
-        run: forge build
+        run: forge build --no-lint
       - name: Install web dependencies
         run: npm ci
       - name: Verify generated API and contract boundaries
