@@ -8,10 +8,19 @@ export type ApiEvent =
   | { event: "reorg"; data: components["schemas"]["ReorgEvent"] }
   | { event: "token"; data: components["schemas"]["TokenEvent"] };
 
+export function stableSerialize(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(",")}]`;
+  return `{${Object.keys(value as Record<string, unknown>)
+    .sort()
+    .map(
+      (key) => `${JSON.stringify(key)}:${stableSerialize((value as Record<string, unknown>)[key])}`,
+    )
+    .join(",")}}`;
+}
+
 export function snapshotIdentity(snapshot: Snapshot | null | undefined) {
-  return snapshot
-    ? `${snapshot.chain_id}:${snapshot.as_of_block}:${snapshot.as_of_block_hash}:${snapshot.finality}`
-    : null;
+  return snapshot ? stableSerialize(snapshot) : null;
 }
 
 export const queryKeys = {
@@ -26,11 +35,21 @@ export const queryKeys = {
     [
       ...queryKeys.all(chainId, deploymentId),
       "tokens",
-      filters,
+      stableSerialize(filters),
       snapshotIdentity(snapshot),
     ] as const,
-  token: (chainId: number | null, deploymentId: string | null, address: string) =>
-    [...queryKeys.all(chainId, deploymentId), "token", address.toLowerCase()] as const,
+  token: (
+    chainId: number | null,
+    deploymentId: string | null,
+    address: string,
+    snapshot?: Snapshot,
+  ) =>
+    [
+      ...queryKeys.all(chainId, deploymentId),
+      "token",
+      address.toLowerCase(),
+      snapshotIdentity(snapshot),
+    ] as const,
   trades: (
     chainId: number | null,
     deploymentId: string | null,
@@ -39,10 +58,9 @@ export const queryKeys = {
     snapshot?: Snapshot,
   ) =>
     [
-      ...queryKeys.token(chainId, deploymentId, address),
+      ...queryKeys.token(chainId, deploymentId, address, snapshot),
       "trades",
       cursor ?? null,
-      snapshotIdentity(snapshot),
     ] as const,
   holders: (
     chainId: number | null,
@@ -52,10 +70,9 @@ export const queryKeys = {
     snapshot?: Snapshot,
   ) =>
     [
-      ...queryKeys.token(chainId, deploymentId, address),
+      ...queryKeys.token(chainId, deploymentId, address, snapshot),
       "holders",
       cursor ?? null,
-      snapshotIdentity(snapshot),
     ] as const,
   candles: (
     chainId: number | null,
@@ -65,16 +82,21 @@ export const queryKeys = {
     snapshot?: Snapshot,
   ) =>
     [
-      ...queryKeys.token(chainId, deploymentId, address),
+      ...queryKeys.token(chainId, deploymentId, address, snapshot),
       "candles",
-      filters,
-      snapshotIdentity(snapshot),
+      stableSerialize(filters),
     ] as const,
-  protocol: (chainId: number | null, deploymentId: string | null) =>
-    [...queryKeys.all(chainId, deploymentId), "protocol"] as const,
+  protocol: (chainId: number | null, deploymentId: string | null, snapshot?: Snapshot) =>
+    [...queryKeys.all(chainId, deploymentId), "protocol", snapshotIdentity(snapshot)] as const,
   protocolDaily: (
     chainId: number | null,
     deploymentId: string | null,
     filters: Record<string, unknown> = {},
-  ) => [...queryKeys.protocol(chainId, deploymentId), "daily", filters] as const,
+    snapshot?: Snapshot,
+  ) =>
+    [
+      ...queryKeys.protocol(chainId, deploymentId, snapshot),
+      "daily",
+      stableSerialize(filters),
+    ] as const,
 };

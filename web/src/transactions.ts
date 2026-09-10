@@ -15,6 +15,13 @@ export type TransactionStatus =
   | "safe"
   | "finalized";
 export type TransactionState = { status: TransactionStatus; hash?: `0x${string}`; error?: string };
+export type TransactionReadiness = {
+  providerReady: boolean;
+  configurationReady: boolean;
+  walletConnected: boolean;
+  chainSupported: boolean;
+  selectedAccountVerified: boolean;
+};
 export type TransactionEvent = {
   type:
     | "provider-loading"
@@ -37,7 +44,7 @@ export type TransactionEvent = {
 };
 
 const transitions: Record<TransactionStatus, readonly TransactionStatus[]> = {
-  "provider-loading": ["disconnected", "wrong-chain", "validating"],
+  "provider-loading": ["disconnected", "wrong-chain"],
   disconnected: ["provider-loading", "validating"],
   "wrong-chain": ["provider-loading", "disconnected", "validating"],
   validating: ["simulating", "disconnected", "wrong-chain", "rpc-failure"],
@@ -47,9 +54,9 @@ const transitions: Record<TransactionStatus, readonly TransactionStatus[]> = {
   submitted: ["mined", "reverted", "rpc-failure"],
   "rpc-failure": ["validating", "disconnected", "wrong-chain"],
   reverted: ["validating", "disconnected"],
-  mined: ["indexing", "safe", "finalized"],
-  indexing: ["indexed", "safe", "finalized", "rpc-failure"],
-  indexed: ["safe", "finalized"],
+  mined: ["indexing"],
+  indexing: ["indexed", "rpc-failure"],
+  indexed: ["safe"],
   safe: ["finalized"],
   finalized: [],
 };
@@ -63,6 +70,7 @@ export function createTransactionState(
 export function transitionTransaction(
   state: TransactionState,
   event: TransactionEvent,
+  readiness?: TransactionReadiness,
 ): TransactionState {
   const next: TransactionStatus =
     event.type === "validate"
@@ -72,9 +80,27 @@ export function transitionTransaction(
         : event.type === "await-signature"
           ? "awaiting-signature"
           : event.type;
+  if (
+    (event.type === "validate" ||
+      event.type === "simulate" ||
+      event.type === "await-signature" ||
+      event.type === "submitted") &&
+    !isTransactionReady(readiness)
+  )
+    throw new Error("Transaction requires verified wallet and configuration readiness");
   if (!transitions[state.status].includes(next))
     throw new Error(`Invalid transaction transition: ${state.status} -> ${next}`);
   return { status: next, hash: event.hash ?? state.hash, error: event.error };
+}
+
+export function isTransactionReady(readiness: TransactionReadiness | undefined): boolean {
+  return Boolean(
+    readiness?.providerReady &&
+    readiness.configurationReady &&
+    readiness.walletConnected &&
+    readiness.chainSupported &&
+    readiness.selectedAccountVerified,
+  );
 }
 
 export function canTransitionTransaction(from: TransactionStatus, to: TransactionStatus) {
