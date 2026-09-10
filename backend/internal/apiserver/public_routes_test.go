@@ -53,6 +53,12 @@ func (s protocolStub) ReadProtocol(context.Context, int64) (stats.Protocol, erro
 	return s.value, nil
 }
 
+type protocolDailyStub struct{ value stats.DailyPage }
+
+func (s protocolDailyStub) ReadProtocolDaily(context.Context, int64, stats.DailyQuery) (stats.DailyPage, error) {
+	return s.value, nil
+}
+
 func TestPublicReadWireContracts(t *testing.T) {
 	snapshot := pagination.Snapshot{ChainID: 46630, BlockNumber: 42, BlockHash: [32]byte{31: 1}}
 	tokenAddress := common.HexToAddress("0x0000000000000000000000000000000000000001")
@@ -98,6 +104,27 @@ func TestPublicReadWireContracts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProtocolDailyRangeAndOrderingContract(t *testing.T) {
+	snapshot := pagination.Snapshot{ChainID: 46630, BlockNumber: 42, BlockHash: [32]byte{31: 1}}
+	now := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	s := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), nil)
+	s.RegisterPublicRoutes(PublicRoutes{
+		Protocol:      protocolStub{},
+		ProtocolDaily: protocolDailyStub{value: stats.DailyPage{Snapshot: snapshot, Finality: "safe", Items: []stats.Daily{{Day: now, VolumeETH: big.NewInt(2)}}}},
+		ChainID:       46630,
+	})
+	w := httptest.NewRecorder()
+	s.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/stats/protocol/daily?from=2026-09-01&to=2026-09-09&limit=10", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"day":"2026-09-09"`) || !strings.Contains(w.Body.String(), `"as_of_block":42`) {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	s.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/stats/protocol/daily?from=2026-09-10&to=2026-09-09", nil))
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_range") {
+		t.Fatalf("invalid range status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

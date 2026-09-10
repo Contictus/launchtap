@@ -348,6 +348,68 @@
         ],
         "type": "object"
       },
+      "ProtocolDailyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "/v1/schemas/ProtocolDailyBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolDailyDTO"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/SnapshotDTO"
+          }
+        },
+        "required": [
+          "snapshot",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ProtocolDailyDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "day": {
+            "type": "string"
+          },
+          "graduations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "launches": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "trades": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "volume_eth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "volume_eth",
+          "launches",
+          "trades",
+          "graduations"
+        ],
+        "type": "object"
+      },
       "QuoteBody": {
         "additionalProperties": false,
         "properties": {
@@ -1122,6 +1184,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProtocolDTO"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/stats/protocol/daily": {
+      "get": {
+        "operationId": "listProtocolDaily",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 366,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtocolDailyBody"
                 }
               }
             },

@@ -1,0 +1,46 @@
+{
+  "name": "launchpad-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.16.0",
+    "npm": "12.0.1"
+  },
+  "scripts": {
+    "setup": "npm ci",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "web-api-sync": "node scripts/generate-api.mjs --write",
+    "web-api-diff": "node scripts/generate-api.mjs --check",
+    "web-contracts-sync": "node scripts/generate-contracts.mjs --write",
+    "web-contracts-diff": "node scripts/generate-contracts.mjs --check"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "autoprefixer": "10.4.21",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.13",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.6",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.9.3",
+    "vitest": "4.1.1"
+  }
+}

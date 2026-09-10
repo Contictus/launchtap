@@ -24,8 +24,9 @@ type PublicRoutes struct {
 		trading.Reader
 		holder.Reader
 	}
-	Protocol stats.Reader
-	ChainID  int64
+	Protocol      stats.Reader
+	ProtocolDaily stats.DailyReader
+	ChainID       int64
 }
 type addressInput struct {
 	Token string `path:"token"`
@@ -128,12 +129,30 @@ type protocolDTO struct {
 	UpdatedAt          string      `json:"updated_at"`
 }
 type protocolOutput struct{ Body protocolDTO }
+type protocolDailyInput struct {
+	From  string `query:"from"`
+	To    string `query:"to"`
+	Limit int    `query:"limit" minimum:"1" maximum:"366"`
+}
+type protocolDailyDTO struct {
+	Day         string `json:"day"`
+	VolumeETH   string `json:"volume_eth"`
+	Launches    int64  `json:"launches"`
+	Trades      int64  `json:"trades"`
+	Graduations int64  `json:"graduations"`
+}
+type protocolDailyBody struct {
+	Snapshot snapshotDTO        `json:"snapshot"`
+	Items    []protocolDailyDTO `json:"items"`
+}
+type protocolDailyOutput struct{ Body protocolDailyBody }
 
 func (r PublicRoutes) Register(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "getToken", Method: http.MethodGet, Path: "/tokens/{token}", Tags: []string{"tokens"}}, r.detail)
 	huma.Register(api, huma.Operation{OperationID: "listTrades", Method: http.MethodGet, Path: "/tokens/{token}/trades", Tags: []string{"market"}}, r.trades)
 	huma.Register(api, huma.Operation{OperationID: "listHolders", Method: http.MethodGet, Path: "/tokens/{token}/holders", Tags: []string{"market"}}, r.holders)
 	huma.Register(api, huma.Operation{OperationID: "getProtocolStats", Method: http.MethodGet, Path: "/stats/protocol", Tags: []string{"stats"}}, r.protocol)
+	huma.Register(api, huma.Operation{OperationID: "listProtocolDaily", Method: http.MethodGet, Path: "/stats/protocol/daily", Tags: []string{"stats"}}, r.protocolDaily)
 }
 func address(value string) (common.Address, error) {
 	if !common.IsHexAddress(value) {
@@ -252,4 +271,52 @@ func (r PublicRoutes) protocol(ctx context.Context, _ *struct{}) (*protocolOutpu
 		return nil, mapReadError(ctx, e)
 	}
 	return &protocolOutput{Body: protocolDTO{Snapshot: snapDTO(v.Snapshot, v.Finality), Volume24hETH: decimal(v.Volume24hETH), VolumeAllTimeETH: decimal(v.VolumeAllTimeETH), Launches24h: v.Launches24h, LaunchesAllTime: v.LaunchesAllTime, Trades24h: v.Trades24h, TradesAllTime: v.TradesAllTime, Graduations24h: v.Graduations24h, GraduationsAllTime: v.GraduationsAllTime, UpdatedAt: v.UpdatedAt.UTC().Format(time.RFC3339Nano)}}, nil
+}
+
+func (r PublicRoutes) protocolDaily(ctx context.Context, in *protocolDailyInput) (*protocolDailyOutput, error) {
+	if r.ProtocolDaily == nil {
+		return nil, apiProblem(http.StatusServiceUnavailable, "stats_unavailable", "Protocol daily statistics are unavailable")
+	}
+	from, to, err := dailyRange(in.From, in.To)
+	if err != nil {
+		return nil, apiProblem(http.StatusBadRequest, "invalid_range", err.Error())
+	}
+	limit := in.Limit
+	if limit == 0 {
+		limit = 366
+	}
+	v, err := r.ProtocolDaily.ReadProtocolDaily(ctx, r.ChainID, stats.DailyQuery{From: from, To: to, Limit: limit})
+	if err != nil {
+		return nil, mapReadError(ctx, err)
+	}
+	body := protocolDailyBody{Snapshot: snapDTO(v.Snapshot, v.Finality), Items: make([]protocolDailyDTO, 0, len(v.Items))}
+	for _, item := range v.Items {
+		body.Items = append(body.Items, protocolDailyDTO{Day: item.Day.UTC().Format("2006-01-02"), VolumeETH: decimal(item.VolumeETH), Launches: item.Launches, Trades: item.Trades, Graduations: item.Graduations})
+	}
+	return &protocolDailyOutput{Body: body}, nil
+}
+
+func dailyRange(fromValue, toValue string) (time.Time, time.Time, error) {
+	const layout = "2006-01-02"
+	now := time.Now().UTC()
+	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -29)
+	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if fromValue != "" {
+		parsed, err := time.Parse(layout, fromValue)
+		if err != nil {
+			return time.Time{}, time.Time{}, errors.New("from must be an ISO date (YYYY-MM-DD)")
+		}
+		from = parsed
+	}
+	if toValue != "" {
+		parsed, err := time.Parse(layout, toValue)
+		if err != nil {
+			return time.Time{}, time.Time{}, errors.New("to must be an ISO date (YYYY-MM-DD)")
+		}
+		to = parsed
+	}
+	if from.After(to) || to.Sub(from) > 365*24*time.Hour {
+		return time.Time{}, time.Time{}, errors.New("date range must be ordered and no longer than 366 days")
+	}
+	return from, to, nil
 }

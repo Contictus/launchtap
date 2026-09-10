@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --background: #0a0d12;
+  --foreground: #e8edf2;
+  --muted: #9da9b6;
+  --border: #26303b;
+  --accent: #80ed99;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, sans-serif;
+}
+.diagnostic-shell {
+  max-width: 720px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 18vh 24px;
+}
+.eyebrow {
+  color: var(--accent);
+  font:
+    700 0.75rem/1.2 ui-monospace,
+    monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+h1 {
+  margin: 24px 0 16px;
+  font-size: clamp(2.25rem, 6vw, 4.5rem);
+  letter-spacing: -0.06em;
+  line-height: 0.96;
+}
+.summary {
+  max-width: 56ch;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+.diagnostics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin-top: 48px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+.diagnostics div {
+  min-width: 0;
+  padding: 18px;
+  background: var(--background);
+}
+.diagnostics dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+.diagnostics dd {
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font:
+    700 0.9rem/1.2 ui-monospace,
+    monospace;
+}
+@media (max-width: 560px) {
+  .diagnostic-shell {
+    padding-top: 12vh;
+  }
+  .diagnostics {
+    grid-template-columns: 1fr;
+  }
+}
