@@ -11,6 +11,7 @@ const ready: TransactionReadiness = {
   walletConnected: true,
   chainSupported: true,
   selectedAccountVerified: true,
+  linkedWalletState: "linked",
 };
 
 describe("transaction state machine", () => {
@@ -51,6 +52,14 @@ describe("transaction state machine", () => {
         { ...ready, selectedAccountVerified: false },
       ),
     ).toThrow("readiness");
+    for (const linkedWalletState of ["connected-unlinked", "linked-mismatch"] as const)
+      expect(() =>
+        transitionTransaction(
+          createTransactionState("disconnected"),
+          { type: "validate" },
+          { ...ready, linkedWalletState },
+        ),
+      ).toThrow("readiness");
   });
 
   it.each(["rejected-signature", "rpc-failure", "reverted"] as const)(

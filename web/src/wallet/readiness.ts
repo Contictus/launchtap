@@ -3,6 +3,7 @@
 import { usePrivy } from "@privy-io/react-auth";
 import { useAccount, useChainId, useSwitchChain } from "wagmi";
 import { publicConfiguration } from "@/config/public";
+import type { TransactionReadiness } from "@/transactions";
 
 export type WalletReadinessStatus =
   "configuration-unavailable" | "provider-loading" | "disconnected" | "wrong-chain" | "ready";
@@ -28,6 +29,7 @@ export type WalletReadiness = {
   providerReady: boolean;
   configurationReady: boolean;
   selectedAccountVerified: boolean;
+  transactionReadiness: TransactionReadiness;
   switchNetwork: () => Promise<{ ok: true } | { ok: false; error: "switch-failed" }>;
 };
 
@@ -75,6 +77,13 @@ export function getLinkedWalletState(args: {
     : "linked-mismatch";
 }
 
+export function deriveSelectedAccountVerified(
+  status: WalletReadinessStatus,
+  linkedWalletState: LinkedWalletState,
+): boolean {
+  return status === "ready" && linkedWalletState === "linked";
+}
+
 export async function switchToSupportedChain(
   chainId: number | null,
   switchChain: ((args: { chainId: number }) => Promise<unknown>) | undefined,
@@ -104,15 +113,17 @@ export function useWalletReadiness(): WalletReadiness {
     chainId: isConnected ? chainId : undefined,
     supportedChainId: configuration.chainId,
   });
+  const linkedWalletState = getLinkedWalletState({
+    configurationReady,
+    providerReady: privyReady,
+    authenticated,
+    address: selectedAddress,
+    linkedWallets,
+  });
+  const selectedAccountVerified = deriveSelectedAccountVerified(status, linkedWalletState);
   return {
     status,
-    linkedWalletState: getLinkedWalletState({
-      configurationReady,
-      providerReady: privyReady,
-      authenticated,
-      address: selectedAddress,
-      linkedWallets,
-    }),
+    linkedWalletState,
     linkedWallets,
     creatorAuthorization: "server-required",
     address: selectedAddress,
@@ -121,7 +132,15 @@ export function useWalletReadiness(): WalletReadiness {
     authenticated,
     providerReady: privyReady,
     configurationReady,
-    selectedAccountVerified: status === "ready",
+    selectedAccountVerified,
+    transactionReadiness: {
+      providerReady: privyReady,
+      configurationReady,
+      walletConnected: selectedAddress !== undefined,
+      chainSupported: status === "ready",
+      selectedAccountVerified,
+      linkedWalletState,
+    },
     switchNetwork: () => switchToSupportedChain(configuration.chainId, switchChainAsync),
   };
 }

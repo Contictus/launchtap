@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getLinkedWalletAddresses,
   getLinkedWalletState,
+  deriveSelectedAccountVerified,
   getWalletStatus,
   switchToSupportedChain,
 } from "./readiness";
@@ -77,5 +78,14 @@ describe("wallet readiness", () => {
       ok: false,
       error: "switch-failed",
     });
+  });
+
+  it.each([
+    ["ready", "connected-unlinked", false],
+    ["ready", "linked-mismatch", false],
+    ["ready", "linked", true],
+    ["configuration-unavailable", "configuration-unavailable", false],
+  ] as const)("derives verified selected account for %s/%s", (status, linkedState, expected) => {
+    expect(deriveSelectedAccountVerified(status, linkedState)).toBe(expected);
   });
 });

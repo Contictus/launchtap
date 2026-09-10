@@ -21,6 +21,13 @@ export type TransactionReadiness = {
   walletConnected: boolean;
   chainSupported: boolean;
   selectedAccountVerified: boolean;
+  linkedWalletState:
+    | "configuration-unavailable"
+    | "provider-loading"
+    | "unlinked"
+    | "connected-unlinked"
+    | "linked"
+    | "linked-mismatch";
 };
 export type TransactionEvent = {
   type:
@@ -99,7 +106,8 @@ export function isTransactionReady(readiness: TransactionReadiness | undefined):
     readiness.configurationReady &&
     readiness.walletConnected &&
     readiness.chainSupported &&
-    readiness.selectedAccountVerified,
+    readiness.selectedAccountVerified &&
+    readiness.linkedWalletState === "linked",
   );
 }
 
