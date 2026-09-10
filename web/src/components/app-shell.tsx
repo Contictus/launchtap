@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   return (
     <div className="app-frame">
-      <aside className="app-rail" aria-label="Primary navigation">
+      <aside className="app-rail" aria-label="Desktop application rail">
         <Link href="/" className="brand-mark">
           <span className="brand-stamp" aria-hidden="true">
             LP
@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </span>
         </Link>
         <div className="rail-rule" />
-        <nav className="rail-nav" aria-label="Primary navigation">
+        <nav className="rail-nav" aria-label="Desktop primary navigation">
           {navItems.map(({ href, label, icon: Icon, primary }) => (
             <a
               key={href}
@@ -117,7 +117,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </footer>
       </main>
-      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+      <nav className="mobile-bottom-nav" aria-label="Mobile primary navigation">
         {navItems.slice(0, 4).map(({ href, label, icon: Icon }) => (
           <a
             key={href}
@@ -131,7 +131,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
       <Sheet open={menuOpen} title="Navigate" onClose={() => setMenuOpen(false)}>
-        <nav className="sheet-nav">
+        <nav className="sheet-nav" aria-label="Mobile menu navigation">
           {navItems.map(({ href, label, icon: Icon }) => (
             <a
               key={href}

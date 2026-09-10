@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: "line",
@@ -14,9 +15,19 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "chromium",
+      name: "desktop",
       use: {
         ...devices["Desktop Chrome"],
+        launchOptions: {
+          executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        },
+      },
+    },
+    {
+      name: "mobile",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 360, height: 800 },
         launchOptions: {
           executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
         },

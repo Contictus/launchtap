@@ -133,31 +133,98 @@ export function Sheet({
   );
 }
 
+export type TabItem = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  panel: React.ReactNode;
+};
+
+export function getNextTabIndex(
+  tabs: ReadonlyArray<Pick<TabItem, "disabled">>,
+  currentIndex: number,
+  key: "ArrowLeft" | "ArrowRight" | "Home" | "End",
+) {
+  const enabled = tabs.flatMap((tab, index) => (tab.disabled ? [] : [index]));
+  if (enabled.length === 0) return -1;
+  if (key === "Home") return enabled[0] ?? -1;
+  if (key === "End") return enabled[enabled.length - 1] ?? -1;
+  const currentPosition = Math.max(0, enabled.indexOf(currentIndex));
+  const direction = key === "ArrowRight" ? 1 : -1;
+  return enabled[(currentPosition + direction + enabled.length) % enabled.length] ?? -1;
+}
+
 export function Tabs({
   tabs,
   value,
   onChange,
+  ariaLabel = "View selection",
 }: {
-  tabs: Array<{ value: string; label: string; disabled?: boolean }>;
+  tabs: TabItem[];
   value: string;
   onChange: (value: string) => void;
+  ariaLabel?: string;
 }) {
   const tablistId = useId();
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectTab = (index: number) => {
+    const next = tabs[index];
+    if (!next || next.disabled) return;
+    onChange(next.value);
+    tabRefs.current[index]?.focus();
+  };
   return (
-    <div className="ui-tabs" role="tablist" aria-label="View selection" id={tablistId}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.value}
-          type="button"
-          role="tab"
-          aria-selected={tab.value === value}
-          disabled={tab.disabled}
-          className={tab.value === value ? "is-active" : ""}
-          onClick={() => onChange(tab.value)}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className="ui-tabs-shell">
+      <div className="ui-tabs" role="tablist" aria-label={ariaLabel} id={tablistId}>
+        {tabs.map((tab, index) => {
+          const tabId = `${tablistId}-tab-${index}`;
+          const panelId = `${tablistId}-panel-${index}`;
+          return (
+            <button
+              key={tab.value}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={tabId}
+              type="button"
+              role="tab"
+              aria-selected={tab.value === value}
+              aria-controls={panelId}
+              tabIndex={tab.value === value ? 0 : -1}
+              disabled={tab.disabled}
+              className={tab.value === value ? "is-active" : ""}
+              onClick={() => selectTab(index)}
+              onKeyDown={(event) => {
+                const key = event.key;
+                if (key !== "ArrowLeft" && key !== "ArrowRight" && key !== "Home" && key !== "End")
+                  return;
+                event.preventDefault();
+                const nextIndex = getNextTabIndex(tabs, index, key);
+                if (nextIndex >= 0) selectTab(nextIndex);
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+      {tabs.map((tab, index) => {
+        const tabId = `${tablistId}-tab-${index}`;
+        const panelId = `${tablistId}-panel-${index}`;
+        return (
+          <div
+            key={panelId}
+            id={panelId}
+            role="tabpanel"
+            aria-labelledby={tabId}
+            hidden={tab.value !== value}
+            tabIndex={tab.value === value ? 0 : -1}
+            className="ui-tabpanel"
+          >
+            {tab.panel}
+          </div>
+        );
+      })}
     </div>
   );
 }

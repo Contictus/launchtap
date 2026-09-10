@@ -11,7 +11,7 @@
   --line-strong: #38516b;
   --bone: #f3f0e8;
   --muted: #aab7c5;
-  --quiet: #728398;
+  --quiet: #8193a6;
   --red: #e45756;
   --red-soft: #f3a4a0;
   --violet: #9b8afb;
@@ -364,7 +364,7 @@ h2 {
 .is-current .lifecycle-node {
   border-color: var(--red);
   background: var(--red);
-  color: var(--bone);
+  color: var(--canvas);
 }
 .lifecycle-list strong {
   display: block;
@@ -518,7 +518,10 @@ h2 {
   font-size: 0.75rem;
 }
 .source-note a {
-  color: var(--red-soft);
+  color: var(--bone);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 .transaction-status {
   display: inline-flex;
@@ -758,6 +761,10 @@ h2 {
 .ui-field-error {
   color: var(--red-soft);
 }
+.ui-tabs-shell {
+  display: grid;
+  gap: 16px;
+}
 .ui-tabs {
   display: flex;
   border-bottom: 1px solid var(--line);
@@ -781,6 +788,11 @@ h2 {
 .ui-tabs button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+.ui-tabpanel {
+  min-height: 48px;
+  color: var(--muted);
+  outline: none;
 }
 .ui-toast {
   position: fixed;
