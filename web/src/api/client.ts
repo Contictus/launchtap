@@ -5,6 +5,10 @@ export type ProtocolDailyResponse =
   paths["/stats/protocol/daily"]["get"]["responses"][200]["content"]["application/json"];
 export type ProtocolDailyItem = components["schemas"]["ProtocolDailyDTO"];
 export type TokenListResponse = components["schemas"]["TokenListBody"];
+export type TokenDetailResponse = components["schemas"]["TokenDetailDTO"];
+export type CandleResponse = components["schemas"]["CandleBody"];
+export type TradesResponse = components["schemas"]["TradesBody"];
+export type HoldersResponse = components["schemas"]["HoldersBody"];
 export type TokenListQuery = {
   phase?: string;
   q?: string;
@@ -52,9 +56,62 @@ export class ApiClient {
     );
   }
 
-  getToken(address: string) {
-    return this.request<components["schemas"]["TokenDetailDTO"]>(
-      `/v1/tokens/${encodeURIComponent(address)}`,
+  getToken(address: string, signal?: AbortSignal) {
+    return this.request<TokenDetailResponse>(`/v1/tokens/${encodeURIComponent(address)}`, {
+      signal,
+    });
+  }
+
+  getCandles(
+    address: string,
+    options: {
+      interval?: string;
+      from?: string;
+      to?: string;
+      limit?: number;
+      cursor?: string;
+    } = {},
+    signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    }
+    return this.request<CandleResponse>(
+      `/v1/tokens/${encodeURIComponent(address)}/candles${query.size ? `?${query}` : ""}`,
+      { signal },
+    );
+  }
+
+  getTrades(
+    address: string,
+    options: { cursor?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ) {
+    return this.getCursorCollection<TradesResponse>(address, "trades", options, signal);
+  }
+
+  getHolders(
+    address: string,
+    options: { cursor?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ) {
+    return this.getCursorCollection<HoldersResponse>(address, "holders", options, signal);
+  }
+
+  private getCursorCollection<T>(
+    address: string,
+    resource: "trades" | "holders",
+    options: { cursor?: string; limit?: number },
+    signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    }
+    return this.request<T>(
+      `/v1/tokens/${encodeURIComponent(address)}/${resource}${query.size ? `?${query}` : ""}`,
+      { signal },
     );
   }
 

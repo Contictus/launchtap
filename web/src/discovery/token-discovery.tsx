@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiClient, type TokenListQuery, type TokenListResponse } from "@/api/client";
@@ -445,7 +446,9 @@ function TokenCard({ token }: { token: TokenCardData }) {
           className="token-image"
         />
         <div className="token-identity">
-          <h3>{label}</h3>
+          <h3>
+            <Link href={`/token/${token.address}` as never}>{label}</Link>
+          </h3>
           <p className="mono token-symbol">{token.symbol || "—"}</p>
           <p className="mono token-address">{token.address}</p>
         </div>
