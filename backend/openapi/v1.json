@@ -76,6 +76,103 @@
         ],
         "type": "object"
       },
+      "CanonicalEventDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "block_hash": {
+            "type": "string"
+          },
+          "block_number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "block_time": {
+            "type": "string"
+          },
+          "finality": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "log_index": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "pair": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "transaction_index": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tx_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "tx_hash",
+          "block_number",
+          "block_hash",
+          "block_time",
+          "transaction_index",
+          "log_index",
+          "finality"
+        ],
+        "type": "object"
+      },
+      "CanonicalObservationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "/v1/schemas/CanonicalObservationBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "chain_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/CanonicalEventDTO"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "finality": {
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/SnapshotDTO"
+          },
+          "tx_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain_id",
+          "deployment_id",
+          "tx_hash",
+          "snapshot",
+          "finality",
+          "events"
+        ],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -1904,6 +2001,46 @@
         },
         "tags": [
           "market"
+        ]
+      }
+    },
+    "/transactions/{tx_hash}": {
+      "get": {
+        "operationId": "getCanonicalTransaction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tx_hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonicalObservationBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "transactions"
         ]
       }
     }

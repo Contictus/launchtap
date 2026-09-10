@@ -181,5 +181,14 @@ describe("task 6 transaction math and safety", () => {
     expect(classifyTransactionFailure(new Error("execution reverted: TradingPaused"))).toBe(
       "reverted",
     );
+    expect(classifyTransactionFailure(new Error("execution reverted: UnknownEngine"), "preflight")).toBe(
+      "preflight-failure",
+    );
+    expect(classifyTransactionFailure(new Error("execution reverted: UnknownEngine"), "simulation")).toBe(
+      "simulation-reverted",
+    );
+    expect(classifyTransactionFailure(new Error("execution reverted"), "receipt")).toBe(
+      "receipt-reverted",
+    );
   });
 });

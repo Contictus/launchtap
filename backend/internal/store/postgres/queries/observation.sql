@@ -1,0 +1,37 @@
+-- name: GetCanonicalTransaction :many
+SELECT event_kind, tx_hash, token_address, pair_address, block_number, block_hash,
+       block_time, transaction_index, log_index, finality_status
+FROM (
+    SELECT 'token_launch'::text AS event_kind, e.tx_hash, e.token_address,
+           NULL::bytea AS pair_address, e.block_number, e.block_hash, e.block_time,
+           e.transaction_index, e.log_index, ib.finality_status
+    FROM token_launches e
+    JOIN indexed_blocks ib USING (chain_id, block_number, block_hash, block_time)
+    WHERE e.chain_id = $1 AND e.tx_hash = $2
+    UNION ALL
+    SELECT 'trade'::text, e.tx_hash, e.token_address, NULL::bytea, e.block_number,
+           e.block_hash, e.block_time, e.transaction_index, e.log_index, ib.finality_status
+    FROM trades e
+    JOIN indexed_blocks ib USING (chain_id, block_number, block_hash, block_time)
+    WHERE e.chain_id = $1 AND e.tx_hash = $2
+    UNION ALL
+    SELECT 'creator_fee_claim'::text, e.tx_hash, e.token_address, NULL::bytea,
+           e.block_number, e.block_hash, e.block_time, e.transaction_index, e.log_index,
+           ib.finality_status
+    FROM creator_fee_claims e
+    JOIN indexed_blocks ib USING (chain_id, block_number, block_hash, block_time)
+    WHERE e.chain_id = $1 AND e.tx_hash = $2
+    UNION ALL
+    SELECT 'refund_claim'::text, e.tx_hash, e.token_address, NULL::bytea, e.block_number,
+           e.block_hash, e.block_time, e.transaction_index, e.log_index, ib.finality_status
+    FROM refund_claims e
+    JOIN indexed_blocks ib USING (chain_id, block_number, block_hash, block_time)
+    WHERE e.chain_id = $1 AND e.tx_hash = $2
+    UNION ALL
+    SELECT 'router_swap'::text, e.tx_hash, decode(repeat('00', 20), 'hex'), e.pair_address, e.block_number,
+           e.block_hash, e.block_time, e.transaction_index, e.log_index, ib.finality_status
+    FROM pool_swaps e
+    JOIN indexed_blocks ib USING (chain_id, block_number, block_hash, block_time)
+    WHERE e.chain_id = $1 AND e.tx_hash = $2
+) events
+ORDER BY block_number, transaction_index, log_index;

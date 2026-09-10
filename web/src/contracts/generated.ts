@@ -4,6 +4,44 @@ export const browserAbis = {
   "factory": [
     {
       "type": "function",
+      "name": "curveImplementation",
+      "inputs": [
+        {
+          "name": "engineVersion",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "engineEnabled",
+      "inputs": [
+        {
+          "name": "engineVersion",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "futureDefaults",
       "inputs": [],
       "outputs": [
@@ -296,6 +334,58 @@ export const browserAbis = {
     },
     {
       "type": "error",
+      "name": "AccountingInvariantFailed",
+      "inputs": [
+        {
+          "name": "balance",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "requiredBalance",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "AlreadyGraduated",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "AlreadyInitialized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ArithmeticOverflow",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "CurveInvariantFailed",
+      "inputs": [
+        {
+          "name": "virtualEth",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "virtualToken",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "invariant",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
       "name": "DeadlineExpired",
       "inputs": [
         {
@@ -305,6 +395,229 @@ export const browserAbis = {
         },
         {
           "name": "currentTimestamp",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "DeveloperBuyCapExceeded",
+      "inputs": [
+        {
+          "name": "tokensOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "maximumTokensOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "DivisionByZero",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "EngineDisabled",
+      "inputs": [
+        {
+          "name": "engineVersion",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "EngineVersionMismatch",
+      "inputs": [
+        {
+          "name": "expected",
+          "type": "uint16",
+          "internalType": "uint16"
+        },
+        {
+          "name": "actual",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "EthTransferFailed",
+      "inputs": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "FailedDeployment",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ImplementationInitializationDisabled",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InsufficientBalance",
+      "inputs": [
+        {
+          "name": "balance",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "needed",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidAuthority",
+      "inputs": [
+        {
+          "name": "field",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        },
+        {
+          "name": "authority",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidCurveAllocation",
+      "inputs": [
+        {
+          "name": "curveTokens",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "lpTokens",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidCurveBoundary",
+      "inputs": [
+        {
+          "name": "invariant",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "finalVirtualToken",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "finalVirtualEth",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidEngineImplementation",
+      "inputs": [
+        {
+          "name": "implementation",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidGraduationEth",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InvalidProtocolShareBps",
+      "inputs": [
+        {
+          "name": "protocolShareBps",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidSupplyAllocation",
+      "inputs": [
+        {
+          "name": "totalSupply",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "curveTokens",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "lpTokens",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidTradeFeeBps",
+      "inputs": [
+        {
+          "name": "tradeFeeBps",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidVirtualReserves",
+      "inputs": [
+        {
+          "name": "initialVirtualEth",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "initialVirtualToken",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "curveTokens",
           "type": "uint256",
           "internalType": "uint256"
         }
@@ -333,6 +646,123 @@ export const browserAbis = {
     },
     {
       "type": "error",
+      "name": "NotInitialized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NothingToClaim",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "Oversell",
+      "inputs": [
+        {
+          "name": "tokensIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "tokensSold",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairFactoryMismatch",
+      "inputs": [
+        {
+          "name": "expected",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "actual",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairLiquidityZero",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "PairNotCanonical",
+      "inputs": [
+        {
+          "name": "expected",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "actual",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairSupplyNotZero",
+      "inputs": [
+        {
+          "name": "totalSupply",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairTokenBalanceNotZero",
+      "inputs": [
+        {
+          "name": "tokenBalance",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairTokenReserveNotZero",
+      "inputs": [
+        {
+          "name": "tokenReserve",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairTokensMismatch",
+      "inputs": [
+        {
+          "name": "token0",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "token1",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "ReentrancyGuardReentrantCall",
+      "inputs": []
+    },
+    {
+      "type": "error",
       "name": "SlippageExceeded",
       "inputs": [
         {
@@ -346,6 +776,203 @@ export const browserAbis = {
           "internalType": "uint256"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "TokenTransferFailed",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "recipient",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "TradingPaused",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "TransferRestricted",
+      "inputs": [
+        {
+          "name": "operator",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "from",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedCreatorClaim",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "creator",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedCurve",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedFactory",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedPauseAuthority",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "authority",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedProtocolClaim",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "treasury",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedTimelock",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "timelock",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnknownEngine",
+      "inputs": [
+        {
+          "name": "engineVersion",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "WethTransferFailed",
+      "inputs": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "WrongPhase",
+      "inputs": [
+        {
+          "name": "expected",
+          "type": "uint8",
+          "internalType": "uint8"
+        },
+        {
+          "name": "actual",
+          "type": "uint8",
+          "internalType": "uint8"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "ZeroAddress",
+      "inputs": [
+        {
+          "name": "field",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "ZeroInput",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ZeroOutput",
+      "inputs": []
     }
   ],
   "curve": [
@@ -586,6 +1213,53 @@ export const browserAbis = {
     },
     {
       "type": "error",
+      "name": "AccountingInvariantFailed",
+      "inputs": [
+        {
+          "name": "balance",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "requiredBalance",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "AlreadyGraduated",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ArithmeticOverflow",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "CurveInvariantFailed",
+      "inputs": [
+        {
+          "name": "virtualEth",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "virtualToken",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "invariant",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
       "name": "DeadlineExpired",
       "inputs": [
         {
@@ -599,6 +1273,91 @@ export const browserAbis = {
           "internalType": "uint256"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "DeveloperBuyCapExceeded",
+      "inputs": [
+        {
+          "name": "tokensOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "maximumTokensOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "DivisionByZero",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "EngineDisabled",
+      "inputs": [
+        {
+          "name": "engineVersion",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "EngineVersionMismatch",
+      "inputs": [
+        {
+          "name": "expected",
+          "type": "uint16",
+          "internalType": "uint16"
+        },
+        {
+          "name": "actual",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "EthTransferFailed",
+      "inputs": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "InvalidAuthority",
+      "inputs": [
+        {
+          "name": "field",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        },
+        {
+          "name": "authority",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "LaunchesPaused",
+      "inputs": []
     },
     {
       "type": "error",
@@ -623,6 +1382,97 @@ export const browserAbis = {
     },
     {
       "type": "error",
+      "name": "PairFactoryMismatch",
+      "inputs": [
+        {
+          "name": "expected",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "actual",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairLiquidityZero",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "PairNotCanonical",
+      "inputs": [
+        {
+          "name": "expected",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "actual",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairSupplyNotZero",
+      "inputs": [
+        {
+          "name": "totalSupply",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairTokenBalanceNotZero",
+      "inputs": [
+        {
+          "name": "tokenBalance",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairTokenReserveNotZero",
+      "inputs": [
+        {
+          "name": "tokenReserve",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "PairTokensMismatch",
+      "inputs": [
+        {
+          "name": "token0",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "token1",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "ReentrancyGuardReentrantCall",
+      "inputs": []
+    },
+    {
+      "type": "error",
       "name": "SlippageExceeded",
       "inputs": [
         {
@@ -639,8 +1489,120 @@ export const browserAbis = {
     },
     {
       "type": "error",
+      "name": "TokenTransferFailed",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "recipient",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "error",
       "name": "TradingPaused",
       "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "TransferRestricted",
+      "inputs": [
+        {
+          "name": "operator",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "from",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedCreatorClaim",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "creator",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedCurve",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnauthorizedProtocolClaim",
+      "inputs": [
+        {
+          "name": "caller",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "treasury",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "UnknownEngine",
+      "inputs": [
+        {
+          "name": "engineVersion",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ]
+    },
+    {
+      "type": "error",
+      "name": "WethTransferFailed",
+      "inputs": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ]
     },
     {
       "type": "error",
@@ -657,6 +1619,16 @@ export const browserAbis = {
           "internalType": "uint8"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "ZeroInput",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ZeroOutput",
+      "inputs": []
     }
   ],
   "token": [

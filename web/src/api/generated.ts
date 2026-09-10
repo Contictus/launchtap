@@ -207,6 +207,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/transactions/{tx_hash}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCanonicalTransaction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -232,6 +248,36 @@ export interface components {
             token_volume: string;
             /** Format: int64 */
             trade_count: number;
+        };
+        CanonicalEventDTO: {
+            block_hash: string;
+            /** Format: int64 */
+            block_number: number;
+            block_time: string;
+            finality: string;
+            kind: string;
+            /** Format: int32 */
+            log_index: number;
+            pair?: string;
+            token?: string;
+            /** Format: int32 */
+            transaction_index: number;
+            tx_hash: string;
+        };
+        CanonicalObservationBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /v1/schemas/CanonicalObservationBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            chain_id: number;
+            deployment_id: string;
+            events: components["schemas"]["CanonicalEventDTO"][] | null;
+            finality: string;
+            snapshot: components["schemas"]["SnapshotDTO"];
+            tx_hash: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -1060,6 +1106,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TradesBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getCanonicalTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tx_hash: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanonicalObservationBody"];
                 };
             };
             /** @description Error */

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  if (process.env.NEXT_PUBLIC_E2E_FIXTURE !== "1" || !process.env.TASK6_ANVIL_RPC_URL) {
+  const endpoint = process.env.TASK6_ANVIL_RPC_URL ?? process.env.NEXT_PUBLIC_TASK6_ANVIL_RPC_URL;
+  if (process.env.NEXT_PUBLIC_E2E_FIXTURE !== "1" || !endpoint) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.text();
-  const response = await fetch(process.env.TASK6_ANVIL_RPC_URL, {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,

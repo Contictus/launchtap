@@ -17,6 +17,7 @@ import {
   Wallet,
 } from "./icons";
 import { Button, SafeExternalLink, Sheet } from "./primitives";
+import { publicConfiguration } from "@/config/public";
 
 const navItems = [
   { href: "/", label: "Explore", icon: Compass },
@@ -30,6 +31,8 @@ const navItems = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const configuration = publicConfiguration();
+  const deploymentReady = configuration.status === "ready";
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   return (
     <div className="app-frame">
@@ -61,11 +64,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="rail-bottom">
           <div className="network-label">
             <span className="state-dot state-dot-warning" aria-hidden="true" />
-            Deployment unavailable
+            {deploymentReady ? configuration.deployment?.name : "Deployment unavailable"}
           </div>
           <p>
-            Public configuration is not connected. The shell stays read-only until a reviewed
-            deployment is available.
+            {deploymentReady
+              ? "Reviewed deployment connected. Contract reads and wallet actions remain user-controlled."
+              : "Public configuration is not connected. The shell stays read-only until a reviewed deployment is available."}
           </p>
           <SafeExternalLink href="https://robinhoodchain.blockscout.com" className="rail-external">
             Open explorer <ArrowSquareOut size={13} />

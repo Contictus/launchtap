@@ -8,6 +8,9 @@ export type TransactionStatus =
   | "simulating"
   | "awaiting-signature"
   | "rejected-signature"
+  | "preflight-failure"
+  | "simulation-reverted"
+  | "receipt-reverted"
   | "submitted"
   | "rpc-failure"
   | "reverted"
@@ -211,17 +214,25 @@ function equalIntent(left: unknown, right: unknown): boolean {
 
 export type DecodedTransactionError = { code: string; message: string };
 
-export type TransactionFailure = "rejected-signature" | "rpc-failure" | "reverted";
+export type TransactionFailure =
+  | "rejected-signature"
+  | "preflight-failure"
+  | "simulation-reverted"
+  | "receipt-reverted"
+  | "rpc-failure"
+  | "reverted";
 
 export function classifyTransactionFailure(
   cause: unknown,
-  phase: "simulation" | "write" | "receipt" = "write",
+  phase: "preflight" | "simulation" | "write" | "receipt" = "write",
 ): TransactionFailure {
   const text = cause instanceof Error ? cause.message : String(cause ?? "");
   if (/user rejected|user denied|rejected|denied signature|4001/i.test(text))
     return "rejected-signature";
+  if (phase === "preflight") return "preflight-failure";
+  if (phase === "simulation") return "simulation-reverted";
+  if (phase === "receipt") return "receipt-reverted";
   if (
-    phase === "receipt" ||
     /custom error|revert|execution reverted|slippage|deadline|wrongphase|nothingtoclaim/i.test(text)
   )
     return "reverted";
@@ -248,6 +259,11 @@ export function decodeTransactionError(cause: unknown): DecodedTransactionError 
     ReceiptReverted: "The transaction was mined but reverted. No state change was accepted.",
     QuoteChanged:
       "The on-chain quote changed before signing. Refresh and review the new minimum output.",
+    UnknownEngine: "This launch engine is not supported by the reviewed factory.",
+    EngineDisabled: "This launch engine is disabled by the reviewed factory.",
+    EngineVersionMismatch: "The selected engine version does not match the reviewed implementation.",
+    DeveloperBuyCapExceeded: "The developer buy exceeds the contract cap. Reduce the amount and retry.",
+    UnauthorizedCreatorClaim: "Only the linked creator wallet can claim these fees.",
   };
   const code =
     Object.keys(messages).find((name) => text.includes(name)) ?? "UnknownTransactionError";
@@ -300,6 +316,9 @@ const transitions: Record<TransactionStatus, readonly TransactionStatus[]> = {
   simulating: ["awaiting-signature", "rpc-failure", "reverted"],
   "awaiting-signature": ["rejected-signature", "submitted", "rpc-failure"],
   "rejected-signature": ["validating", "disconnected"],
+  "preflight-failure": ["validating", "disconnected", "wrong-chain"],
+  "simulation-reverted": ["validating", "disconnected"],
+  "receipt-reverted": ["validating", "disconnected"],
   submitted: ["mined", "reverted", "rpc-failure"],
   "rpc-failure": ["validating", "disconnected", "wrong-chain"],
   reverted: ["validating", "disconnected"],

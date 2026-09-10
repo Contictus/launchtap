@@ -1,7 +1,8 @@
 "use client";
 
 import { PrivyProvider } from "@privy-io/react-auth";
-import { WagmiProvider } from "@privy-io/wagmi";
+import { WagmiProvider as PrivyWagmiProvider } from "@privy-io/wagmi";
+import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type PropsWithChildren } from "react";
 import { publicConfiguration } from "@/config/public";
@@ -19,10 +20,18 @@ export function Providers({ children }: PropsWithChildren) {
   // Deliberately render the read-only shell without wallet providers when any public value is
   // missing. This prevents a partially configured client from making auth or transaction claims.
   if (!web3 || !configuration.privyAppId) return children;
+  if (configuration.deploymentId === "task6-anvil")
+    return (
+      <WagmiProvider config={web3.config}>
+        <PrivyProvider appId={configuration.privyAppId}>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </PrivyProvider>
+      </WagmiProvider>
+    );
   return (
     <PrivyProvider appId={configuration.privyAppId}>
       <QueryClientProvider client={queryClient}>
-        <WagmiProvider config={web3.config}>{children}</WagmiProvider>
+        <PrivyWagmiProvider config={web3.config}>{children}</PrivyWagmiProvider>
       </QueryClientProvider>
     </PrivyProvider>
   );

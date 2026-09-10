@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const fixtureFactory = process.env.TASK6_ANVIL_FACTORY ?? "";
+const fixtureRpc = process.env.TASK6_ANVIL_RPC_URL ?? "";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -10,9 +13,16 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:3000", trace: "on-first-retry" },
   webServer: {
     // Build with the E2E-only fixture flag, then exercise the production server and CSP.
-    command: 'cmd /c "set NEXT_PUBLIC_E2E_FIXTURE=1&& npm run build && npm run start"',
+    command: "npm run build && npm run start",
+    env: {
+      NEXT_PUBLIC_E2E_FIXTURE: "1",
+      TASK6_ANVIL_FACTORY: fixtureFactory,
+      TASK6_ANVIL_RPC_URL: fixtureRpc,
+      NEXT_PUBLIC_TASK6_ANVIL_FACTORY: fixtureFactory,
+      NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: fixtureRpc,
+    },
     url: "http://127.0.0.1:3000",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
   projects: [
     {

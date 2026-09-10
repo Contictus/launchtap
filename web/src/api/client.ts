@@ -10,6 +10,7 @@ export type CandleResponse = components["schemas"]["CandleBody"];
 export type TradesResponse = components["schemas"]["TradesBody"];
 export type HoldersResponse = components["schemas"]["HoldersBody"];
 export type QuoteResponse = components["schemas"]["QuoteBody"];
+export type CanonicalTransactionResponse = components["schemas"]["CanonicalObservationBody"];
 export type TokenListQuery = {
   phase?: string;
   q?: string;
@@ -134,6 +135,13 @@ export class ApiClient {
       body: JSON.stringify(input),
       signal,
     });
+  }
+
+  getCanonicalTransaction(hash: string, signal?: AbortSignal) {
+    return this.request<CanonicalTransactionResponse>(
+      `/v1/transactions/${encodeURIComponent(hash)}`,
+      { signal },
+    );
   }
 }
 

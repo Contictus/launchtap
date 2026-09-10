@@ -67,12 +67,6 @@ try {
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     $factory = [string]$manifest.factory
     if ($factory -notmatch "^0x[0-9a-fA-F]{40}$") { throw "Invalid generated factory address" }
-    $launchFee = (& $castPath call $factory "launchFee()(uint256)" --rpc-url $rpcUrl | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or $launchFee -notmatch "^[0-9]+$") { throw "Could not read launch fee" }
-    & $castPath send $factory "launch((string,string,uint16,uint256,uint256,uint256))" `
-        '("Task6","T6",1,0,0,9999999999)' --value $launchFee `
-        --from $sender --unlocked --rpc-url $rpcUrl | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "Anvil launch write failed" }
     $env:TASK6_ANVIL_RPC_URL = $rpcUrl
     $env:TASK6_ANVIL_FACTORY = $factory
     Push-Location $webRoot
