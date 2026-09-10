@@ -9,9 +9,10 @@ import { publicConfiguration } from "@/config/public";
 import { useWalletReadiness } from "@/wallet/readiness";
 import {
   calculateLaunchValue,
-  claimIsExecutable,
+  canonicalObservationState,
   decodeTransactionError,
   minimumOutput,
+  parseQuoteQuantity,
   reviewedRouterAddress,
   sameWriteIntent,
   transactionDeadline,
@@ -57,6 +58,24 @@ function ErrorCopy({ error }: { error: unknown }) {
       {decoded.message}
     </p>
   );
+}
+
+async function observeFreshSnapshot(
+  baseUrl: string | null,
+  tokenAddress: string,
+  state: TransactionState,
+  setState: (next: TransactionState) => void,
+) {
+  if (!baseUrl) return;
+  try {
+    const fresh = await new ApiClient({ baseUrl }).getToken(tokenAddress);
+    if (!fresh.snapshot) return;
+    const indexed = canonicalObservationState(state, true);
+    setState(indexed);
+    setState({ ...indexed, status: "safe" });
+  } catch {
+    // Keep indexing visible; the next SSE/REST refresh can recover without optimistic data.
+  }
 }
 
 function ReadinessGate({ children }: { children: React.ReactNode }) {
@@ -121,6 +140,7 @@ function TradingPanelReady({
   const [state, setState] = useState<TransactionState>(createTransactionState("disconnected"));
   const [approvalHash, setApprovalHash] = useState<Address | undefined>();
   const intentRef = useRef<import("@/transactions").ExactWrite | null>(null);
+  const executionLockRef = useRef(false);
   const configuration = publicConfiguration();
   const readiness = useWalletReadiness();
   const account = useAccount();
@@ -128,12 +148,8 @@ function TradingPanelReady({
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const reviewedRouter = reviewedRouterAddress(configuration.deployment!, configuration.chainId);
+  const reviewedWeth = safeAddress(configuration.deployment?.weth);
   const graduated = token.phase.toLowerCase() === "graduated";
-  const claimsEligible = claimIsExecutable({
-    serverEligible: false,
-    onChainEligible: false,
-    selectedWalletReady: readiness.selectedAccountVerified,
-  });
   const decimals = 18;
   const inputUnits = useMemo(() => {
     try {
@@ -164,10 +180,12 @@ function TradingPanelReady({
       .getQuote(token.address, { amount: inputUnits.toString(), side })
       .then((result) => {
         if (!cancelled) {
-          const output = BigInt(result.output);
+          const output = parseQuoteQuantity(result.output, "quote output");
           setQuote({
             output,
-            fee: BigInt(result.protocol_fee) + BigInt(result.creator_fee),
+            fee:
+              parseQuoteQuantity(result.protocol_fee, "protocol fee") +
+              parseQuoteQuantity(result.creator_fee, "creator fee"),
             source: "backend",
           });
           setQuoteError(null);
@@ -190,6 +208,7 @@ function TradingPanelReady({
   const switchNetwork = () => void readiness.switchNetwork();
   const execute = async () => {
     if (graduated) return;
+    if (executionLockRef.current) return;
     if (
       state.status !== "disconnected" &&
       state.status !== "reverted" &&
@@ -210,9 +229,11 @@ function TradingPanelReady({
       setState({ status: chainId !== configuration.chainId ? "wrong-chain" : "disconnected" });
       return;
     }
+    executionLockRef.current = true;
     const accountAddress = account.address;
     const now = currentUnixSeconds();
     const deadline = transactionDeadline(now, DEFAULT_TTL);
+    let submittedHash: Address | undefined;
     try {
       setState(
         transitionTransaction(
@@ -253,6 +274,9 @@ function TradingPanelReady({
         side === "buy"
           ? BigInt((contractQuote as readonly unknown[])[1] as bigint)
           : BigInt((contractQuote as readonly unknown[])[0] as bigint);
+      const contractFee =
+        BigInt((contractQuote as readonly unknown[])[2] as bigint) +
+        BigInt((contractQuote as readonly unknown[])[3] as bigint);
       const exactMinimum = minimumOutput(contractOutput, slippageBps);
       const target = safeCurveAddress;
       const args =
@@ -269,7 +293,7 @@ function TradingPanelReady({
         minimumOutput: exactMinimum,
       };
       intentRef.current = intent;
-      setQuote({ output: contractOutput, fee: 0n, source: "contract" });
+      setQuote({ output: contractOutput, fee: contractFee, source: "contract" });
       if (side === "sell") {
         const allowance = await publicClient.readContract({
           address: safeTokenAddress,
@@ -295,9 +319,11 @@ function TradingPanelReady({
             account: accountAddress,
             args: approvalArgs,
           } as never);
+          submittedHash = hash as Address;
           setApprovalHash(hash as Address);
           setState({ status: "submitted", hash: hash as Address });
-          await publicClient.waitForTransactionReceipt({ hash });
+          const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash });
+          if (approvalReceipt.status !== "success") throw new Error("ReceiptReverted");
           setState({ status: "mined", hash: hash as Address });
           setState({ status: "disconnected" });
           return;
@@ -327,6 +353,32 @@ function TradingPanelReady({
       );
       if (!sameWriteIntent(intent, intentRef.current!))
         throw new Error("Write intent changed; retry safely.");
+      const phaseBeforeSign = await publicClient.readContract({
+        address: safeCurveAddress,
+        abi: browserAbis.curve,
+        functionName: "phase",
+      });
+      if (Number(phaseBeforeSign) !== 0) throw new Error("WrongPhase");
+      const latestQuote =
+        side === "buy"
+          ? await publicClient.readContract({
+              address: safeCurveAddress,
+              abi: browserAbis.curve,
+              functionName: "quoteBuy",
+              args: [inputUnits],
+            })
+          : await publicClient.readContract({
+              address: safeCurveAddress,
+              abi: browserAbis.curve,
+              functionName: "quoteSell",
+              args: [inputUnits],
+            });
+      const latestOutput =
+        side === "buy"
+          ? BigInt((latestQuote as readonly unknown[])[1] as bigint)
+          : BigInt((latestQuote as readonly unknown[])[0] as bigint);
+      if (minimumOutput(latestOutput, slippageBps) !== exactMinimum)
+        throw new Error("QuoteChanged");
       const hash = await walletClient.writeContract({
         address: target,
         abi: browserAbis.curve,
@@ -335,26 +387,40 @@ function TradingPanelReady({
         args,
         value,
       } as never);
+      submittedHash = hash as Address;
       setState({ status: "submitted", hash: hash as Address });
-      await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("ReceiptReverted");
       setState({ status: "mined", hash: hash as Address });
       setState({ status: "indexing", hash: hash as Address });
+      void observeFreshSnapshot(
+        configuration.apiBaseUrl,
+        token.address,
+        { status: "indexing", hash: hash as Address },
+        setState,
+      );
     } catch (error) {
       const message =
         error instanceof Error && /User rejected|denied|reject/i.test(error.message)
           ? "rejected-signature"
           : "reverted";
-      setState({ status: message, hash: state.hash, error: decodeTransactionError(error).message });
+      setState({
+        status: message,
+        hash: submittedHash ?? state.hash,
+        error: decodeTransactionError(error).message,
+      });
+    } finally {
+      executionLockRef.current = false;
     }
   };
-  const canSubmit = Boolean(
+  const canTrade = Boolean(
     inputUnits &&
     inputUnits > 0n &&
-    minimum &&
+    minimum !== null &&
     readiness.selectedAccountVerified &&
-    chainId === configuration.chainId &&
-    !confirming,
+    chainId === configuration.chainId,
   );
+  const canSubmit = canTrade && confirming;
   if (!tokenAddress || !curveAddress)
     return (
       <UnavailableState
@@ -375,22 +441,8 @@ function TradingPanelReady({
           </div>
           <Badge tone="success">Graduated</Badge>
         </div>
-        {reviewedRouter ? (
-          <>
-            <p className="transaction-risk">
-              This token now trades through the reviewed Uniswap v2 router only. Approvals and
-              signatures remain in your wallet.
-            </p>
-            <div className="quote-summary">
-              <span>
-                Reviewed router <strong className="mono">{reviewedRouter}</strong>
-              </span>
-              <small>
-                Router execution is withheld until a complete pool route, WETH address, and live
-                contract reads are available.
-              </small>
-            </div>
-          </>
+        {reviewedRouter && reviewedWeth ? (
+          <GraduatedSwapPanel token={token} router={reviewedRouter} weth={reviewedWeth} />
         ) : (
           <UnavailableState
             title="Router unavailable"
@@ -531,7 +583,7 @@ function TradingPanelReady({
         <Button
           variant="primary"
           size="lg"
-          disabled={!canSubmit}
+          disabled={!canTrade}
           onClick={() => setConfirming(true)}
         >
           {side === "sell" && approvalHash ? "Resume sell" : `Review ${side}`}
@@ -556,13 +608,298 @@ function TradingPanelReady({
       ) : null}
       <div className="claim-row">
         <span>
-          Creator/refund claims require server and on-chain eligibility for this linked wallet.
+          Creator/refund claims are unavailable until the backend exposes eligibility for this
+          linked wallet.
         </span>
-        <Button size="sm" disabled={!claimsEligible}>
-          Claim
+        <Button size="sm" disabled>
+          Claims unavailable
         </Button>
       </div>
     </section>
+  );
+}
+
+function GraduatedSwapPanel({
+  token,
+  router,
+  weth,
+}: {
+  token: { address: string; name: string; symbol: string };
+  router: Address;
+  weth: Address;
+}) {
+  const tokenAddress = safeAddress(token.address);
+  const account = useAccount();
+  const chainId = useChainId();
+  const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
+  const readiness = useWalletReadiness();
+  const configuration = publicConfiguration();
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [input, setInput] = useState("");
+  const [slippage, setSlippage] = useState("5");
+  const [output, setOutput] = useState<bigint | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [state, setState] = useState<TransactionState>(createTransactionState("disconnected"));
+  const lockRef = useRef(false);
+  const inputUnits = useMemo(() => {
+    try {
+      return input.trim() ? parseDecimal(input) : null;
+    } catch {
+      return null;
+    }
+  }, [input]);
+  const slippageBps = useMemo(() => {
+    try {
+      const value = parseDecimal(slippage, 2);
+      return value < 10_000n ? value : null;
+    } catch {
+      return null;
+    }
+  }, [slippage]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!tokenAddress || !inputUnits || inputUnits <= 0n || !publicClient) return;
+    void publicClient
+      .readContract({
+        address: router,
+        abi: browserAbis.router,
+        functionName: "getAmountsOut",
+        args: [inputUnits, side === "buy" ? [weth, tokenAddress] : [tokenAddress, weth]],
+      } as never)
+      .then((amounts) => {
+        if (!cancelled)
+          setOutput(
+            parseQuoteQuantity(String((amounts as readonly unknown[]).at(-1)), "router output"),
+          );
+      })
+      .catch(() => {
+        if (!cancelled) setOutput(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inputUnits, publicClient, router, side, tokenAddress, weth]);
+  const minimum =
+    output !== null && slippageBps !== null ? minimumOutput(output, slippageBps) : null;
+  const execute = async () => {
+    if (
+      lockRef.current ||
+      !tokenAddress ||
+      !publicClient ||
+      !walletClient ||
+      !account.address ||
+      inputUnits === null ||
+      minimum === null ||
+      chainId !== configuration.chainId ||
+      !readiness.selectedAccountVerified
+    )
+      return;
+    lockRef.current = true;
+    let submittedHash: Address | undefined;
+    try {
+      const deadline = transactionDeadline(currentUnixSeconds(), DEFAULT_TTL);
+      const path =
+        side === "buy" ? ([weth, tokenAddress] as const) : ([tokenAddress, weth] as const);
+      if (side === "sell") {
+        const balance = await publicClient.readContract({
+          address: tokenAddress,
+          abi: browserAbis.token,
+          functionName: "balanceOf",
+          args: [account.address],
+        });
+        if (balance < inputUnits) throw new Error("ERC20InsufficientBalance");
+        const allowance = await publicClient.readContract({
+          address: tokenAddress,
+          abi: browserAbis.token,
+          functionName: "allowance",
+          args: [account.address, router],
+        });
+        if (allowance < inputUnits) {
+          const approvalArgs = [router, inputUnits] as const;
+          await publicClient.simulateContract({
+            address: tokenAddress,
+            abi: browserAbis.token,
+            functionName: "approve",
+            account: account.address,
+            args: approvalArgs,
+          } as never);
+          const approvalHash = await walletClient.writeContract({
+            address: tokenAddress,
+            abi: browserAbis.token,
+            functionName: "approve",
+            account: account.address,
+            args: approvalArgs,
+          } as never);
+          submittedHash = approvalHash as Address;
+          setState({ status: "submitted", hash: submittedHash });
+          const approvalReceipt = await publicClient.waitForTransactionReceipt({
+            hash: approvalHash,
+          });
+          if (approvalReceipt.status !== "success") throw new Error("ReceiptReverted");
+        }
+      }
+      const args =
+        side === "buy"
+          ? ([minimum, path, account.address, deadline] as const)
+          : ([inputUnits, minimum, path, account.address, deadline] as const);
+      const value = side === "buy" ? inputUnits : 0n;
+      await publicClient.simulateContract({
+        address: router,
+        abi: browserAbis.router,
+        functionName: side === "buy" ? "swapExactETHForTokens" : "swapExactTokensForETH",
+        account: account.address,
+        args,
+        value,
+      } as never);
+      const hash = await walletClient.writeContract({
+        address: router,
+        abi: browserAbis.router,
+        functionName: side === "buy" ? "swapExactETHForTokens" : "swapExactTokensForETH",
+        account: account.address,
+        args,
+        value,
+      } as never);
+      submittedHash = hash as Address;
+      setState({ status: "submitted", hash: submittedHash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("ReceiptReverted");
+      const indexing = { status: "indexing" as const, hash: submittedHash };
+      setState(indexing);
+      void observeFreshSnapshot(configuration.apiBaseUrl, token.address, indexing, setState);
+    } catch (cause) {
+      setState({
+        status: "reverted",
+        hash: submittedHash,
+        error: decodeTransactionError(cause).message,
+      });
+    } finally {
+      lockRef.current = false;
+    }
+  };
+  if (!tokenAddress)
+    return (
+      <UnavailableState
+        title="Router unavailable"
+        description="The token address is invalid for the reviewed router."
+      />
+    );
+  const ready = Boolean(
+    inputUnits &&
+    inputUnits > 0n &&
+    minimum !== null &&
+    readiness.selectedAccountVerified &&
+    chainId === configuration.chainId,
+  );
+  return (
+    <div className="graduated-swap">
+      <p className="transaction-risk">
+        Reviewed router only: <span className="mono">{router}</span>. Approval, if needed, is
+        limited to this router and this sell amount.
+      </p>
+      <div className="trade-tabs" role="tablist" aria-label="Graduated trade side">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={side === "buy"}
+          className={side === "buy" ? "is-active" : ""}
+          onClick={() => {
+            setSide("buy");
+            setInput("");
+            setOutput(null);
+            setConfirming(false);
+          }}
+        >
+          Buy
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={side === "sell"}
+          className={side === "sell" ? "is-active" : ""}
+          onClick={() => {
+            setSide("sell");
+            setInput("");
+            setOutput(null);
+            setConfirming(false);
+          }}
+        >
+          Sell
+        </button>
+      </div>
+      <div className="transaction-form">
+        <Input
+          label={side === "buy" ? "ETH input" : `${token.symbol} input`}
+          value={input}
+          onChange={(event) => {
+            setInput(event.target.value);
+            setConfirming(false);
+          }}
+          inputMode="decimal"
+        />
+        <Input
+          label="Slippage tolerance (%)"
+          value={slippage}
+          onChange={(event) => setSlippage(event.target.value)}
+          inputMode="decimal"
+        />
+        {output !== null ? (
+          <div className="quote-summary">
+            <span>
+              Router output <strong className="mono">{formatBaseUnits(output, 18, 6)}</strong>
+            </span>
+            <span>
+              Minimum output{" "}
+              <strong className="mono">
+                {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
+              </strong>
+            </span>
+          </div>
+        ) : null}
+      </div>
+      {confirming ? (
+        <div className="transaction-confirmation">
+          <h3>Confirm {side}</h3>
+          <dl>
+            <dt>Network</dt>
+            <dd>{configuration.deployment?.name}</dd>
+            <dt>Contract</dt>
+            <dd className="mono">{router}</dd>
+            <dt>Input / minimum</dt>
+            <dd className="mono">
+              {input} / {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
+            </dd>
+            <dt>Deadline</dt>
+            <dd className="mono">15 minutes after final reads</dd>
+          </dl>
+          <div className="transaction-actions">
+            <Button variant="quiet" onClick={() => setConfirming(false)}>
+              Back
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!ready}
+              onClick={() => void execute()}
+            >
+              Sign {side}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="primary" size="lg" disabled={!ready} onClick={() => setConfirming(true)}>
+          Review {side}
+        </Button>
+      )}
+      {state.status !== "disconnected" ? (
+        <div className="transaction-progress" role="status">
+          <Badge tone={state.status === "reverted" ? "danger" : "warning"}>
+            {statusLabel(state.status)}
+          </Badge>
+          {state.hash ? <span className="mono">{state.hash}</span> : null}
+          {state.error ? <ErrorCopy error={new Error(state.error)} /> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -590,16 +927,27 @@ function LaunchPanelReady() {
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<TransactionState>(createTransactionState("disconnected"));
   const [launchFee, setLaunchFee] = useState<bigint | null>(null);
+  const [defaultsRead, setDefaultsRead] = useState(false);
+  const executionLockRef = useRef(false);
   const deployment = configuration.deployment as ReviewedDeployment;
   useEffect(() => {
     if (!publicClient || !deployment.factory) return;
-    void publicClient
-      .readContract({
+    void Promise.all([
+      publicClient.readContract({
         address: deployment.factory as Address,
         abi: browserAbis.factory,
         functionName: "launchFee",
+      }),
+      publicClient.readContract({
+        address: deployment.factory as Address,
+        abi: browserAbis.factory,
+        functionName: "futureDefaults",
+      }),
+    ])
+      .then(([fee]) => {
+        setLaunchFee(fee as bigint);
+        setDefaultsRead(true);
       })
-      .then((value) => setLaunchFee(value as bigint))
       .catch(() => setError("Factory configuration unavailable; launching is disabled."));
   }, [deployment.factory, publicClient]);
   const buyUnits = useMemo(() => {
@@ -620,6 +968,7 @@ function LaunchPanelReady() {
     developerBuyGross: buyUnits ?? -1n,
   });
   const submit = async () => {
+    if (executionLockRef.current) return;
     if (
       Object.keys(validMetadata).length ||
       !publicClient ||
@@ -631,6 +980,8 @@ function LaunchPanelReady() {
       !readiness.selectedAccountVerified
     )
       return;
+    executionLockRef.current = true;
+    let submittedHash: Address | undefined;
     try {
       setState(
         transitionTransaction(
@@ -650,6 +1001,21 @@ function LaunchPanelReady() {
           deadline,
         },
       ] as const;
+      const latestLaunchFee = (await publicClient.readContract({
+        address: deployment.factory as Address,
+        abi: browserAbis.factory,
+        functionName: "launchFee",
+      })) as bigint;
+      const exactValue = calculateLaunchValue(latestLaunchFee, buyUnits!);
+      if (latestLaunchFee !== launchFee || exactValue !== value)
+        throw new Error("LaunchValueMismatch");
+      const preflightIntent = {
+        account: account.address,
+        target: deployment.factory,
+        value: exactValue,
+        args,
+        deadline,
+      };
       await publicClient.simulateContract({
         address: deployment.factory as Address,
         abi: browserAbis.factory,
@@ -658,6 +1024,15 @@ function LaunchPanelReady() {
         args,
         value,
       } as never);
+      const signIntent = {
+        account: account.address,
+        target: deployment.factory,
+        value: exactValue,
+        args,
+        deadline,
+      };
+      if (!sameWriteIntent(preflightIntent, signIntent))
+        throw new Error("Write intent changed; retry safely.");
       setState({ status: "awaiting-signature" });
       const hash = await walletClient.writeContract({
         address: deployment.factory as Address,
@@ -667,11 +1042,19 @@ function LaunchPanelReady() {
         args,
         value,
       } as never);
+      submittedHash = hash as Address;
       setState({ status: "submitted", hash: hash as Address });
-      await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("ReceiptReverted");
       setState({ status: "indexing", hash: hash as Address });
     } catch (cause) {
-      setState({ status: "reverted", error: decodeTransactionError(cause).message });
+      setState({
+        status: "reverted",
+        hash: submittedHash,
+        error: decodeTransactionError(cause).message,
+      });
+    } finally {
+      executionLockRef.current = false;
     }
   };
   return (
@@ -746,6 +1129,15 @@ function LaunchPanelReady() {
               </strong>
             </span>
             <span>
+              Factory defaults{" "}
+              <strong className="mono">{defaultsRead ? "Read from chain" : "Unavailable"}</strong>
+            </span>
+            <small>
+              Engine v1 is the only generated launch ABI. Paused state and treasury are not exposed
+              by the reviewed browser ABI, so the launch remains fail-closed when factory reads are
+              unavailable.
+            </small>
+            <span>
               Exact launch value{" "}
               <strong className="mono">{value === null ? "Unavailable" : eth(value)}</strong>
             </span>
@@ -791,6 +1183,7 @@ function LaunchPanelReady() {
               disabled={
                 Object.keys(validMetadata).length > 0 ||
                 value === null ||
+                !defaultsRead ||
                 !readiness.selectedAccountVerified
               }
               onClick={() => setConfirming(true)}

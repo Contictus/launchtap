@@ -35,6 +35,11 @@ export function calculateLaunchValue(launchFee: bigint, developerBuyGross: bigin
   return launchFee + developerBuyGross;
 }
 
+export function parseQuoteQuantity(value: string, field = "quote"): bigint {
+  if (!/^(?:0|[1-9]\d*)$/.test(value)) throw new Error(`Invalid ${field}`);
+  return BigInt(value);
+}
+
 export function validateLaunchInput(input: LaunchValidation): LaunchValidationErrors {
   const errors: LaunchValidationErrors = {};
   const name = input.name.trim();
@@ -157,6 +162,9 @@ export function decodeTransactionError(cause: unknown): DecodedTransactionError 
     ERC20InsufficientAllowance:
       "Approval is lower than this sell amount. Approve the disclosed amount and resume.",
     ERC20InsufficientBalance: "The selected wallet does not have enough tokens for this action.",
+    ReceiptReverted: "The transaction was mined but reverted. No state change was accepted.",
+    QuoteChanged:
+      "The on-chain quote changed before signing. Refresh and review the new minimum output.",
   };
   const code =
     Object.keys(messages).find((name) => text.includes(name)) ?? "UnknownTransactionError";

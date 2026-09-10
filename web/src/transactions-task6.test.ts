@@ -5,6 +5,7 @@ import {
   claimIsExecutable,
   decodeTransactionError,
   minimumOutput,
+  parseQuoteQuantity,
   reviewedRouterAddress,
   sameWriteIntent,
   transactionDeadline,
@@ -45,6 +46,14 @@ describe("task 6 transaction math and safety", () => {
     expect(minimumOutput(101n, 500n)).toBe(95n);
     expect(minimumOutput(1n, 10_000n)).toBe(0n);
     expect(() => minimumOutput(1n, 10_001n)).toThrow();
+  });
+
+  it("rejects malformed or negative runtime quote quantities", () => {
+    expect(parseQuoteQuantity("0")).toBe(0n);
+    expect(parseQuoteQuantity("100")).toBe(100n);
+    expect(() => parseQuoteQuantity("01")).toThrow();
+    expect(() => parseQuoteQuantity("-1")).toThrow();
+    expect(() => parseQuoteQuantity("1.5")).toThrow();
   });
 
   it("rejects invalid deadline and preserves exact simulation intent", () => {
