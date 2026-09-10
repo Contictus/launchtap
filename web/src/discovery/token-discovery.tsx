@@ -11,8 +11,10 @@ import { formatDisplayAmount } from "@/amounts";
 import { publicConfiguration } from "@/config/public";
 import {
   decodeTokenListQuery,
+  commitTokenListFilters,
   defaultTokenListQuery,
   encodeTokenListQuery,
+  normalizeTokenListQuery,
   PHASE_LABELS,
   SORT_LABELS,
   sameTokenListQuery,
@@ -84,7 +86,11 @@ export function TokenDiscovery({
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlState = useMemo(
-    () => decodeTokenListQuery(searchParams.toString(), defaultPhase),
+    () =>
+      normalizeTokenListQuery(
+        decodeTokenListQuery(searchParams.toString(), defaultPhase),
+        defaultPhase,
+      ),
     [defaultPhase, searchParams],
   );
   const [searchDraft, setSearchDraft] = useState(urlState.q);
@@ -107,6 +113,7 @@ export function TokenDiscovery({
   const latestState = useRef(urlState);
   const searchEditedRef = useRef(false);
   const chainSnapshotRef = useRef<Snapshot | undefined>(undefined);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     latestState.current = urlState;
@@ -118,13 +125,19 @@ export function TokenDiscovery({
 
   const writeUrlState = useCallback(
     (next: TokenListQueryState, replace = false) => {
-      const query = encodeTokenListQuery(next, defaultPhase);
+      const query = encodeTokenListQuery(normalizeTokenListQuery(next, defaultPhase), defaultPhase);
       const target = query ? `${pathname}?${query}` : pathname;
       if (replace) router.replace(target as never, { scroll: false });
       else router.push(target as never, { scroll: false });
     },
     [defaultPhase, pathname, router],
   );
+
+  useEffect(() => {
+    if (defaultPhase !== "graduated" || searchParams.get("phase") === null) return;
+    const query = encodeTokenListQuery(urlState, defaultPhase);
+    router.replace((query ? `${pathname}?${query}` : pathname) as never, { scroll: false });
+  }, [defaultPhase, pathname, router, searchParams, urlState]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -221,7 +234,15 @@ export function TokenDiscovery({
     if (configuration.status !== "ready" || !configuration.apiBaseUrl || injectedFetcher) return;
     const stream = new SseInvalidationStream({
       url: `${configuration.apiBaseUrl}/v1/events`,
-      queryClient: { invalidateQueries: async () => undefined },
+      queryClient: {
+        invalidateQueries: async () => {
+          if (refreshTimerRef.current) return;
+          refreshTimerRef.current = setTimeout(() => {
+            refreshTimerRef.current = null;
+            void loadPage(latestState.current, undefined, false);
+          }, 80);
+        },
+      },
       queryKeyForEvent: (event) => {
         if (
           event.data.chain_id !== configuration.chainId ||
@@ -232,6 +253,7 @@ export function TokenDiscovery({
           configuration.chainId,
           configuration.deploymentId,
           tokenListFilters(latestState.current),
+          chainSnapshotRef.current,
         );
       },
       refetchSnapshot: async (signal) => {
@@ -239,7 +261,12 @@ export function TokenDiscovery({
         await loadPage(latestState.current, undefined, false, signal);
       },
     });
-    return stream.start();
+    const stop = stream.start();
+    return () => {
+      stop();
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    };
   }, [
     configuration.apiBaseUrl,
     configuration.chainId,
@@ -260,8 +287,12 @@ export function TokenDiscovery({
     snapshot,
   );
 
-  const choosePhase = (phase: TokenPhase) => writeUrlState({ ...urlState, phase });
-  const chooseSort = (sort: TokenListQueryState["sort"]) => writeUrlState({ ...urlState, sort });
+  const commitFilters = (changes: Partial<Pick<TokenListQueryState, "phase" | "sort">>) => {
+    searchEditedRef.current = false;
+    writeUrlState(commitTokenListFilters(urlState, searchDraft, changes));
+  };
+  const choosePhase = (phase: TokenPhase) => commitFilters({ phase });
+  const chooseSort = (sort: TokenListQueryState["sort"]) => commitFilters({ sort });
   const retry = () => void loadPage(urlState);
 
   return (
@@ -308,20 +339,22 @@ export function TokenDiscovery({
             maxLength={120}
             autoComplete="off"
           />
-          <label className="ui-field">
-            <span>Phase</span>
-            <select
-              className="ui-input"
-              value={urlState.phase}
-              onChange={(event) => choosePhase(event.target.value as TokenPhase)}
-            >
-              {TOKEN_PHASES.map((phase) => (
-                <option key={phase} value={phase}>
-                  {PHASE_LABELS[phase]}
-                </option>
-              ))}
-            </select>
-          </label>
+          {defaultPhase !== "graduated" ? (
+            <label className="ui-field">
+              <span>Phase</span>
+              <select
+                className="ui-input"
+                value={urlState.phase}
+                onChange={(event) => choosePhase(event.target.value as TokenPhase)}
+              >
+                {TOKEN_PHASES.map((phase) => (
+                  <option key={phase} value={phase}>
+                    {PHASE_LABELS[phase]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="ui-field">
             <span>Sort</span>
             <select
@@ -498,7 +531,10 @@ function UnavailableDiscovery() {
 }
 
 export function canonicalDiscoveryQuery(search: string, defaultPhase: TokenPhase = "curve") {
-  return encodeTokenListQuery(decodeTokenListQuery(search, defaultPhase), defaultPhase);
+  return encodeTokenListQuery(
+    normalizeTokenListQuery(decodeTokenListQuery(search, defaultPhase), defaultPhase),
+    defaultPhase,
+  );
 }
 
 export {

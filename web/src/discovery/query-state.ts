@@ -69,3 +69,18 @@ export function tokenListFilters(state: TokenListQueryState) {
 export function sameTokenListQuery(a: TokenListQueryState, b: TokenListQueryState) {
   return a.q === b.q && a.phase === b.phase && a.sort === b.sort;
 }
+
+export function normalizeTokenListQuery(
+  state: TokenListQueryState,
+  defaultPhase: TokenPhase = "curve",
+): TokenListQueryState {
+  return defaultPhase === "graduated" ? { ...state, phase: "graduated" } : state;
+}
+
+export function commitTokenListFilters(
+  state: TokenListQueryState,
+  currentSearchDraft: string,
+  changes: Partial<Pick<TokenListQueryState, "phase" | "sort">>,
+): TokenListQueryState {
+  return { ...state, ...changes, q: currentSearchDraft.trim() };
+}

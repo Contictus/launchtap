@@ -23,3 +23,22 @@ test("mobile shell keeps primary routes keyboard reachable", async ({ page }) =>
     await expect(drawer.getByRole("link", { name: label })).toBeVisible();
   }
 });
+
+test("graduated route canonicalizes a conflicting phase and stays scoped", async ({ page }) => {
+  await page.goto("/graduated?phase=curve&sort=market_cap");
+  await expect(page.getByRole("heading", { name: "Graduated routes", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Phase")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/graduated\?sort=market_cap$/);
+});
+
+test("discovery filters restore through browser history", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Sort").selectOption("volume_24h");
+  await expect(page).toHaveURL(/\/\?sort=volume_24h$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/127\.0\.0\.1:3000\/$/);
+  await expect(page.getByLabel("Sort")).toHaveValue("newest");
+  await page.goForward();
+  await expect(page).toHaveURL(/\/\?sort=volume_24h$/);
+  await expect(page.getByLabel("Sort")).toHaveValue("volume_24h");
+});

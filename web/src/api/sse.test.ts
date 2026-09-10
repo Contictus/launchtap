@@ -5,19 +5,27 @@ afterEach(() => vi.useRealTimers());
 
 function sourceHarness(order: string[]) {
   let currentError: (() => void) | undefined;
+  const listeners = new Map<string, (event: MessageEvent<string>) => void>();
   const sources: EventSourceLike[] = [];
   const factory = () => {
     order.push("connect");
     const source: EventSourceLike = {
       addEventListener: (name, listener) => {
         if (name === "error") currentError = () => listener(new MessageEvent("error"));
+        else listeners.set(name, listener);
       },
       close: () => order.push("close"),
     };
     sources.push(source);
     return source;
   };
-  return { factory, sources, triggerError: () => currentError?.() };
+  return {
+    factory,
+    sources,
+    triggerError: () => currentError?.(),
+    emit: (name: string, data: unknown) =>
+      listeners.get(name)?.(new MessageEvent(name, { data: JSON.stringify(data) })),
+  };
 }
 
 describe("SSE invalidation", () => {
@@ -111,5 +119,31 @@ describe("SSE invalidation", () => {
     await vi.advanceTimersByTimeAsync(0);
     stream.stop();
     expect(signal?.aborted).toBe(true);
+  });
+
+  it("invalidates relevant events and ignores events from another deployment", async () => {
+    const order: string[] = [];
+    const harness = sourceHarness(order);
+    const invalidated: unknown[] = [];
+    const stream = new SseInvalidationStream({
+      url: "https://api.example/events",
+      eventSourceFactory: harness.factory,
+      queryClient: {
+        invalidateQueries: async (value) => {
+          invalidated.push(value);
+        },
+      },
+      queryKeyForEvent: (event) =>
+        event.data.chain_id === 1 && event.data.deployment_id === "testnet"
+          ? ["tokens", "snapshot"]
+          : undefined,
+      refetchSnapshot: async () => undefined,
+    });
+    stream.start();
+    harness.emit("token", { chain_id: 1, deployment_id: "testnet", token: "0x1" });
+    harness.emit("token", { chain_id: 2, deployment_id: "other", token: "0x2" });
+    await Promise.resolve();
+    expect(invalidated).toHaveLength(1);
+    stream.stop();
   });
 });
