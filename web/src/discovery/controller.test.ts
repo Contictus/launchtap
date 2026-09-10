@@ -51,6 +51,24 @@ describe("token discovery append recovery", () => {
     expect(result.pages[0]?.items?.[0]?.name).toBe("fresh");
   });
 
+  it("treats invalid_cursor as a one-shot page-one recovery", async () => {
+    const requests: Array<string | undefined> = [];
+    const result = await loadTokenDiscoveryPage({
+      state,
+      cursor: "cursor-1",
+      existingPages: [page(10, "stale", "cursor-1"), page(10, "older")],
+      fetchPage: async (query) => {
+        requests.push(query.cursor);
+        if (requests.length === 1) throw new ApiProblem(400, "invalid_cursor");
+        return page(12, "recovered", "cursor-2");
+      },
+    });
+    expect(requests).toEqual(["cursor-1", undefined]);
+    expect(result.reset).toBe(true);
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]?.items?.[0]?.name).toBe("recovered");
+  });
+
   it("discards accumulated pages when the cursor response changes snapshot", async () => {
     const requests: Array<string | undefined> = [];
     const result = await loadTokenDiscoveryPage({
