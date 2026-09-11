@@ -18,34 +18,38 @@
 ### Robinhood testnet deployment manifest
 - **Date:** 2026-09-01
 - **Reason:** external deployment prerequisite
-- **Where it stopped:** Mainnet WETH/Uniswap addresses are verified. Live checks showed the
-  same addresses have no code on testnet, so they cannot be reused.
+- **Where it stopped:** Mainnet WETH/Uniswap addresses are verified. Official Uniswap v2
+  deployment records list Robinhood Chain mainnet, not chain 46630 testnet. The repository
+  now has a deterministic project-owned dependency bootstrap, candidate evidence capture,
+  Launchpad candidate-manifest flow, and operator runbook; no testnet transaction has been
+  authorized or broadcast by the repository workflow.
 - **Owner:** Backend Plan 2 Task 1 (`docs/plans/2026-09-05-backend-indexer.md`). Only that
   plan's Task 8 testnet acceptance depends on it, so it does not block backend Tasks 2-7.
-- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`,
-  `docs/specs/2026-09-01-backend-core-design.md`,
-  `docs/plans/2026-09-05-backend-indexer.md`
-- **Resume (next step):** Before testnet graduation integration, identify a verified
-  official testnet deployment or deploy a project-owned WETH + Uniswap v2 test stack, then
-  produce and review the chain-46630 deployment manifest.
+- **Related files:** `docs/runbooks/robinhood-testnet-deployment.md`,
+  `contracts/scripts/bootstrap-testnet-dependencies.ps1`, `contracts/scripts/deploy.ps1`,
+  `contracts/deployments/config/robinhood-testnet.disabled.json`
+- **Resume (next step):** A human operator must fund a named Foundry account, run the dry-run
+  and broadcast commands in the runbook, independently review receipts/code hashes/source
+  evidence, commit the reviewed dependency record, then run the Launchpad deployment and
+  commit its reviewed chain-46630 manifest. The exact first command is:
+  `pwsh ./contracts/scripts/bootstrap-testnet-dependencies.ps1 -RpcUrl <RPC> -Sender <address>`.
 - **Pitfalls / notes:** Testnet startup must remain graduation-disabled until the manifest
   is complete; never substitute mainnet addresses.
 
 ### Production release, governance, and audit inputs
 - **Date:** 2026-09-01
 - **Reason:** production-only external coordination
-- **Where it stopped:** Contract roles and permitted actions are designed, but signer set,
-  timelock delay, legal/geo policy, monitoring provider, and audit vendor are not selected.
-  Plan 4 additionally needs a real Privy application, verified production API/RPC endpoints
-  and web origins, hosting/domain/CSP and edge-rate-limit ownership, monitoring, rollback
-  ownership, and named incident contacts. The repository contains the deterministic release
-  gate and runbook, but it must not invent these live values.
-- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`,
-  `docs/plans/2026-09-09-web-client.md`, `docs/runbooks/web-release.md`,
-  `web/.env.example`, `scripts/verify-release.mjs`
-- **Resume (next step):** Resolve the Privy, public API/RPC/origin, hosting and operator
-  inputs; then resolve governance signers/timelock/legal policy, monitoring, and external
-  audit before approving a production deployment checklist or accepting mainnet funds.
+- **Where it stopped:** The repository now contains the production input sheet, Privy
+  dashboard checklist, governance handoff, health/rollback procedure, monitoring ownership
+  checklist, and audit evidence checklist. No live organization, signer, policy, endpoint,
+  hosting, monitoring, or auditor values have been invented.
+- **Related files:** `docs/runbooks/production-readiness.md`,
+  `docs/runbooks/web-release.md`, `web/.env.example`, `backend/.env.example`,
+  `scripts/verify-release.mjs`
+- **Resume (next step):** Product/infrastructure/security owners must fill every `<pending>`
+  row in `docs/runbooks/production-readiness.md`, provision values through the approved
+  secret/variable manager, and run `node scripts/verify-release.mjs --target=production`.
+  Production approval still requires signed governance and external-audit evidence.
 - **Pitfalls / notes:** These do not authorize changing existing launch economics or adding
   a reserve rescue path. Do not commit credentials, private RPC URLs, wallet keys, or guessed
   deployment addresses.
