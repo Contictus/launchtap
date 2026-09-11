@@ -11,12 +11,13 @@ indexes canonical chain data and never holds trading funds.
 | --- | --- |
 | Contract Foundations (Tasks 1–12) | Complete |
 | Backend Foundations (Tasks 1–12) | Complete |
-| Backend Indexer (Plan 2, Tasks 1–5) | Code complete; deterministic Anvil and health gates verified; live Robinhood evidence pending |
+| Backend Indexer (Plan 2, Tasks 1–5) | Code complete; deterministic Anvil and health gates verified; RPC probe recorded; testnet manifest pending |
 | API and identity (Plan 3, Tasks 1–7) | Complete |
 | Web client (Plan 4, Tasks 1–8) | Code and deterministic CI complete on `dev`; live release pending |
 
-Plan 2 still needs the external Robinhood probe and reviewed chain-46630 deployment
-manifest before live operation. Its Anvil end-to-end indexer scenario and health surface are
+Plan 2 still needs the reviewed chain-46630 deployment manifest before live operation. Its
+Robinhood RPC probe is recorded in [`docs/runbooks/robinhood-rpc-probe.md`](docs/runbooks/robinhood-rpc-probe.md).
+Its Anvil end-to-end indexer scenario and health surface are
 implemented and included in the backend verification gate. Plan 4's eight tasks are
 implemented and covered by the web, backend, contracts, drift, browser, and Anvil gates on
 `dev`; this is deterministic repository evidence, not live Robinhood or production acceptance.

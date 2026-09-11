@@ -6,9 +6,10 @@
 **Status:** Code implementation is complete for all five tasks. This includes ABI
 artifacts and staged discovery, persistence and incremental projections, indexer ownership and
 chunk processing, reorg recovery, aggregation workers, notifications, the health surface, and
-the automated Anvil end-to-end gate. Task 1's external RPC probe and reviewed chain-46630
-deployment manifest remain open, as does live Robinhood runtime evidence. These are operational
-acceptance gates, not missing local implementation. If the active provider cannot supply a
+the automated Anvil end-to-end gate. Task 1's reviewed chain-46630 deployment manifest remains
+open, as does live Robinhood runtime evidence. The read-only RPC probe is complete and recorded
+in `docs/runbooks/robinhood-rpc-probe.md`. These are operational acceptance gates, not missing
+local implementation. If the active provider cannot supply a
 usable `safe` tag, that remains a blocker before production operation (`backlog.md`, spec
 §4.1).
 
@@ -219,7 +220,8 @@ binding on the tasks named beside them.
 
 **Delivers:** measured, recorded answers to the two `backlog.md` items that gate an indexer
 runtime — a read-only capacity and finality probe of the Robinhood providers, and a reviewed
-chain-46630 deployment manifest that replaces today's fail-closed disabled marker.
+chain-46630 deployment manifest that replaces today's fail-closed disabled marker. The probe
+half is complete in `docs/runbooks/robinhood-rpc-probe.md`; only the manifest half remains.
 
 **Files:** a new operations note under `docs/`, `contracts/deployments/config/` (the
 `robinhood-testnet.disabled.json` marker is replaced by a real manifest),
@@ -261,8 +263,8 @@ chain-46630 deployment manifest that replaces today's fail-closed disabled marke
   environment is not `local`, and `bytecodeHashes` taken from the deployed runtime code.
   `deployments.LoadEmbedded().Lookup(46630, …)` returns it instead of
   `ErrDeploymentDisabled`, and the backend copy passes `task deployments-diff`.
-- Both `backlog.md` items are updated to name this task as their owner and are moved to
-  `Done` only when the manifest is committed and the probe note is written — not before.
+- The probe backlog item is `Done` once the probe note is committed. The chain-46630 manifest
+  item remains `Active` until the manifest is committed and independently reviewed.
 - Only the probe half gates other work: Task 2 needs its measured defaults, and Task 3 needs
   nothing from this task at all. Only Task 5's testnet acceptance run depends on the manifest
   half, so a slow external deployment never blocks backend implementation.

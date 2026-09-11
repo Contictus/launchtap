@@ -25,10 +25,11 @@ projections, advisory ownership, chunk processing, reorg recovery, aggregate rec
 dirty-work polling, notifications, and the health endpoint are implemented and verified.
 
 The deterministic implementation gate now includes the Anvil indexer path and live-state health
-surface. Public-network operation still requires:
+surface. The read-only public-RPC probe is recorded in
+[`docs/runbooks/robinhood-rpc-probe.md`](runbooks/robinhood-rpc-probe.md). Public-network
+operation still requires:
 
-1. Robinhood mainnet/testnet RPC probe note with finality and `eth_getLogs` measurements.
-2. Reviewed chain-46630 dependency and Launchpad deployment manifest.
+1. Reviewed chain-46630 dependency and Launchpad deployment manifest.
 ### API and identity (Plan 3) — code complete
 
 Plan 3 consumes canonical and derived backend state. It owns Huma REST endpoints, finality
