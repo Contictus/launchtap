@@ -1,13 +1,29 @@
-import { RoutePlaceholder } from "@/components/route-placeholder";
+import { ProfileView } from "@/profile/profile-view";
+import { publicConfiguration } from "@/config/public";
+import { UnavailableState } from "@/components/primitives";
 
 export default function ProfilePage() {
+  const configuration = publicConfiguration();
   return (
-    <RoutePlaceholder
-      eyebrow="Profile"
-      title="Your signing context."
-      summary="Wallet identity and account history remain user-controlled and will be added with the wallet foundation."
-      unavailableTitle="Profile unavailable"
-      unavailableDescription="No wallet is connected. Launchpad does not infer or create an account."
-    />
+    <div className="page-stack">
+      <section className="page-hero">
+        <div>
+          <div className="section-kicker">Profile</div>
+          <h1>Your signing context.</h1>
+          <p className="hero-summary">
+            Identity and linked wallets remain user-controlled. Creator authorization stays on the
+            server and claim balances stay on-chain.
+          </p>
+        </div>
+      </section>
+      {configuration.status === "ready" && configuration.privyAppId ? (
+        <ProfileView />
+      ) : (
+        <UnavailableState
+          title="Profile unavailable"
+          description="Privy and a reviewed public deployment are not configured. No account is inferred from a wallet address."
+        />
+      )}
+    </div>
   );
 }

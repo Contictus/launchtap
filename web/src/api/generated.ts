@@ -166,7 +166,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["getTokenMetadata"];
         put: operations["replaceTokenMetadata"];
         post?: never;
         delete?: never;
@@ -369,6 +369,20 @@ export interface components {
              */
             readonly $schema?: string;
             description?: string;
+            telegram_url?: string;
+            x_url?: string;
+        };
+        MetadataReadBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /v1/schemas/MetadataReadBody.json
+             */
+            readonly $schema?: string;
+            description?: string;
+            image_url?: string;
+            /** Format: int64 */
+            revision: number;
             telegram_url?: string;
             x_url?: string;
         };
@@ -997,6 +1011,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getTokenMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataReadBody"];
                 };
             };
             /** @description Error */

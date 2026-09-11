@@ -33,6 +33,7 @@ import {
 import { MarketChart } from "./market-chart";
 import { isTokenEventForAddress } from "./sse-scope";
 import { TradingPanel } from "@/transactions-panel";
+import { MetadataEditor } from "./metadata-editor";
 
 type TokenDetailProps = { address: `0x${string}` };
 type Tab = "trades" | "holders";
@@ -610,6 +611,16 @@ export function TokenDetail({
           ) : null}
         </div>
       </section>
+      <MetadataEditor
+        token={{
+          address: token.address,
+          description: token.description,
+          x_url: token.x_url,
+          telegram_url: token.telegram_url,
+          image_url: token.image_url,
+        }}
+        onConflict={() => void loadToken()}
+      />
     </div>
   );
 }

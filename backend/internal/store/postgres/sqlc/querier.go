@@ -56,6 +56,7 @@ type Querier interface {
 	GetTokenCreatorForUpdate(ctx context.Context, arg GetTokenCreatorForUpdateParams) (Address, error)
 	GetTokenDetail(ctx context.Context, arg GetTokenDetailParams) (GetTokenDetailRow, error)
 	GetTokenImage(ctx context.Context, arg GetTokenImageParams) (GetTokenImageRow, error)
+	GetTokenMetadata(ctx context.Context, arg GetTokenMetadataParams) (GetTokenMetadataRow, error)
 	GetTokenQuoteState(ctx context.Context, arg GetTokenQuoteStateParams) (GetTokenQuoteStateRow, error)
 	GraduationMatchesEvent(ctx context.Context, arg GraduationMatchesEventParams) (pgtype.Bool, error)
 	HasCanonicalLaunch(ctx context.Context, arg HasCanonicalLaunchParams) (bool, error)

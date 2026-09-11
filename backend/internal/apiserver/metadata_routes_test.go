@@ -51,6 +51,12 @@ func (s *fakeMetadataStore) GetImage(context.Context, int64, common.Address) (me
 	}
 	return s.image, nil
 }
+func (s *fakeMetadataStore) GetMetadata(context.Context, int64, common.Address) (metadata.Metadata, error) {
+	if s.err != nil {
+		return metadata.Metadata{}, s.err
+	}
+	return s.metadata, nil
+}
 
 func TestMetadataAndImageHTTPContracts(t *testing.T) {
 	store := &fakeMetadataStore{}
@@ -67,6 +73,12 @@ func TestMetadataAndImageHTTPContracts(t *testing.T) {
 	server.Handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"1"` || store.metadata.Description != "plain text" {
 		t.Fatalf("metadata status=%d headers=%v body=%s stored=%+v", response.Code, response.Header(), response.Body.String(), store.metadata)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/v1/tokens/"+token+"/metadata", nil)
+	response = httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"0"` || !strings.Contains(response.Body.String(), "plain text") {
+		t.Fatalf("metadata read status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
 	}
 
 	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{1}, 32)...)
@@ -132,7 +144,7 @@ func TestMetadataAuthenticationAuthorizationAndValidationProblems(t *testing.T) 
 	}{
 		{"authentication", fakeVerifier{err: privyauth.ErrInvalidCredentials}, nil, `{}`, http.StatusUnauthorized},
 		{"authorization", fakeVerifier{principal: privyauth.Principal{PrivyDID: "did", Wallets: []common.Address{common.HexToAddress("0x01")}}}, metadata.ErrUnauthorized, `{}`, http.StatusForbidden},
-		{"revision", fakeVerifier{principal: privyauth.Principal{PrivyDID: "did"}}, metadata.ErrRevisionConflict, `{}`, http.StatusConflict},
+		{"revision", fakeVerifier{principal: privyauth.Principal{PrivyDID: "did"}}, metadata.ErrRevisionConflict, `{}`, http.StatusPreconditionFailed},
 		{"description", fakeVerifier{principal: privyauth.Principal{PrivyDID: "did"}}, nil, `{"description":"` + strings.Repeat("x", 2001) + `"}`, http.StatusUnprocessableEntity},
 		{"url", fakeVerifier{principal: privyauth.Principal{PrivyDID: "did"}}, nil, `{"x_url":"http://x.com/test"}`, http.StatusUnprocessableEntity},
 	}

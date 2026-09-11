@@ -62,6 +62,40 @@ func (q *Queries) GetTokenImage(ctx context.Context, arg GetTokenImageParams) (G
 	return i, err
 }
 
+const getTokenMetadata = `-- name: GetTokenMetadata :one
+SELECT description, image_url, x_url, telegram_url, revision, updated_at
+FROM token_metadata
+WHERE chain_id = $1 AND token_address = $2
+`
+
+type GetTokenMetadataParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+type GetTokenMetadataRow struct {
+	Description pgtype.Text
+	ImageUrl    pgtype.Text
+	XUrl        pgtype.Text
+	TelegramUrl pgtype.Text
+	Revision    int64
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) GetTokenMetadata(ctx context.Context, arg GetTokenMetadataParams) (GetTokenMetadataRow, error) {
+	row := q.db.QueryRow(ctx, getTokenMetadata, arg.ChainID, arg.TokenAddress)
+	var i GetTokenMetadataRow
+	err := row.Scan(
+		&i.Description,
+		&i.ImageUrl,
+		&i.XUrl,
+		&i.TelegramUrl,
+		&i.Revision,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const replaceTokenImage = `-- name: ReplaceTokenImage :one
 INSERT INTO token_images (chain_id, token_address, content_type, content, byte_size, sha256, revision, updated_at)
 SELECT $1, $2, $3, $4,

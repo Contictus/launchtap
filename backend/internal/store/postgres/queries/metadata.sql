@@ -9,6 +9,11 @@ SELECT content_type, content, sha256, revision, updated_at
 FROM token_images
 WHERE chain_id = sqlc.arg(chain_id) AND token_address = sqlc.arg(token_address);
 
+-- name: GetTokenMetadata :one
+SELECT description, image_url, x_url, telegram_url, revision, updated_at
+FROM token_metadata
+WHERE chain_id = sqlc.arg(chain_id) AND token_address = sqlc.arg(token_address);
+
 -- name: ReplaceTokenMetadata :one
 INSERT INTO token_metadata (chain_id, token_address, description, image_url, x_url, telegram_url, revision, updated_at)
 SELECT sqlc.arg(chain_id), sqlc.arg(token_address), sqlc.arg(description), sqlc.arg(image_url),

@@ -19,6 +19,8 @@ export type TokenListQuery = {
   limit?: number;
 };
 export type AuthHeaders = { accessToken?: string; identityToken?: string };
+export type RevisionResponse = components["schemas"]["RevisionBody"];
+export type MetadataReadResponse = components["schemas"]["MetadataReadBody"];
 
 export class ApiClient {
   private readonly fetchImpl: typeof globalThis.fetch;
@@ -49,6 +51,64 @@ export class ApiClient {
     return (await response.json()) as T;
   }
 
+  private async requestWithResponse<T>(path: string, init: RequestInit, auth?: AuthHeaders) {
+    const url = new URL(path, this.options.baseUrl);
+    const headers = new Headers(init.headers);
+    headers.set("Accept", "application/json");
+    if (auth?.accessToken) headers.set("Authorization", `Bearer ${auth.accessToken}`);
+    if (auth?.identityToken) headers.set("privy-id-token", auth.identityToken);
+    const response = await this.fetchImpl(url, { ...init, headers });
+    if (!response.ok) {
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = undefined;
+      }
+      throw mapProblem(response.status, body);
+    }
+    return {
+      body: (await response.json()) as T,
+      etag: response.headers.get("ETag"),
+    };
+  }
+
+  updateTokenMetadata(
+    address: string,
+    body: components["schemas"]["MetadataBody"],
+    revision: number,
+    auth: AuthHeaders,
+  ) {
+    return this.requestWithResponse<RevisionResponse>(
+      `/v1/tokens/${encodeURIComponent(address)}/metadata`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "If-Match": `"${revision}"` },
+        body: JSON.stringify(body),
+      },
+      auth,
+    );
+  }
+
+  getTokenMetadata(address: string, signal?: AbortSignal) {
+    return this.requestWithResponse<MetadataReadResponse>(
+      `/v1/tokens/${encodeURIComponent(address)}/metadata`,
+      { signal },
+    );
+  }
+
+  updateTokenImage(address: string, file: File, revision: number, auth: AuthHeaders) {
+    return this.requestWithResponse<RevisionResponse>(
+      `/v1/tokens/${encodeURIComponent(address)}/image`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": file.type, "If-Match": `"${revision}"` },
+        body: file,
+      },
+      auth,
+    );
+  }
+
   getProtocolDaily(options: { from?: string; to?: string; limit?: number } = {}) {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(options))
@@ -56,6 +116,10 @@ export class ApiClient {
     return this.request<ProtocolDailyResponse>(
       `/v1/stats/protocol/daily${query.size ? `?${query}` : ""}`,
     );
+  }
+
+  getProtocol(signal?: AbortSignal) {
+    return this.request<components["schemas"]["ProtocolDTO"]>("/v1/stats/protocol", { signal });
   }
 
   getToken(address: string, signal?: AbortSignal) {
