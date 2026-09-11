@@ -88,7 +88,7 @@ contract LocalUniswapV2Router {
         LocalUniswapV2Pair(pair).swap(amount0Out, amount1Out, to);
     }
 
-receive() external payable { }
+    receive() external payable { }
 }
 
 // forge-lint: disable-end(arbitrary-send-eth)
