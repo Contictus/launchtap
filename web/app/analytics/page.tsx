@@ -171,8 +171,10 @@ export default function AnalyticsPage() {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <section className="workspace-panel metric-panel">
-      <dt>{label}</dt>
-      <dd className="mono">{value}</dd>
+      <dl>
+        <dt>{label}</dt>
+        <dd className="mono">{value}</dd>
+      </dl>
     </section>
   );
 }

@@ -620,7 +620,7 @@ export function TokenDetail({
           telegram_url: token.telegram_url,
           image_url: token.image_url,
         }}
-        onConflict={() => void loadToken()}
+        onConflict={loadToken}
       />
     </div>
   );

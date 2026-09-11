@@ -110,6 +110,7 @@ func (s *Server) RegisterPublicRoutes(r PublicRoutes)           { r.Register(s.A
 func (s *Server) RegisterMetadataRoutes(r MetadataRoutes)       { r.Register(s.API) }
 func (s *Server) RegisterEventRoutes(r EventRoutes)             { r.Register(s.API) }
 func (s *Server) RegisterObservationRoutes(r ObservationRoutes) { r.Register(s.API) }
+func (s *Server) RegisterProfileRoutes(r ProfileRoutes)       { r.Register(s.API) }
 
 func (s *Server) Shutdown(ctx context.Context) error { return s.HTTP.Shutdown(ctx) }
 

@@ -1,18 +1,75 @@
 "use client";
+/* Profile state follows authenticated external data and is reset on provider changes. */
+/* eslint-disable react-hooks/set-state-in-effect */
 
-import { usePrivy } from "@privy-io/react-auth";
+import { useIdentityToken, usePrivy } from "@privy-io/react-auth";
+import { useEffect, useState } from "react";
+import { ApiClient, type ProfileResponse } from "@/api/client";
+import { formatBaseUnits } from "@/amounts";
 import { publicConfiguration } from "@/config/public";
 import { Button, Badge, UnavailableState } from "@/components/primitives";
 import { useWalletReadiness } from "@/wallet/readiness";
 import { shortAddress } from "@/token/address";
 
+type ProfileAction = NonNullable<ProfileResponse["items"]>[number];
+
 export function ProfileView() {
   const configuration = publicConfiguration();
-  const { authenticated, ready, user, login, logout } = usePrivy();
+  const { authenticated, ready, user, login, logout, getAccessToken } = usePrivy();
+  const { identityToken } = useIdentityToken();
   const readiness = useWalletReadiness();
+  const [actions, setActions] = useState<ProfileAction[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(false);
+  const [actionsError, setActionsError] = useState<string | null>(null);
   const email = user?.linkedAccounts?.find((item) => item.type === "email") as
     { address?: string } | undefined;
   const linked = readiness.linkedWallets;
+  useEffect(() => {
+    let cancelled = false;
+    if (
+      !authenticated ||
+      !identityToken ||
+      configuration.status !== "ready" ||
+      !configuration.apiBaseUrl
+    ) {
+      setActions([]);
+      setActionsError(null);
+      return;
+    }
+    setActionsLoading(true);
+    setActionsError(null);
+    void getAccessToken()
+      .then((accessToken) => {
+        if (!accessToken) throw new Error("Access token unavailable");
+        return new ApiClient({ baseUrl: configuration.apiBaseUrl! }).getProfile({
+          accessToken,
+          identityToken,
+        });
+      })
+      .then((response) => {
+        if (!cancelled) setActions(response.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActions([]);
+          setActionsError(
+            "Authoritative claim availability is unavailable. Open a token detail page to retry.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setActionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authenticated,
+    configuration.apiBaseUrl,
+    configuration.status,
+    getAccessToken,
+    identityToken,
+  ]);
   if (!ready)
     return (
       <UnavailableState
@@ -110,21 +167,31 @@ export function ProfileView() {
           </div>
         </div>
         <p>
-          Balances are read from the selected token contract at the moment you open its detail page.
-          This profile has no invented aggregate balance.
+          Availability comes from the authenticated API snapshot of canonical fee and refund events.
         </p>
-        <div className="claim-availability-grid">
-          <div>
-            <dt>Creator fees</dt>
-            <dd>
-              Open a token detail page to read <code>unclaimedCreatorFees</code>.
-            </dd>
-          </div>
-          <div>
-            <dt>Refund</dt>
-            <dd>Open a token detail page to read the contract refund balance.</dd>
-          </div>
-        </div>
+        {actionsLoading ? <p role="status">Loading authoritative availability…</p> : null}
+        {actionsError ? <p className="discovery-notice">{actionsError}</p> : null}
+        {!actionsLoading && !actionsError && actions.length === 0 ? (
+          <p>No creator fees or pending refunds are currently available for the linked wallets.</p>
+        ) : null}
+        {actions.length ? (
+          <ul className="profile-action-list">
+            {actions.map((action) => (
+              <li key={action.token}>
+                <div>
+                  <a href={`/token/${action.token}`}>
+                    {action.name || action.symbol || action.token}
+                  </a>
+                  <span className="ui-field-hint">{action.phase} · snapshot-bound</span>
+                </div>
+                <div className="mono profile-action-values">
+                  <span>Creator fees: {formatEth(action.creator_fees)}</span>
+                  <span>Refund: {formatEth(action.refund)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {configuration.status !== "ready" || readiness.status !== "ready" ? (
           <p className="discovery-notice">
             Claims unavailable until a reviewed deployment and supported wallet are ready.
@@ -133,4 +200,12 @@ export function ProfileView() {
       </section>
     </div>
   );
+}
+
+function formatEth(value: string) {
+  try {
+    return `${formatBaseUnits(BigInt(value), 18, 6)} ETH`;
+  } catch {
+    return "Unavailable";
+  }
 }

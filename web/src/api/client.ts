@@ -21,6 +21,7 @@ export type TokenListQuery = {
 export type AuthHeaders = { accessToken?: string; identityToken?: string };
 export type RevisionResponse = components["schemas"]["RevisionBody"];
 export type MetadataReadResponse = components["schemas"]["MetadataReadBody"];
+export type ProfileResponse = components["schemas"]["ProfileBody"];
 
 /** Resolve API-owned relative image paths without allowing a metadata URL to change origin. */
 export function resolveApiAssetUrl(
@@ -177,6 +178,10 @@ export class ApiClient {
 
   getProtocol(signal?: AbortSignal) {
     return this.request<components["schemas"]["ProtocolDTO"]>("/v1/stats/protocol", { signal });
+  }
+
+  getProfile(auth: AuthHeaders, signal?: AbortSignal) {
+    return this.request<ProfileResponse>("/v1/profile", { signal }, auth);
   }
 
   getToken(address: string, signal?: AbortSignal) {

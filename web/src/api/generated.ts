@@ -31,6 +31,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/readyz": {
         parameters: {
             query?: never;
@@ -386,6 +402,25 @@ export interface components {
             telegram_url?: string;
             x_url?: string;
         };
+        ProfileActionDTO: {
+            creator_fees: string;
+            curve: string;
+            name: string;
+            phase: string;
+            refund: string;
+            symbol: string;
+            token: string;
+        };
+        ProfileBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /v1/schemas/ProfileBody.json
+             */
+            readonly $schema?: string;
+            items: components["schemas"]["ProfileActionDTO"][] | null;
+            snapshot: components["schemas"]["SnapshotDTO"];
+        };
         ProtocolDTO: {
             /**
              * Format: uri
@@ -699,6 +734,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getProfile: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string;
+                "privy-id-token"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileBody"];
                 };
             };
             /** @description Error */

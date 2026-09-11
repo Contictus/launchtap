@@ -416,6 +416,73 @@
         ],
         "type": "object"
       },
+      "ProfileActionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "creator_fees": {
+            "type": "string"
+          },
+          "curve": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "refund": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "curve",
+          "name",
+          "symbol",
+          "phase",
+          "creator_fees",
+          "refund"
+        ],
+        "type": "object"
+      },
+      "ProfileBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "/v1/schemas/ProfileBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileActionDTO"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/SnapshotDTO"
+          }
+        },
+        "required": [
+          "snapshot",
+          "items"
+        ],
+        "type": "object"
+      },
       "ProtocolDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1273,6 +1340,52 @@
         },
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/profile": {
+      "get": {
+        "operationId": "getProfile",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "privy-id-token",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "profile"
         ]
       }
     },

@@ -1,9 +1,10 @@
 import { ArrowSquareOut } from "@/components/icons";
 import { SafeExternalLink } from "@/components/primitives";
-
-const explorer = "https://robinhoodchain.blockscout.com";
+import { publicConfiguration } from "@/config/public";
 
 export default function DocsPage() {
+  const configuration = publicConfiguration();
+  const explorer = configuration.deployment?.explorerBase ?? null;
   return (
     <div className="page-stack docs-page">
       <section className="page-hero">
@@ -54,6 +55,10 @@ export default function DocsPage() {
             <h2>Fees and economics</h2>
             <dl className="docs-facts">
               <div>
+                <dt>V1 launch fee</dt>
+                <dd>0.0005 ETH, charged by the reviewed factory</dd>
+              </div>
+              <div>
                 <dt>Curve trade fee</dt>
                 <dd>1% of the gross trade amount</dd>
               </div>
@@ -101,9 +106,15 @@ export default function DocsPage() {
               browser fails closed when a reviewed deployment manifest or public configuration is
               missing.
             </p>
-            <SafeExternalLink href={explorer} className="docs-explorer">
-              Open Robinhood Chain explorer <ArrowSquareOut size={14} />
-            </SafeExternalLink>
+            {explorer ? (
+              <SafeExternalLink href={explorer} className="docs-explorer">
+                Open the reviewed deployment explorer <ArrowSquareOut size={14} />
+              </SafeExternalLink>
+            ) : (
+              <p className="discovery-notice">
+                Explorer links are unavailable until a reviewed deployment is configured.
+              </p>
+            )}
           </section>
         </article>
       </div>

@@ -133,4 +133,40 @@ describe("generated API wrapper", () => {
     expect(imageResult.etag).toBe('"3"');
     expect(requests.map((request) => request.ifMatch)).toEqual([null, null, '"7"', '"2"']);
   });
+
+  it("requests the authenticated snapshot-bound profile with both Privy credentials", async () => {
+    const client = new ApiClient({
+      baseUrl: "https://api.example",
+      fetch: async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("Authorization")).toBe("Bearer access");
+        expect(headers.get("privy-id-token")).toBe("identity");
+        return new Response(
+          JSON.stringify({
+            snapshot: {
+              chain_id: 46630,
+              as_of_block: 42,
+              as_of_block_hash: "0xabc",
+              finality: "safe",
+            },
+            items: [
+              {
+                token: "0x1",
+                curve: "0x2",
+                name: "Alpha",
+                symbol: "ALP",
+                phase: "curve",
+                creator_fees: "11",
+                refund: "7",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    const response = await client.getProfile({ accessToken: "access", identityToken: "identity" });
+    expect(response.snapshot.as_of_block).toBe(42);
+    expect(response.items?.[0]?.creator_fees).toBe("11");
+  });
 });

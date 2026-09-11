@@ -19,7 +19,7 @@ type Props = {
     telegram_url: string;
     image_url: string;
   };
-  onConflict: () => void;
+  onConflict: () => Promise<unknown> | void;
 };
 
 const maxImageBytes = 5 * 1024 * 1024;
@@ -46,6 +46,57 @@ async function hasValidImageSignature(file: File) {
     new TextDecoder().decode(bytes.slice(0, 4)) === "RIFF" &&
     new TextDecoder().decode(bytes.slice(8, 12)) === "WEBP";
   return png || jpeg || webp;
+}
+
+export type MetadataConflictRecovery = {
+  description: string;
+  xUrl: string;
+  telegramUrl: string;
+  metadataRevision: number;
+  metadataEtag: string | null;
+  imageRevision: number;
+};
+
+export async function recoverMetadataConflict(
+  client: ApiClient,
+  address: string,
+  onConflict: () => Promise<unknown> | void,
+): Promise<MetadataConflictRecovery> {
+  const refreshedToken = await Promise.resolve(onConflict()).catch(() => undefined);
+  const [metadataResult, imageResult] = await Promise.allSettled([
+    client.getTokenMetadata(address),
+    client.getTokenImageRevision(address),
+  ]);
+  let description = "";
+  let xUrl = "";
+  let telegramUrl = "";
+  if (refreshedToken && typeof refreshedToken === "object" && "description" in refreshedToken) {
+    const latest = refreshedToken as {
+      description?: string;
+      x_url?: string;
+      telegram_url?: string;
+    };
+    description = latest.description ?? "";
+    xUrl = latest.x_url ?? "";
+    telegramUrl = latest.telegram_url ?? "";
+  }
+  let metadataRevision = 0;
+  let metadataEtag: string | null = null;
+  if (metadataResult.status === "fulfilled") {
+    description = metadataResult.value.body.description ?? "";
+    xUrl = metadataResult.value.body.x_url ?? "";
+    telegramUrl = metadataResult.value.body.telegram_url ?? "";
+    metadataRevision = metadataResult.value.body.revision;
+    metadataEtag = metadataResult.value.etag;
+  }
+  return {
+    description,
+    xUrl,
+    telegramUrl,
+    metadataRevision,
+    metadataEtag,
+    imageRevision: imageResult.status === "fulfilled" ? imageResult.value.revision : 0,
+  };
 }
 
 export function MetadataEditor({ token, onConflict }: Props) {
@@ -173,10 +224,22 @@ export function MetadataEditor({ token, onConflict }: Props) {
       setNotice("Saved. The server accepted the verified creator update.");
     } catch (cause) {
       if (cause instanceof ApiProblem && cause.code === "revision_conflict") {
-        onConflict();
+        const client = new ApiClient({ baseUrl: configuration.apiBaseUrl });
+        const refreshed = await recoverMetadataConflict(client, token.address, onConflict);
+        setDescription(refreshed.description);
+        setXUrl(refreshed.xUrl);
+        setTelegramUrl(refreshed.telegramUrl);
+        setMetadataRevision(refreshed.metadataRevision);
+        setMetadataEtag(refreshed.metadataEtag);
+        setImageRevision(refreshed.imageRevision);
+        setFile(null);
+        if (preview) {
+          URL.revokeObjectURL(preview);
+          setPreview(null);
+        }
         setReviewRequired(true);
         setNotice(
-          "This token changed in another session. The latest version was loaded; review it before resubmitting.",
+          "This token changed in another session. The latest token, metadata, and image revision were loaded; review them before resubmitting.",
         );
       } else setError(cause instanceof Error ? cause.message : "The metadata update was rejected.");
     } finally {
@@ -213,14 +276,13 @@ export function MetadataEditor({ token, onConflict }: Props) {
               <span>Description</span>
               <textarea
                 className="ui-input ui-textarea"
-                maxLength={2000}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 aria-describedby="description-hint"
               />
             </label>
             <p id="description-hint" className="ui-field-hint">
-              {description.length}/2,000 characters
+              {new TextEncoder().encode(description).length.toLocaleString("en-US")}/2,000 bytes
             </p>
             <Input
               label="X URL"

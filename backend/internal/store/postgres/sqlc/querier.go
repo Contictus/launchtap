@@ -82,6 +82,7 @@ type Querier interface {
 	LaunchPauseEventMatchesEvent(ctx context.Context, arg LaunchPauseEventMatchesEventParams) (pgtype.Bool, error)
 	ListCandlesAggregated(ctx context.Context, arg ListCandlesAggregatedParams) ([]ListCandlesAggregatedRow, error)
 	ListMarketTrades(ctx context.Context, arg ListMarketTradesParams) ([]ListMarketTradesRow, error)
+	ListProfileActions(ctx context.Context, arg ListProfileActionsParams) ([]ListProfileActionsRow, error)
 	ListProtocolDaily(ctx context.Context, arg ListProtocolDailyParams) ([]ListProtocolDailyRow, error)
 	ListStoredCandles(ctx context.Context, arg ListStoredCandlesParams) ([]ListStoredCandlesRow, error)
 	ListTokenCardsMarketCap(ctx context.Context, arg ListTokenCardsMarketCapParams) ([]ListTokenCardsMarketCapRow, error)
