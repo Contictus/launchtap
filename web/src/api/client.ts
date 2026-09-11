@@ -22,6 +22,41 @@ export type AuthHeaders = { accessToken?: string; identityToken?: string };
 export type RevisionResponse = components["schemas"]["RevisionBody"];
 export type MetadataReadResponse = components["schemas"]["MetadataReadBody"];
 
+/** Resolve API-owned relative image paths without allowing a metadata URL to change origin. */
+export function resolveApiAssetUrl(
+  baseUrl: string | null | undefined,
+  value: string | null | undefined,
+) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "https:") return parsed.toString();
+    if (!baseUrl || !value.startsWith("/")) return null;
+    const base = new URL(baseUrl);
+    const resolved = new URL(value, base);
+    return resolved.origin === base.origin &&
+      (base.protocol === "https:" || isLocalHost(base.hostname))
+      ? resolved.toString()
+      : null;
+  } catch {
+    if (!baseUrl || !value.startsWith("/")) return null;
+    try {
+      const base = new URL(baseUrl);
+      const resolved = new URL(value, base);
+      return resolved.origin === base.origin &&
+        (base.protocol === "https:" || isLocalHost(base.hostname))
+        ? resolved.toString()
+        : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function isLocalHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
 export class ApiClient {
   private readonly fetchImpl: typeof globalThis.fetch;
   constructor(private readonly options: { baseUrl: string; fetch?: typeof globalThis.fetch }) {
@@ -73,17 +108,37 @@ export class ApiClient {
     };
   }
 
+  async getTokenImageRevision(address: string, signal?: AbortSignal) {
+    const url = new URL(`/v1/tokens/${encodeURIComponent(address)}/image`, this.options.baseUrl);
+    const response = await this.fetchImpl(url, { headers: { Accept: "image/*" }, signal });
+    if (!response.ok) {
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = undefined;
+      }
+      throw mapProblem(response.status, body);
+    }
+    const revision = Number(response.headers.get("X-Revision") ?? "0");
+    return {
+      revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
+      etag: response.headers.get("ETag"),
+    };
+  }
+
   updateTokenMetadata(
     address: string,
     body: components["schemas"]["MetadataBody"],
     revision: number,
+    etag: string | null | undefined,
     auth: AuthHeaders,
   ) {
     return this.requestWithResponse<RevisionResponse>(
       `/v1/tokens/${encodeURIComponent(address)}/metadata`,
       {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "If-Match": `"${revision}"` },
+        headers: { "Content-Type": "application/json", "If-Match": etag ?? `"${revision}"` },
         body: JSON.stringify(body),
       },
       auth,
@@ -102,6 +157,8 @@ export class ApiClient {
       `/v1/tokens/${encodeURIComponent(address)}/image`,
       {
         method: "PUT",
+        // The image GET validator is a content hash. Image writes use the
+        // independent numeric revision exposed by X-Revision instead.
         headers: { "Content-Type": file.type, "If-Match": `"${revision}"` },
         body: file,
       },

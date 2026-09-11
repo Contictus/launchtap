@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { components } from "@/api/generated";
-import { ApiClient, type TokenDetailResponse } from "@/api/client";
+import { ApiClient, resolveApiAssetUrl, type TokenDetailResponse } from "@/api/client";
 import { ApiProblem } from "@/api/problems";
 import { queryKeys } from "@/api/types";
 import { SseInvalidationStream } from "@/api/sse";
@@ -102,6 +102,7 @@ export function TokenDetail({
   const tokenAddress = address.toLowerCase() as `0x${string}`;
   const collectionSnapshot = pages[0]?.snapshot;
   const explorer = addressExplorerUrl(configuration, tokenAddress);
+  const currentImageUrl = resolveApiAssetUrl(configuration.apiBaseUrl, token?.image_url);
 
   const loadToken = useCallback(
     async (externalSignal?: AbortSignal) => {
@@ -399,7 +400,7 @@ export function TokenDetail({
       <section className="token-hero" aria-labelledby="token-title">
         <div className="token-hero-identity">
           <SafeImage
-            src={token.image_url}
+            src={currentImageUrl}
             alt={`${token.name || token.symbol || "Token"} token`}
             className="token-detail-image"
             fallbackLabel="Metadata image unavailable"

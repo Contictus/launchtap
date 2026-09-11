@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useIdentityToken, usePrivy } from "@privy-io/react-auth";
-import { ApiClient } from "@/api/client";
+import { ApiClient, resolveApiAssetUrl } from "@/api/client";
 import { ApiProblem } from "@/api/problems";
 import { publicConfiguration } from "@/config/public";
 import { Button, ErrorState, Input, SafeImage } from "@/components/primitives";
@@ -27,6 +27,7 @@ const imageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 function safeHttps(value: string) {
   if (!value.trim()) return true;
+  if (new TextEncoder().encode(value).length > 2048) return false;
   try {
     const url = new URL(value);
     return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
@@ -60,24 +61,41 @@ export function MetadataEditor({ token, onConflict }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [revision, setRevision] = useState(0);
+  const [metadataRevision, setMetadataRevision] = useState(0);
+  const [metadataEtag, setMetadataEtag] = useState<string | null>(null);
+  const [imageRevision, setImageRevision] = useState(0);
   const [reviewRequired, setReviewRequired] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const currentImageUrl = resolveApiAssetUrl(configuration.apiBaseUrl, token.image_url);
 
   useEffect(() => {
     setDescription(token.description);
     setXUrl(token.x_url);
     setTelegramUrl(token.telegram_url);
-    setRevision(0);
+    setMetadataRevision(0);
+    setMetadataEtag(null);
+    setImageRevision(0);
   }, [token.address, token.description, token.telegram_url, token.x_url]);
   useEffect(() => {
     if (configuration.status !== "ready" || !configuration.apiBaseUrl) return;
     const controller = new AbortController();
-    void new ApiClient({ baseUrl: configuration.apiBaseUrl })
+    const client = new ApiClient({ baseUrl: configuration.apiBaseUrl });
+    void client
       .getTokenMetadata(token.address, controller.signal)
-      .then((result) => setRevision(result.body.revision))
+      .then((result) => {
+        setMetadataRevision(result.body.revision);
+        setMetadataEtag(result.etag);
+      })
       .catch(() => {
         // Tokens without an off-chain metadata row start at revision zero.
+      });
+    void client
+      .getTokenImageRevision(token.address, controller.signal)
+      .then((result) => {
+        setImageRevision(result.revision);
+      })
+      .catch(() => {
+        // Tokens without an image start at revision zero.
       });
     return () => controller.abort();
   }, [configuration.apiBaseUrl, configuration.status, token.address]);
@@ -115,8 +133,14 @@ export function MetadataEditor({ token, onConflict }: Props) {
       setError("Review the refreshed metadata before resubmitting.");
       return;
     }
-    if (description.length > 2000 || !safeHttps(xUrl) || !safeHttps(telegramUrl)) {
-      setError("Description must be at most 2,000 characters and links must be HTTPS URLs.");
+    if (
+      new TextEncoder().encode(description).length > 2000 ||
+      !safeHttps(xUrl) ||
+      !safeHttps(telegramUrl)
+    ) {
+      setError(
+        "Description must be at most 2,000 bytes and links must be HTTPS URLs up to 2,048 bytes.",
+      );
       return;
     }
     if (configuration.status !== "ready" || !configuration.apiBaseUrl) {
@@ -133,15 +157,19 @@ export function MetadataEditor({ token, onConflict }: Props) {
       if (!accessToken) throw new Error("Sign in again to refresh the access token.");
       const client = new ApiClient({ baseUrl: configuration.apiBaseUrl });
       const auth = { accessToken, identityToken };
-      let result = await client.updateTokenMetadata(
+      const metadataResult = await client.updateTokenMetadata(
         token.address,
         { description, x_url: xUrl, telegram_url: telegramUrl },
-        revision,
+        metadataRevision,
+        metadataEtag,
         auth,
       );
-      if (file)
-        result = await client.updateTokenImage(token.address, file, result.body.revision, auth);
-      setRevision(result.body.revision);
+      setMetadataRevision(metadataResult.body.revision);
+      setMetadataEtag(metadataResult.etag);
+      if (file) {
+        const imageResult = await client.updateTokenImage(token.address, file, imageRevision, auth);
+        setImageRevision(imageResult.body.revision);
+      }
       setNotice("Saved. The server accepted the verified creator update.");
     } catch (cause) {
       if (cause instanceof ApiProblem && cause.code === "revision_conflict") {
@@ -241,7 +269,7 @@ export function MetadataEditor({ token, onConflict }: Props) {
                 <img src={preview} alt="Selected token image preview" />
               ) : (
                 <SafeImage
-                  src={token.image_url}
+                  src={currentImageUrl}
                   alt="Current token image"
                   fallbackLabel="Select an image to preview"
                 />

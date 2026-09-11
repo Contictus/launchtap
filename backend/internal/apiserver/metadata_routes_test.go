@@ -26,24 +26,34 @@ func (v fakeVerifier) Verify(context.Context, string, string) (privyauth.Princip
 }
 
 type fakeMetadataStore struct {
-	metadata metadata.Metadata
-	image    metadata.Image
-	err      error
+	metadata    metadata.Metadata
+	image       metadata.Image
+	metadataSet bool
+	imageSet    bool
+	err         error
 }
 
 func (s *fakeMetadataStore) ReplaceMetadata(_ context.Context, _ int64, _ common.Address, _ []common.Address, value metadata.Metadata) (int64, error) {
 	if s.err != nil {
 		return 0, s.err
 	}
+	if s.metadataSet {
+		value.Revision = s.metadata.Revision + 1
+	}
 	s.metadata = value
-	return value.Revision + 1, nil
+	s.metadataSet = true
+	return value.Revision, nil
 }
 func (s *fakeMetadataStore) ReplaceImage(_ context.Context, _ int64, _ common.Address, _ []common.Address, value metadata.Image) (int64, error) {
 	if s.err != nil {
 		return 0, s.err
 	}
+	if s.imageSet {
+		value.Revision = s.image.Revision + 1
+	}
 	s.image = value
-	return value.Revision + 1, nil
+	s.imageSet = true
+	return value.Revision, nil
 }
 func (s *fakeMetadataStore) GetImage(context.Context, int64, common.Address) (metadata.Image, error) {
 	if s.err != nil {
@@ -71,13 +81,13 @@ func TestMetadataAndImageHTTPContracts(t *testing.T) {
 	request.Header.Set("If-Match", `"0"`)
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"1"` || store.metadata.Description != "plain text" {
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"0"` || store.metadata.Description != "plain text" || store.metadata.Revision != 0 {
 		t.Fatalf("metadata status=%d headers=%v body=%s stored=%+v", response.Code, response.Header(), response.Body.String(), store.metadata)
 	}
 	request = httptest.NewRequest(http.MethodGet, "/v1/tokens/"+token+"/metadata", nil)
 	response = httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"0"` || !strings.Contains(response.Body.String(), "plain text") {
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"0"` || !strings.Contains(response.Body.String(), `"revision":0`) || !strings.Contains(response.Body.String(), "plain text") {
 		t.Fatalf("metadata read status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
 	}
 
@@ -88,14 +98,14 @@ func TestMetadataAndImageHTTPContracts(t *testing.T) {
 	request.Header.Set("If-Match", "0")
 	response = httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || store.image.ContentType != "image/png" || !bytes.Equal(store.image.Content, png) {
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"0"` || store.image.ContentType != "image/png" || store.image.Revision != 0 || !bytes.Equal(store.image.Content, png) {
 		t.Fatalf("image write status=%d body=%s stored=%+v", response.Code, response.Body.String(), store.image)
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/v1/tokens/"+token+"/image", nil)
 	response = httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" || response.Header().Get("Content-Length") != strconv.Itoa(len(png)) || response.Header().Get("X-Content-Type-Options") != "nosniff" || !bytes.Equal(response.Body.Bytes(), png) {
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" || response.Header().Get("Content-Length") != strconv.Itoa(len(png)) || response.Header().Get("X-Content-Type-Options") != "nosniff" || response.Header().Get("X-Revision") != "0" || !bytes.Equal(response.Body.Bytes(), png) {
 		t.Fatalf("image read status=%d headers=%v body=%x", response.Code, response.Header(), response.Body.Bytes())
 	}
 	etag := response.Header().Get("ETag")
@@ -114,6 +124,27 @@ func TestMetadataAndImageHTTPContracts(t *testing.T) {
 		if response.Code != http.StatusNotModified {
 			t.Fatalf("conditional validator=%q status=%d", validator, response.Code)
 		}
+	}
+
+	// Metadata and image revisions are independent concurrency domains. A write
+	// in one resource must not advance or invalidate the other resource.
+	request = httptest.NewRequest(http.MethodPut, "/v1/tokens/"+token+"/metadata", strings.NewReader(`{"description":"second"}`))
+	request.Header.Set("Content-Type", "application/json")
+	authorize(request)
+	request.Header.Set("If-Match", `"0"`)
+	response = httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"1"` || store.metadata.Revision != 1 || store.image.Revision != 0 {
+		t.Fatalf("independent metadata revision status=%d headers=%v metadata=%d image=%d", response.Code, response.Header(), store.metadata.Revision, store.image.Revision)
+	}
+	request = httptest.NewRequest(http.MethodPut, "/v1/tokens/"+token+"/image", bytes.NewReader(png))
+	request.Header.Set("Content-Type", "image/png")
+	authorize(request)
+	request.Header.Set("If-Match", `"0"`)
+	response = httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"1"` || store.metadata.Revision != 1 || store.image.Revision != 1 {
+		t.Fatalf("independent image revision status=%d headers=%v metadata=%d image=%d", response.Code, response.Header(), store.metadata.Revision, store.image.Revision)
 	}
 }
 

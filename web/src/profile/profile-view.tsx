@@ -125,7 +125,7 @@ export function ProfileView() {
             <dd>Open a token detail page to read the contract refund balance.</dd>
           </div>
         </div>
-        {!configuration.status || readiness.status !== "ready" ? (
+        {configuration.status !== "ready" || readiness.status !== "ready" ? (
           <p className="discovery-notice">
             Claims unavailable until a reviewed deployment and supported wallet are ready.
           </p>

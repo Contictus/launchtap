@@ -434,7 +434,11 @@ export function SafeImage({
     if (!src) return null;
     try {
       const url = new URL(src);
-      return url.protocol === "https:" ? url.toString() : null;
+      const local =
+        url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+      return url.protocol === "https:" || (url.protocol === "http:" && local)
+        ? url.toString()
+        : null;
     } catch {
       return null;
     }
