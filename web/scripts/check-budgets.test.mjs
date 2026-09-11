@@ -1,5 +1,14 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
-import { scanBundleText, validatePerformanceBudgetMatrix } from "./check-budgets.mjs";
+import {
+  evaluateBuildBudget,
+  maxInitialJavaScriptBytes,
+  scanBundleText,
+  validatePerformanceBudgetMatrix,
+} from "./check-budgets.mjs";
 
 describe("release bundle and performance budgets", () => {
   it("requires every profile and core route, including populated token detail", () => {
@@ -12,13 +21,28 @@ describe("release bundle and performance budgets", () => {
     );
   });
 
+  it("rejects an initial JavaScript overage", () => {
+    const buildRoot = fs.mkdtempSync(path.join(os.tmpdir(), "launchpad-budget-"));
+    try {
+      const chunks = path.join(buildRoot, "static", "chunks");
+      fs.mkdirSync(chunks, { recursive: true });
+      fs.writeFileSync(path.join(chunks, "main.js"), Buffer.alloc(maxInitialJavaScriptBytes + 1));
+      expect(evaluateBuildBudget(buildRoot).violations).toEqual([
+        `initial JavaScript ${maxInitialJavaScriptBytes + 1} > ${maxInitialJavaScriptBytes} bytes`,
+      ]);
+    } finally {
+      fs.rmSync(buildRoot, { recursive: true, force: true });
+    }
+  });
+
   it("detects private keys, known Anvil wallets, and unreviewed addresses", () => {
     const key = `0x${"ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}`;
     const findings = scanBundleText(
-      `${key} 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 0x1111111111111111111111111111111111111111`,
+      `${key} PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 0x1111111111111111111111111111111111111111`,
       "fixture.js",
     );
     expect(findings.some((value) => value.includes("private-key"))).toBe(true);
+    expect(findings.some((value) => value.includes("known Anvil address 0xf39"))).toBe(true);
     expect(findings.some((value) => value.includes("unreviewed address"))).toBe(true);
   });
 

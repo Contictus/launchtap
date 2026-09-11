@@ -5,9 +5,9 @@ import { pathToFileURL } from "node:url";
 import budgetMatrix from "../performance-budgets.json" with { type: "json" };
 
 const root = path.resolve(process.cwd(), ".next");
-const maxInitialJavaScriptBytes = 1_800_000;
-const maxAllJavaScriptBytes = 8_000_000;
-const maxRouteManifestBytes = 500_000;
+export const maxInitialJavaScriptBytes = 1_800_000;
+export const maxAllJavaScriptBytes = 8_000_000;
+export const maxRouteManifestBytes = 500_000;
 const addressPattern = /\b0x[0-9a-f]{40}\b/gi;
 const privateKeyPattern = /(?<![0-9a-f])(?:0x)?[0-9a-f]{64}(?![0-9a-f])/gi;
 const knownAnvilAddresses = [
@@ -15,7 +15,14 @@ const knownAnvilAddresses = [
   "70997970c51812dc3a010c7d01b50e0d17dc79c8",
   "3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
   "90f79bf6eb2c4f870365e785982e1f101e93b906",
+  "15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+  "9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
+  "976ea74026e726554db657fa54763abd0c3a0aa9",
+  "14dc79964da2c08b23698b3d3cc7ca32193d9955",
+  "23618e81e3f5cdf7f54c3d65f7fbc0abf5b21e8f",
+  "a0ee7a142d267c1f36714e4a8f75612f20a79720",
 ].map((value) => value.toLowerCase());
+const knownAnvilAddressSet = new Set(knownAnvilAddresses);
 const knownAnvilPrivateKeys = new Set([
   "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 ]);
@@ -87,7 +94,7 @@ export function validatePerformanceBudgetMatrix(matrix = budgetMatrix) {
 }
 
 function reviewedAddressAllowlist() {
-  const values = new Set(knownAnvilAddresses);
+  const values = new Set();
   const candidates = [
     path.resolve(process.cwd(), "src/contracts/generated.ts"),
     path.resolve(process.cwd(), "../contracts/deployments/config/robinhood-mainnet.json"),
@@ -122,8 +129,20 @@ function isKnownGeneratedCryptoContext(source, start, end) {
 export function scanBundleText(source, filename, allowlist = reviewedAddressAllowlist()) {
   const violations = [];
   for (const match of source.matchAll(privateKeyPattern)) {
-    if (!match[0].toLowerCase().startsWith("0x")) continue;
     const value = match[0].replace(/^0x/i, "").toLowerCase();
+    const hasPrefix = /^0x/i.test(match[0]);
+    const keyContext = source
+      .slice(
+        Math.max(0, match.index - 120),
+        Math.min(source.length, match.index + match[0].length + 120),
+      )
+      .toLowerCase();
+    if (
+      !hasPrefix &&
+      !knownAnvilPrivateKeys.has(value) &&
+      !/private[\s_-]*key|secret|seed phrase|mnemonic|wallet[\s_-]*key/.test(keyContext)
+    )
+      continue;
     if (/^(..)(?:\1){8,}$/.test(value) || /^(....)(?:\1){8,}$/.test(value)) continue;
     if (
       isBytecodeOrAbiContext(source, match.index, match.index + match[0].length) ||
@@ -139,7 +158,9 @@ export function scanBundleText(source, filename, allowlist = reviewedAddressAllo
       .slice(Math.max(0, match.index - 120), match.index + match[0].length + 120)
       .toLowerCase();
     if (/asset:|network:|zeroaddress|native/.test(context)) continue;
-    if (!allowlist.has(value) && !knownDependencyAddresses.has(value))
+    if (knownAnvilAddressSet.has(value))
+      violations.push(`known Anvil address ${match[0]} in ${filename}`);
+    else if (!allowlist.has(value) && !knownDependencyAddresses.has(value))
       violations.push(`unreviewed address ${match[0]} in ${filename}`);
   }
   return [...new Set(violations)];
@@ -147,25 +168,15 @@ export function scanBundleText(source, filename, allowlist = reviewedAddressAllo
 
 const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
-if (isMain) {
-  const matrixErrors = validatePerformanceBudgetMatrix();
-  if (matrixErrors.length) {
-    for (const error of matrixErrors) console.error(`BUDGET_FAIL: ${error}`);
-    process.exit(1);
-  }
-  if (!fs.existsSync(root)) {
-    console.error("Performance budget requires a production build at web/.next");
-    process.exit(1);
-  }
-
-  const chunks = filesUnder(path.join(root, "static", "chunks"), (filename) =>
+export function evaluateBuildBudget(buildRoot = root) {
+  const chunks = filesUnder(path.join(buildRoot, "static", "chunks"), (filename) =>
     filename.endsWith(".js"),
   );
   const total = chunks.reduce((sum, filename) => sum + fs.statSync(filename).size, 0);
   const initial = chunks
     .filter((filename) => /(?:main|app|framework|webpack|polyfills)/i.test(path.basename(filename)))
     .reduce((sum, filename) => sum + fs.statSync(filename).size, 0);
-  const manifests = filesUnder(root, (filename) =>
+  const manifests = filesUnder(buildRoot, (filename) =>
     /(?:build-manifest|app-build-manifest|routes-manifest)\.json$/.test(filename),
   );
   const largestManifest = manifests.reduce(
@@ -179,6 +190,21 @@ if (isMain) {
     violations.push(`all JavaScript ${total} > ${maxAllJavaScriptBytes} bytes`);
   if (largestManifest > maxRouteManifestBytes)
     violations.push(`route manifest ${largestManifest} > ${maxRouteManifestBytes} bytes`);
+  return { initial, total, largestManifest, violations };
+}
+
+if (isMain) {
+  const matrixErrors = validatePerformanceBudgetMatrix();
+  if (matrixErrors.length) {
+    for (const error of matrixErrors) console.error(`BUDGET_FAIL: ${error}`);
+    process.exit(1);
+  }
+  if (!fs.existsSync(root)) {
+    console.error("Performance budget requires a production build at web/.next");
+    process.exit(1);
+  }
+
+  const { initial, total, largestManifest, violations } = evaluateBuildBudget();
   const allowlist = reviewedAddressAllowlist();
   const bundleFiles = filesUnder(path.join(root, "static"), (filename) =>
     /\.(?:js|html)$/.test(filename),

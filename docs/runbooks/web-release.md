@@ -9,13 +9,13 @@ application, funded wallet, production API/RPC, hosting, and named operators.
 Only the following browser-visible variables are allowed. They are public configuration, not
 secrets:
 
-| Variable | Meaning | Required |
-| --- | --- | --- |
-| `NEXT_PUBLIC_PRIVY_APP_ID` | Privy application ID from the reviewed dashboard | yes |
-| `NEXT_PUBLIC_DEPLOYMENT_ID` | exact enabled deployment manifest ID | yes |
-| `NEXT_PUBLIC_CHAIN_ID` | decimal chain ID matching that manifest | yes |
-| `NEXT_PUBLIC_API_BASE_URL` | HTTPS public API origin, without credentials/query strings | yes |
-| `NEXT_PUBLIC_RPC_URL` | HTTPS public RPC origin, without credentials/query strings | yes |
+| Variable                    | Meaning                                                    | Required |
+| --------------------------- | ---------------------------------------------------------- | -------- |
+| `NEXT_PUBLIC_PRIVY_APP_ID`  | Privy application ID from the reviewed dashboard           | yes      |
+| `NEXT_PUBLIC_DEPLOYMENT_ID` | exact enabled deployment manifest ID                       | yes      |
+| `NEXT_PUBLIC_CHAIN_ID`      | decimal chain ID matching that manifest                    | yes      |
+| `NEXT_PUBLIC_API_BASE_URL`  | HTTPS public API origin, without credentials/query strings | yes      |
+| `NEXT_PUBLIC_RPC_URL`       | HTTPS public RPC origin, without credentials/query strings | yes      |
 
 Never put an API key, private RPC URL, bearer token, wallet private key, or seed phrase in a
 `NEXT_PUBLIC_*` variable. The production validation command rejects fixture/test values,
@@ -59,7 +59,13 @@ From a clean checkout with Node 24.16.0, npm 12.0.1, Foundry 1.8.1, and Go from
 `backend/go.mod`:
 
 ```text
-node scripts/verify-release.mjs
+node scripts/verify-release.mjs --target=production
+```
+
+For deterministic local evidence, select it explicitly instead:
+
+```text
+node scripts/verify-release.mjs --target=anvil
 ```
 
 The root gate runs contract checks, backend `task verify`, frozen web install, API/ABI drift,
