@@ -58,6 +58,15 @@ export function releaseCommandTimeoutMs(env = process.env) {
     : defaultReleaseCommandTimeoutMs;
 }
 
+export function browserProvisioningMode(
+  env = process.env,
+  platform = process.platform,
+) {
+  if (env.PLAYWRIGHT_EXECUTABLE_PATH?.trim()) return "system";
+  if (platform === "win32") return "windows-fallback";
+  return "missing";
+}
+
 function terminateProcessTree(pid, platform = process.platform) {
   if (!pid) return;
   if (platform === "win32") {
@@ -106,6 +115,11 @@ export function runReleaseVerification(
   const npm = windows ? "npm.cmd" : "npm";
   const target = selectedTarget(argv, env);
   const shell = selectPowerShellCommand(platform);
+  const browserMode = browserProvisioningMode(env, platform);
+  if (browserMode === "missing")
+    throw new Error(
+      "Playwright browser is not provisioned. Set PLAYWRIGHT_EXECUTABLE_PATH before running the release gate.",
+    );
   required(shell, platform);
   for (const command of ["forge", "go", npm]) required(command, platform);
   if (!fs.existsSync(path.join(root, "contracts", "scripts", "check.ps1")))
@@ -129,22 +143,9 @@ export function runReleaseVerification(
   );
   run("go", task, path.join(root, "backend"));
   run(npm, ["ci"], path.join(root, "web"));
-  // The release gate owns its browser binary prerequisite. CI runners do not
-  // retain Playwright browsers between jobs, and the browser gate must not
-  // depend on an incidental system installation. Hosted runners provide the
-  // required Chromium libraries; avoid an apt dependency install here because
-  // it is both redundant and not deterministic across runner images.
-  run(
-    npm,
-    [
-      "exec",
-      "playwright",
-      "--",
-      "install",
-      "chromium",
-    ],
-    path.join(root, "web"),
-  );
+  // Browser provisioning is deliberately a workflow concern. The release
+  // workflow configures the runner's system Chrome before this script starts;
+  // local Windows runs use the documented Playwright fallback in config.
   // The selected target is part of the release gate. Production cannot proceed
   // without real reviewed deployment, Privy, API, RPC, and public-origin values.
   run(

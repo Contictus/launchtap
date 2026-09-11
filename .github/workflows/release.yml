@@ -72,5 +72,15 @@ jobs:
         with:
           version: v1.8.1
           cache: true
+      - name: Configure system Chrome for Playwright
+        shell: bash
+        run: |
+          chrome_path="$(command -v google-chrome || true)"
+          if [ -z "$chrome_path" ]; then
+            echo "google-chrome is required on the ubuntu-latest runner"
+            exit 1
+          fi
+          echo "PLAYWRIGHT_EXECUTABLE_PATH=$chrome_path" >> "$GITHUB_ENV"
+          "$chrome_path" --version
       - name: Run mandatory cross-stack release gate
         run: node scripts/verify-release.mjs

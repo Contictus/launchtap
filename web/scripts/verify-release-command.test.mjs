@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  browserProvisioningMode,
   powerShellPrerequisiteMessage,
   releaseCommandTimeoutMs,
   run,
@@ -25,6 +26,14 @@ describe("root release gate PowerShell selection", () => {
     expect(releaseCommandTimeoutMs({})).toBe(10 * 60 * 1000);
     expect(releaseCommandTimeoutMs({ RELEASE_COMMAND_TIMEOUT_MS: "2500" })).toBe(2500);
     expect(releaseCommandTimeoutMs({ RELEASE_COMMAND_TIMEOUT_MS: "0" })).toBe(10 * 60 * 1000);
+  });
+
+  it("requires pre-provisioned browsers on Unix and preserves Windows fallback", () => {
+    expect(
+      browserProvisioningMode({ PLAYWRIGHT_EXECUTABLE_PATH: "/usr/bin/google-chrome" }, "linux"),
+    ).toBe("system");
+    expect(browserProvisioningMode({}, "linux")).toBe("missing");
+    expect(browserProvisioningMode({}, "win32")).toBe("windows-fallback");
   });
 
   it("terminates a child that exceeds the release command timeout", () => {
