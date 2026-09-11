@@ -40,6 +40,11 @@ are `no-store`; Next's content-hashed static assets retain the framework's immut
 behavior. Review any new connection or frame origin in the code and this policy before shipping
 it.
 
+When `NEXT_PUBLIC_E2E_FIXTURE=1` is set for the deterministic Anvil gate only, the policy also
+allows the explicit `NEXT_PUBLIC_TASK6_ANVIL_API_URL` and
+`NEXT_PUBLIC_TASK6_ANVIL_RPC_URL` origins. Those local origins are rejected unless the fixture
+flag is present and are never production configuration.
+
 ## Privy and deployment selection
 
 Create or select the Privy app in the reviewed organization, configure the production web origin,

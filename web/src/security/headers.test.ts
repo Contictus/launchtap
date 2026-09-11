@@ -20,6 +20,22 @@ describe("security headers", () => {
     expect(policy).not.toContain("example.test");
   });
 
+  it("allows only explicit Anvil origins in the E2E fixture policy", () => {
+    const fixturePolicy = contentSecurityPolicy({
+      NEXT_PUBLIC_E2E_FIXTURE: "1",
+      NEXT_PUBLIC_TASK6_ANVIL_API_URL: "http://127.0.0.1:18080",
+      NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: "http://127.0.0.1:18545",
+    });
+    expect(fixturePolicy).toContain("http://127.0.0.1:18080");
+    expect(fixturePolicy).toContain("http://127.0.0.1:18545");
+    const productionPolicy = contentSecurityPolicy({
+      NEXT_PUBLIC_TASK6_ANVIL_API_URL: "http://127.0.0.1:18080",
+      NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: "http://127.0.0.1:18545",
+    });
+    expect(productionPolicy).not.toContain("http://127.0.0.1:18080");
+    expect(productionPolicy).not.toContain("http://127.0.0.1:18545");
+  });
+
   it("includes browser hardening headers", () => {
     expect(securityHeaders().map((header) => header.key)).toEqual(
       expect.arrayContaining([

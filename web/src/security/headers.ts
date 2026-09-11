@@ -15,10 +15,18 @@ function originOf(value: string | undefined) {
 
 /** Build the production policy from reviewed public endpoints, never from an unrestricted scheme. */
 export function contentSecurityPolicy(env: Record<string, string | undefined> = {}) {
-  const origins = [
+  const productionOrigins = [
     originOf(env.NEXT_PUBLIC_API_BASE_URL),
     originOf(env.NEXT_PUBLIC_RPC_URL),
   ].filter((origin): origin is string => Boolean(origin));
+  const fixtureOrigins =
+    env.NEXT_PUBLIC_E2E_FIXTURE === "1"
+      ? [
+          originOf(env.NEXT_PUBLIC_TASK6_ANVIL_API_URL),
+          originOf(env.NEXT_PUBLIC_TASK6_ANVIL_RPC_URL),
+        ].filter((origin): origin is string => Boolean(origin))
+      : [];
+  const origins = [...productionOrigins, ...fixtureOrigins];
   const connect = [
     "'self'",
     ...origins,
