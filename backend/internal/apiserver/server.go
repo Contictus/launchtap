@@ -103,12 +103,14 @@ func New(cfg Config, ready Readiness, logger *slog.Logger) *Server {
 	return &Server{Handler: h, API: api, HTTP: &http.Server{Handler: h, ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout, MaxHeaderBytes: cfg.MaxHeaderBytes}}
 }
 
-func (s *Server) RegisterTokenRoutes(r TokenRoutes)       { r.Register(s.API) }
-func (s *Server) RegisterQuoteRoutes(r QuoteRoutes)       { r.Register(s.API) }
-func (s *Server) RegisterCandleRoutes(r CandleRoutes)     { r.Register(s.API) }
-func (s *Server) RegisterPublicRoutes(r PublicRoutes)     { r.Register(s.API) }
-func (s *Server) RegisterMetadataRoutes(r MetadataRoutes) { r.Register(s.API) }
-func (s *Server) RegisterEventRoutes(r EventRoutes)       { r.Register(s.API) }
+func (s *Server) RegisterTokenRoutes(r TokenRoutes)             { r.Register(s.API) }
+func (s *Server) RegisterQuoteRoutes(r QuoteRoutes)             { r.Register(s.API) }
+func (s *Server) RegisterCandleRoutes(r CandleRoutes)           { r.Register(s.API) }
+func (s *Server) RegisterPublicRoutes(r PublicRoutes)           { r.Register(s.API) }
+func (s *Server) RegisterMetadataRoutes(r MetadataRoutes)       { r.Register(s.API) }
+func (s *Server) RegisterEventRoutes(r EventRoutes)             { r.Register(s.API) }
+func (s *Server) RegisterObservationRoutes(r ObservationRoutes) { r.Register(s.API) }
+func (s *Server) RegisterProfileRoutes(r ProfileRoutes)         { r.Register(s.API) }
 
 func (s *Server) Shutdown(ctx context.Context) error { return s.HTTP.Shutdown(ctx) }
 

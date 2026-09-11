@@ -74,6 +74,20 @@ func (store MetadataStore) GetImage(ctx context.Context, chainID int64, token co
 	return metadata.Image{ContentType: row.ContentType, Content: append([]byte(nil), row.Content...), SHA256: [32]byte(row.Sha256), Revision: row.Revision, UpdatedAt: row.UpdatedAt.Time}, nil
 }
 
+func (store MetadataStore) GetMetadata(ctx context.Context, chainID int64, token common.Address) (metadata.Metadata, error) {
+	row, err := NewAdapter(store.Pool).queries.GetTokenMetadata(ctx, sqlc.GetTokenMetadataParams{ChainID: chainID, TokenAddress: sqlc.Address(token)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return metadata.Metadata{}, metadata.ErrNotFound
+	}
+	if err != nil {
+		return metadata.Metadata{}, fmt.Errorf("get token metadata: %w", err)
+	}
+	if !row.UpdatedAt.Valid {
+		return metadata.Metadata{}, errors.New("token metadata has invalid updated_at")
+	}
+	return metadata.Metadata{Description: row.Description.String, ImageURL: row.ImageUrl.String, XURL: row.XUrl.String, TelegramURL: row.TelegramUrl.String, Revision: row.Revision, UpdatedAt: row.UpdatedAt.Time}, nil
+}
+
 func (adapter *Adapter) authorizedCreator(ctx context.Context, chainID int64, token common.Address, wallets []common.Address) (common.Address, error) {
 	creator, err := adapter.queries.GetTokenCreatorForUpdate(ctx, sqlc.GetTokenCreatorForUpdateParams{ChainID: chainID, TokenAddress: sqlc.Address(token)})
 	if errors.Is(err, pgx.ErrNoRows) {

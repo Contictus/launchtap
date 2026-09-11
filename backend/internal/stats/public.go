@@ -15,6 +15,34 @@ type Protocol struct {
 	Snapshot                                                                                   pagination.Snapshot
 	Finality                                                                                   string
 }
+
+// Daily is one canonical protocol aggregate for a UTC calendar day. All
+// amounts remain integer base units so callers can safely parse them into
+// arbitrary-precision values.
+type Daily struct {
+	Day         time.Time
+	VolumeETH   *big.Int
+	Launches    int64
+	Trades      int64
+	Graduations int64
+}
+
+type DailyQuery struct {
+	From  time.Time
+	To    time.Time
+	Limit int
+}
+
+type DailyPage struct {
+	Items    []Daily
+	Snapshot pagination.Snapshot
+	Finality string
+}
+
 type Reader interface {
 	ReadProtocol(context.Context, int64) (Protocol, error)
+}
+
+type DailyReader interface {
+	ReadProtocolDaily(context.Context, int64, DailyQuery) (DailyPage, error)
 }

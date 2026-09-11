@@ -39,7 +39,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registry, err := deployments.LoadEmbedded()
+	registry, err := loadDeploymentRegistry()
 	if err != nil {
 		return err
 	}
@@ -75,11 +75,13 @@ func run() error {
 	tokens := storepostgres.TokenReader{Pool: pool, DeploymentID: c.DeploymentID}
 	market := storepostgres.MarketReader{Pool: pool, DeploymentID: c.DeploymentID}
 	protocol := storepostgres.ProtocolReader{Pool: pool, DeploymentID: c.DeploymentID}
-	server.RegisterPublicRoutes(apiserver.PublicRoutes{Tokens: tokens, Market: market, Protocol: protocol, ChainID: int64(c.ChainID)})
+	server.RegisterPublicRoutes(apiserver.PublicRoutes{Tokens: tokens, Market: market, Protocol: protocol, ProtocolDaily: protocol, ChainID: int64(c.ChainID)})
 	server.RegisterQuoteRoutes(apiserver.QuoteRoutes{Provider: quote.Service{Reader: tokens, ChainID: int64(c.ChainID)}})
 	hub := realtime.NewHub(1000, 16)
 	server.RegisterMetadataRoutes(apiserver.MetadataRoutes{Store: storepostgres.MetadataStore{Pool: pool, DeploymentID: c.DeploymentID}, Verifier: verifier, ChainID: int64(c.ChainID)})
+	server.RegisterProfileRoutes(apiserver.ProfileRoutes{Reader: storepostgres.ProfileReader{Pool: pool, DeploymentID: c.DeploymentID}, Verifier: verifier, ChainID: int64(c.ChainID)})
 	server.RegisterEventRoutes(apiserver.EventRoutes{Hub: hub, ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID})
+	server.RegisterObservationRoutes(apiserver.ObservationRoutes{Reader: storepostgres.ObservationReader{Pool: pool}, ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID})
 	go listenRefreshHints(ctx, pool, hub, int64(c.ChainID), c.DeploymentID)
 	server.HTTP.Addr = c.APIAddr
 	errCh := make(chan error, 1)
@@ -95,6 +97,13 @@ func run() error {
 		}
 		return err
 	}
+}
+
+func loadDeploymentRegistry() (*deployments.Registry, error) {
+	if manifest := os.Getenv("DEPLOYMENT_MANIFEST_PATH"); manifest != "" {
+		return deployments.LoadEmbeddedWithManifest(manifest)
+	}
+	return deployments.LoadEmbedded()
 }
 
 func listenRefreshHints(ctx context.Context, pool *pgxpool.Pool, hub *realtime.Hub, chainID int64, deploymentID string) {

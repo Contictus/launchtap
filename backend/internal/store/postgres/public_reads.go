@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"time"
 
 	"github.com/Contictus/launchtap/backend/internal/holder"
 	"github.com/Contictus/launchtap/backend/internal/pagination"
@@ -241,16 +242,78 @@ func (r ProtocolReader) ReadProtocol(ctx context.Context, chainID int64) (stats.
 	return out, err
 }
 
-func numericBig(v pgtype.Numeric) *big.Int {
-	if !v.Valid || v.Int == nil {
-		return new(big.Int)
+func (r ProtocolReader) ReadProtocolDaily(ctx context.Context, chainID int64, query stats.DailyQuery) (stats.DailyPage, error) {
+	var out stats.DailyPage
+	if query.Limit < 1 || query.Limit > 366 {
+		return out, fmt.Errorf("protocol daily page size must be between 1 and 366")
 	}
-	if v.Exp == 0 {
-		return new(big.Int).Set(v.Int)
+	from := time.Date(query.From.UTC().Year(), query.From.UTC().Month(), query.From.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	to := time.Date(query.To.UTC().Year(), query.To.UTC().Month(), query.To.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	if from.IsZero() || to.IsZero() || from.After(to) || to.Sub(from) > 366*24*time.Hour {
+		return out, fmt.Errorf("protocol daily range must be 1 to 366 days")
+	}
+	err := withReadSnapshotBeginner(ctx, r.Pool, chainID, r.DeploymentID, func(ctx context.Context, a *Adapter, s ReadSnapshot) error {
+		rows, err := a.queries.ListProtocolDaily(ctx, sqlc.ListProtocolDailyParams{
+			ChainID:  chainID,
+			FromDay:  pgtype.Date{Time: from, Valid: true},
+			ToDay:    pgtype.Date{Time: to, Valid: true},
+			PageSize: int32(query.Limit),
+		})
+		if err != nil {
+			return err
+		}
+		out.Items = make([]stats.Daily, 0, len(rows))
+		for _, row := range rows {
+			out.Items = append(out.Items, stats.Daily{
+				Day:         row.Day.Time.UTC(),
+				VolumeETH:   row.VolumeEthWad.BigInt(),
+				Launches:    int64(row.LaunchesCount),
+				Trades:      int64(row.TradesCount),
+				Graduations: int64(row.GraduationsCount),
+			})
+		}
+		out.Snapshot = s.Identity
+		out.Finality = finality(s.State, s.Identity.BlockNumber)
+		return nil
+	})
+	return out, err
+}
+
+func numericBig(v pgtype.Numeric) *big.Int {
+	n, _ := numericBigWithExponent(v, false)
+	return n
+}
+
+// numericBigExact decodes a PostgreSQL NUMERIC without losing its exponent.
+// Profile action amounts are NUMERIC(78,0), so a negative exponent is valid
+// when it represents an exact integer (for example, 100e-2 = 1) and must
+// reject a fractional value instead of truncating it silently.
+func numericBigExact(v pgtype.Numeric) (*big.Int, error) {
+	if !v.Valid || v.Int == nil {
+		return nil, fmt.Errorf("numeric value is null")
+	}
+	if v.NaN || v.InfinityModifier != pgtype.Finite {
+		return nil, fmt.Errorf("numeric value is not finite")
+	}
+	return numericBigWithExponent(v, true)
+}
+
+func numericBigWithExponent(v pgtype.Numeric, exact bool) (*big.Int, error) {
+	if !v.Valid || v.Int == nil {
+		return new(big.Int), nil
 	}
 	n := new(big.Int).Set(v.Int)
 	if v.Exp > 0 {
-		return n.Mul(n, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(v.Exp)), nil))
+		return n.Mul(n, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(v.Exp)), nil)), nil
 	}
-	return n.Quo(n, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-v.Exp)), nil))
+	if v.Exp == 0 {
+		return n, nil
+	}
+	divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-v.Exp)), nil)
+	quotient, remainder := new(big.Int), new(big.Int)
+	quotient.QuoRem(n, divisor, remainder)
+	if exact && remainder.Sign() != 0 {
+		return nil, fmt.Errorf("numeric value is fractional")
+	}
+	return quotient, nil
 }

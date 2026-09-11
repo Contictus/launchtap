@@ -20,6 +20,7 @@ import (
 type IndexerStore struct {
 	Pool         *pgxpool.Pool
 	Beginner     TransactionBeginner
+	Owner        *Ownership
 	ChainID      int64
 	DeploymentID string
 }
@@ -30,9 +31,19 @@ func (s IndexerStore) Transaction(ctx context.Context, fn func(context.Context, 
 		beginner = s.Pool
 	}
 	transactionContext := context.WithValue(ctx, refreshDeploymentContextKey{}, s.DeploymentID)
+	if s.Owner != nil {
+		if err := s.Owner.WithinTx(transactionContext, func(ctx context.Context, a *Adapter) error { return fn(ctx, a) }); err != nil {
+			return err
+		}
+		return s.notifyRefresh(ctx)
+	}
 	if err := WithinTx(transactionContext, beginner, func(ctx context.Context, a *Adapter) error { return fn(ctx, a) }); err != nil {
 		return err
 	}
+	return s.notifyRefresh(ctx)
+}
+
+func (s IndexerStore) notifyRefresh(ctx context.Context) error {
 	if s.Pool != nil && s.ChainID > 0 && s.DeploymentID != "" {
 		_, err := s.Pool.Exec(ctx, `SELECT pg_notify('market_dirty', $1)`, fmt.Sprintf(`{"chain_id":%d,"deployment_id":%q}`, s.ChainID, s.DeploymentID))
 		if err != nil {

@@ -62,13 +62,51 @@ func (q *Queries) GetTokenImage(ctx context.Context, arg GetTokenImageParams) (G
 	return i, err
 }
 
+const getTokenMetadata = `-- name: GetTokenMetadata :one
+SELECT description, image_url, x_url, telegram_url, revision, updated_at
+FROM token_metadata
+WHERE chain_id = $1 AND token_address = $2
+`
+
+type GetTokenMetadataParams struct {
+	ChainID      int64
+	TokenAddress Address
+}
+
+type GetTokenMetadataRow struct {
+	Description pgtype.Text
+	ImageUrl    pgtype.Text
+	XUrl        pgtype.Text
+	TelegramUrl pgtype.Text
+	Revision    int64
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) GetTokenMetadata(ctx context.Context, arg GetTokenMetadataParams) (GetTokenMetadataRow, error) {
+	row := q.db.QueryRow(ctx, getTokenMetadata, arg.ChainID, arg.TokenAddress)
+	var i GetTokenMetadataRow
+	err := row.Scan(
+		&i.Description,
+		&i.ImageUrl,
+		&i.XUrl,
+		&i.TelegramUrl,
+		&i.Revision,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const replaceTokenImage = `-- name: ReplaceTokenImage :one
 INSERT INTO token_images (chain_id, token_address, content_type, content, byte_size, sha256, revision, updated_at)
 SELECT $1, $2, $3, $4,
-       $5, $6, 0, $7
+       $5, $6, 1, $7
 FROM token_launches
 WHERE chain_id = $1 AND token_address = $2
-  AND creator = $8 AND $9::bigint = 0
+  AND creator = $8
+  AND ($9::bigint = 0 OR EXISTS (
+      SELECT 1 FROM token_images
+      WHERE chain_id = $1 AND token_address = $2
+  ))
 ON CONFLICT (chain_id, token_address) DO UPDATE
 SET content_type = EXCLUDED.content_type, content = EXCLUDED.content,
     byte_size = EXCLUDED.byte_size, sha256 = EXCLUDED.sha256,
@@ -109,10 +147,14 @@ func (q *Queries) ReplaceTokenImage(ctx context.Context, arg ReplaceTokenImagePa
 const replaceTokenMetadata = `-- name: ReplaceTokenMetadata :one
 INSERT INTO token_metadata (chain_id, token_address, description, image_url, x_url, telegram_url, revision, updated_at)
 SELECT $1, $2, $3, $4,
-       $5, $6, 0, $7
+       $5, $6, 1, $7
 FROM token_launches
 WHERE chain_id = $1 AND token_address = $2
-  AND creator = $8 AND $9::bigint = 0
+  AND creator = $8
+  AND ($9::bigint = 0 OR EXISTS (
+      SELECT 1 FROM token_metadata
+      WHERE chain_id = $1 AND token_address = $2
+  ))
 ON CONFLICT (chain_id, token_address) DO UPDATE
 SET description = EXCLUDED.description, image_url = EXCLUDED.image_url,
     x_url = EXCLUDED.x_url, telegram_url = EXCLUDED.telegram_url,

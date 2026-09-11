@@ -33,7 +33,7 @@ func run() error {
 	if err := c.RequireIndexer(); err != nil {
 		return err
 	}
-	registry, err := deployments.LoadEmbedded()
+	registry, err := loadDeploymentRegistry()
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner(), ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID}
+	store := storepostgres.IndexerStore{Pool: pool, Beginner: owner.Beginner(), Owner: owner, ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID}
 	router := indexer.LedgerRouter{ChainID: int64(c.ChainID)}
 	health := new(indexer.HealthTracker)
 	health.Set(indexer.Health{ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, OwnershipHeld: true, RPCHealthy: true})
@@ -149,4 +149,11 @@ func run() error {
 	default:
 	}
 	return runErr
+}
+
+func loadDeploymentRegistry() (*deployments.Registry, error) {
+	if manifest := os.Getenv("DEPLOYMENT_MANIFEST_PATH"); manifest != "" {
+		return deployments.LoadEmbeddedWithManifest(manifest)
+	}
+	return deployments.LoadEmbedded()
 }

@@ -15,66 +15,44 @@
 
 ## Active
 
-### Robinhood RPC finality and getLogs capacity probe
-- **Date:** 2026-09-04
-- **Reason:** scope decision — operational prerequisite for the indexer runtime (Backend
-  Plan 2); explicitly does not block Backend Foundations Task 1 (Go module/tooling scaffold).
-- **Where it stopped:** Backend Foundations design assumes usable `safe`/`finalized` block
-  tags and unspecified `eth_getLogs` limits on Robinhood Chain (Arbitrum Nitro/Orbit).
-  Neither has been measured against the real providers.
-- **Owner:** Backend Plan 2 Task 1 (`docs/plans/2026-09-05-backend-indexer.md`). Tasks 2-7 of
-  that plan depend on this probe; it is no longer unowned.
-- **Related files:** `docs/specs/2026-09-01-backend-core-design.md` (§4.1, §4.3, §10),
-  `docs/plans/2026-09-05-backend-indexer.md`
-- **Resume (next step):** Before implementing the indexer runtime, run a read-only probe
-  against the Robinhood mainnet provider and the chosen testnet provider and record:
-  `latest`/`safe`/`finalized` tag support, tag monotonicity over time,
-  observed→safe→finalized lag distribution, block-hash consistency across repeated reads,
-  and `eth_getLogs` capacity (max block range, max response size, max addresses per filter).
-  Feed the result into the runtime finality config, health lag thresholds, and the
-  `INDEXER_CHUNK_SIZE` / address-filter partition defaults.
-- **Pitfalls / notes:** Production Robinhood deployments must not fall back to a fixed
-  confirmation count. If a provider cannot supply a usable `safe` tag, that is a launch
-  blocker to raise before Plan 2 architecture, not a runtime patch.
-
 ### Robinhood testnet deployment manifest
 - **Date:** 2026-09-01
 - **Reason:** external deployment prerequisite
-- **Where it stopped:** Mainnet WETH/Uniswap addresses are verified. Live checks showed the
-  same addresses have no code on testnet, so they cannot be reused.
+- **Where it stopped:** Mainnet WETH/Uniswap addresses are verified. Official Uniswap v2
+  deployment records list Robinhood Chain mainnet, not chain 46630 testnet. The repository
+  now has a deterministic project-owned dependency bootstrap, candidate evidence capture,
+  Launchpad candidate-manifest flow, and operator runbook; no testnet transaction has been
+  authorized or broadcast by the repository workflow.
 - **Owner:** Backend Plan 2 Task 1 (`docs/plans/2026-09-05-backend-indexer.md`). Only that
   plan's Task 8 testnet acceptance depends on it, so it does not block backend Tasks 2-7.
-- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`,
-  `docs/specs/2026-09-01-backend-core-design.md`,
-  `docs/plans/2026-09-05-backend-indexer.md`
-- **Resume (next step):** Before testnet graduation integration, identify a verified
-  official testnet deployment or deploy a project-owned WETH + Uniswap v2 test stack, then
-  produce and review the chain-46630 deployment manifest.
+- **Related files:** `docs/runbooks/robinhood-testnet-deployment.md`,
+  `contracts/scripts/bootstrap-testnet-dependencies.ps1`, `contracts/scripts/deploy.ps1`,
+  `contracts/deployments/config/robinhood-testnet.disabled.json`
+- **Resume (next step):** A human operator must fund a named Foundry account, run the dry-run
+  and broadcast commands in the runbook, independently review receipts/code hashes/source
+  evidence, commit the reviewed dependency record, then run the Launchpad deployment and
+  commit its reviewed chain-46630 manifest. The exact first command is:
+  `pwsh ./contracts/scripts/bootstrap-testnet-dependencies.ps1 -RpcUrl <RPC> -Sender <address>`.
 - **Pitfalls / notes:** Testnet startup must remain graduation-disabled until the manifest
   is complete; never substitute mainnet addresses.
 
-### ETH/USD enrichment source
-- **Date:** 2026-09-01
-- **Reason:** non-blocking product enrichment
-- **Where it stopped:** No verified Robinhood Chain ETH/USD feed was selected. ETH-native
-  values are canonical; USD columns are nullable by design.
-- **Related files:** `docs/specs/2026-09-01-backend-core-design.md`
-- **Resume (next step):** Before USD UI work, verify an on-chain feed deployment or select
-  one cached external adapter with freshness and outage semantics.
-- **Pitfalls / notes:** USD availability must not affect indexing, list correctness, quotes,
-  or transaction construction.
-
-### Production governance and audit inputs
+### Production release, governance, and audit inputs
 - **Date:** 2026-09-01
 - **Reason:** production-only external coordination
-- **Where it stopped:** Contract roles and permitted actions are designed, but signer set,
-  timelock delay, legal/geo policy, monitoring provider, and audit vendor are not selected.
-- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`
-- **Resume (next step):** Resolve these inputs before a production deployment checklist is
-  approved; transfer deployer authority and complete an external audit before accepting
-  mainnet funds.
+- **Where it stopped:** The repository now contains the production input sheet, Privy
+  dashboard checklist, governance handoff, health/rollback procedure, monitoring ownership
+  checklist, and audit evidence checklist. No live organization, signer, policy, endpoint,
+  hosting, monitoring, or auditor values have been invented.
+- **Related files:** `docs/runbooks/production-readiness.md`,
+  `docs/runbooks/web-release.md`, `web/.env.example`, `backend/.env.example`,
+  `scripts/verify-release.mjs`
+- **Resume (next step):** Product/infrastructure/security owners must fill every `<pending>`
+  row in `docs/runbooks/production-readiness.md`, provision values through the approved
+  secret/variable manager, and run `node scripts/verify-release.mjs --target=production`.
+  Production approval still requires signed governance and external-audit evidence.
 - **Pitfalls / notes:** These do not authorize changing existing launch economics or adding
-  a reserve rescue path.
+  a reserve rescue path. Do not commit credentials, private RPC URLs, wallet keys, or guessed
+  deployment addresses.
 
 <!-- Template:
 ### <short title>
@@ -89,6 +67,28 @@
 ---
 
 ## Done
+
+### ETH/USD enrichment source selection
+
+- **Completed:** 2026-09-11
+- **Evidence:** `docs/runbooks/eth-usd-enrichment.md` records the official Robinhood and
+  Chainlink review and selects CoinGecko’s commercial `/simple/price` API as the optional
+  cached source. The runbook defines authentication, commercial attribution, numeric
+  handling, freshness, outage, and rate-limit semantics.
+- **Boundary:** This closes source selection only. The provider adapter, source/retrieval
+  timestamps, attribution UI, and production API key remain a future implementation and
+  operations step; ETH-native indexing, quotes, and transactions remain independent.
+
+### Robinhood RPC finality and getLogs capacity probe
+
+- **Completed:** 2026-09-11
+- **Evidence:** `docs/runbooks/robinhood-rpc-probe.md` records read-only measurements against
+  the official mainnet (`4663`) and testnet (`46630`) endpoints. Both endpoints returned
+  `latest`, `safe`, and `finalized`; fixed-height block hashes were stable across repeated
+  reads; bounded `eth_getLogs` range, response-size, and address-array observations are
+  recorded.
+- **Limitation:** the finality sample is short (two samples over about 14.5 seconds), so it
+  is not a long-run provider SLA or a statistically derived alert percentile.
 
 ### Task 11 pinned Robinhood mainnet fork acceptance
 

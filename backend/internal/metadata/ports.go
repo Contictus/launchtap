@@ -32,5 +32,6 @@ type Image struct {
 type Store interface {
 	ReplaceMetadata(context.Context, int64, common.Address, []common.Address, Metadata) (int64, error)
 	ReplaceImage(context.Context, int64, common.Address, []common.Address, Image) (int64, error)
+	GetMetadata(context.Context, int64, common.Address) (Metadata, error)
 	GetImage(context.Context, int64, common.Address) (Image, error)
 }

@@ -414,6 +414,62 @@ func (q *Queries) ListMarketTrades(ctx context.Context, arg ListMarketTradesPara
 	return items, nil
 }
 
+const listProtocolDaily = `-- name: ListProtocolDaily :many
+SELECT day, volume_eth_wad, launches_count, trades_count, graduations_count
+FROM protocol_daily
+WHERE chain_id = $1
+  AND day >= $2
+  AND day <= $3
+ORDER BY day ASC
+LIMIT $4::integer
+`
+
+type ListProtocolDailyParams struct {
+	ChainID  int64
+	FromDay  pgtype.Date
+	ToDay    pgtype.Date
+	PageSize int32
+}
+
+type ListProtocolDailyRow struct {
+	Day              pgtype.Date
+	VolumeEthWad     Uint256
+	LaunchesCount    int32
+	TradesCount      int32
+	GraduationsCount int32
+}
+
+func (q *Queries) ListProtocolDaily(ctx context.Context, arg ListProtocolDailyParams) ([]ListProtocolDailyRow, error) {
+	rows, err := q.db.Query(ctx, listProtocolDaily,
+		arg.ChainID,
+		arg.FromDay,
+		arg.ToDay,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProtocolDailyRow{}
+	for rows.Next() {
+		var i ListProtocolDailyRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.VolumeEthWad,
+			&i.LaunchesCount,
+			&i.TradesCount,
+			&i.GraduationsCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStoredCandles = `-- name: ListStoredCandles :many
 SELECT bucket_start_time, open_price_wad, high_price_wad, low_price_wad,
        close_price_wad, gross_eth_volume, token_volume, trade_count

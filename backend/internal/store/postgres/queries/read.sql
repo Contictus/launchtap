@@ -186,3 +186,12 @@ SELECT volume_24h_eth_wad, volume_all_time_eth_wad, launches_24h,
        graduations_all_time, updated_at
 FROM protocol_stats
 WHERE chain_id = sqlc.arg(chain_id);
+
+-- name: ListProtocolDaily :many
+SELECT day, volume_eth_wad, launches_count, trades_count, graduations_count
+FROM protocol_daily
+WHERE chain_id = sqlc.arg(chain_id)
+  AND day >= sqlc.arg(from_day)
+  AND day <= sqlc.arg(to_day)
+ORDER BY day ASC
+LIMIT sqlc.arg(page_size)::integer;

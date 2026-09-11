@@ -1,0 +1,24 @@
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "@playwright/test";
+
+const routes = ["/", "/graduated", "/create", "/analytics", "/docs", "/profile"];
+
+test("shell routes have no serious or critical accessibility violations", async ({ page }) => {
+  for (const route of routes) {
+    const response = await page.goto(route);
+    expect(response?.status(), `${route} should load successfully`).toBe(200);
+    const results = await new AxeBuilder({ page }).analyze();
+    const seriousOrCritical = results.violations.filter((violation) =>
+      ["serious", "critical"].includes(violation.impact ?? ""),
+    );
+    expect(seriousOrCritical, `${route} accessibility violations`).toEqual([]);
+  }
+});
+
+test("analytics unavailable state is explicit when no reviewed API is configured", async ({
+  page,
+}) => {
+  await page.goto("/analytics");
+  await expect(page.getByRole("heading", { name: "Analytics unavailable" })).toBeVisible();
+  await expect(page.getByText("No reviewed API deployment is connected.")).toBeVisible();
+});

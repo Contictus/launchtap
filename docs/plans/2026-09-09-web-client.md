@@ -1,12 +1,25 @@
-# Web Client — Pre-flight and Task List
+# Web Client — Implementation and Task Record
 
 > **Workflow:** `AGENTS.md` governs implementation, verification, commit, and independent
-> review. This document defines Plan 4. It is planning only; no Plan 4 implementation is
-> included in this commit.
+> review. This document is the Plan 4 implementation record and acceptance boundary. The
+> implementation is complete on `dev`; live Robinhood and production release evidence remain
+> explicitly separate prerequisites.
 
-**Status:** Design and task decomposition prepared. Implementation is deliberately not started.
-Every task is high risk because it touches wallet transactions, public API contracts, or the
-production user interface. Independent pre-flight review is required before Task 1.
+**Status:** Tasks 1–8 implemented and independently reviewed. Deterministic repository gates
+are complete on `dev`; the `dev` → `main` milestone merge and live release inputs remain open.
+Every task was high risk because it touches wallet transactions, public API contracts, or the
+production user interface.
+
+## Completion record
+
+- Tasks 1–8 are implemented on `dev` at the current reviewed implementation head.
+- The web, backend, contracts, generated-artifact drift, browser, and Anvil gates are wired into
+  CI and pass for the completed implementation series.
+- Independent implementation reviews found and closed the release-gate, metadata-concurrency,
+  profile-aggregation, and generated-fixture issues identified during delivery.
+- This record establishes deterministic repository completion only. It does not claim live
+  Robinhood connectivity, a real Privy dashboard configuration, a production deployment, or
+  external governance/audit acceptance.
 
 **Goal:** Deliver the core non-custodial Launchpad web client against the reviewed contract and
 Backend Plan 3 boundaries, with deterministic transaction construction, reorg-aware reads,
@@ -260,14 +273,17 @@ Task 1 -> Task 2 -> Task 3 -> Task 4 -> Task 5 -> Task 6 -> Task 7 -> Task 8
 
 ## Deferred user/external inputs
 
-1. Reviewed Robinhood chain-46630 deployment manifest and funded test wallets.
+1. Reviewed Robinhood chain-46630 deployment manifest and funded test wallets; this remains
+   the live indexer acceptance prerequisite tracked in `backlog.md`.
 2. Real Privy app ID/client ID and verified dashboard behavior.
 3. Production API/RPC URLs and allowed web origins.
 4. Production hosting, domain, CSP/edge rate limits, monitoring, and rollback ownership.
 5. ETH/USD enrichment source.
 6. Governance signers, timelock, legal/geo policy, and external audit.
-7. Forum/Memestock product model, moderation, persistence, and API plan.
+7. Forum/Memestock product model, moderation, persistence, and API plan; this is explicitly
+   outside Plan 4 and requires a later plan, not a blocker to Plan 4 code completion.
 
 These inputs are not replaced with guessed values. Tasks 1–8 can use deterministic local
 configuration and generated keys; missing external inputs block only corresponding live
-acceptance and release claims.
+acceptance and release claims. The first six items map to the four active backlog entries;
+the Forum item is a future product-scope decision.

@@ -1,0 +1,63 @@
+{
+  "name": "launchpad-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.16.0",
+    "npm": "12.0.1"
+  },
+  "scripts": {
+    "setup": "npm ci",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:platform": "node --test scripts/anvil-task6-platform.test.mjs",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:anvil": "node scripts/run-anvil-task6-gate.mjs",
+    "web-api-sync": "node scripts/generate-api.mjs --write",
+    "web-api-diff": "node scripts/generate-api.mjs --check",
+    "web-contracts-sync": "node scripts/generate-contracts.mjs --write",
+    "web-contracts-diff": "node scripts/generate-contracts.mjs --check",
+    "verify:bundle": "node scripts/check-budgets.mjs",
+    "verify:release": "node scripts/validate-release.mjs --production",
+    "verify:anvil-config": "node scripts/validate-release.mjs --anvil"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.7",
+    "@privy-io/react-auth": "2.17.3",
+    "@privy-io/wagmi": "1.0.6",
+    "@tanstack/react-query": "5.66.8",
+    "lightweight-charts": "^5.0.0",
+    "motion": "^12.23.24",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "viem": "2.31.0",
+    "wagmi": "2.16.9"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.59.1",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.13",
+    "@types/react-dom": "19.2.3",
+    "autoprefixer": "10.4.21",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.6",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.9.3",
+    "vitest": "4.1.1"
+  }
+}

@@ -228,6 +228,7 @@ try {
     if ($Target -eq "anvil") {
         $weth = [string] (Get-Creation $record "LocalWETH").contractAddress
         $uniswapFactory = [string] (Get-Creation $record "LocalUniswapV2Factory").contractAddress
+        $uniswapRouter = [string] (Get-Creation $record "LocalUniswapV2Router").contractAddress
         $pairInitCodeHash = (& cast call $uniswapFactory "pairCodeHash()(bytes32)" --rpc-url $RpcUrl | Out-String).Trim()
         if ($LASTEXITCODE -ne 0) { Fail "could not read local pair init-code hash" }
     }

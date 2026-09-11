@@ -44,6 +44,10 @@ type metadataWriteInput struct {
 	Body          metadataBody `json:"body"`
 }
 
+type metadataReadInput struct {
+	Token string `path:"token"`
+}
+
 type imageWriteInput struct {
 	Token         string `path:"token"`
 	Authorization string `header:"Authorization"`
@@ -61,6 +65,14 @@ type imageReadInput struct {
 type revisionBody struct {
 	Revision int64  `json:"revision"`
 	ImageURL string `json:"image_url,omitempty"`
+}
+
+type metadataReadBody struct {
+	Description string `json:"description,omitempty"`
+	ImageURL    string `json:"image_url,omitempty"`
+	XURL        string `json:"x_url,omitempty"`
+	TelegramURL string `json:"telegram_url,omitempty"`
+	Revision    int64  `json:"revision"`
 }
 
 type revisionOutput struct {
@@ -83,6 +95,7 @@ func (r MetadataRoutes) Register(api huma.API) {
 		r.Limiter = NewSubjectLimiter(30, time.Minute)
 	}
 	huma.Register(api, huma.Operation{OperationID: "replaceTokenMetadata", Method: http.MethodPut, Path: "/tokens/{token}/metadata", Tags: []string{"metadata"}}, r.replaceMetadata)
+	huma.Register(api, huma.Operation{OperationID: "getTokenMetadata", Method: http.MethodGet, Path: "/tokens/{token}/metadata", Tags: []string{"metadata"}}, r.getMetadata)
 	huma.Register(api, huma.Operation{
 		OperationID: "replaceTokenImage", Method: http.MethodPut, Path: "/tokens/{token}/image", Tags: []string{"metadata"},
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
@@ -95,6 +108,27 @@ func (r MetadataRoutes) Register(api huma.API) {
 			"image/png": {Schema: &huma.Schema{Type: "string", Format: "binary"}}, "image/jpeg": {Schema: &huma.Schema{Type: "string", Format: "binary"}}, "image/webp": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
 		}}},
 	}, r.getImage)
+}
+
+func (r MetadataRoutes) getMetadata(ctx context.Context, input *metadataReadInput) (*struct {
+	ETag string `header:"ETag"`
+	Body metadataReadBody
+}, error) {
+	tokenAddress, err := address(input.Token)
+	if err != nil {
+		return nil, err
+	}
+	if r.Store == nil {
+		return nil, apiRequestProblem(ctx, http.StatusInternalServerError, "internal_error", "Request failed")
+	}
+	value, err := r.Store.GetMetadata(ctx, r.ChainID, tokenAddress)
+	if err != nil {
+		return nil, mapMetadataError(ctx, err)
+	}
+	return &struct {
+		ETag string `header:"ETag"`
+		Body metadataReadBody
+	}{ETag: revisionETag(value.Revision), Body: metadataReadBody{Description: value.Description, ImageURL: value.ImageURL, XURL: value.XURL, TelegramURL: value.TelegramURL, Revision: value.Revision}}, nil
 }
 
 func (r MetadataRoutes) replaceMetadata(ctx context.Context, input *metadataWriteInput) (*revisionOutput, error) {
@@ -196,7 +230,7 @@ func mapMetadataError(ctx context.Context, err error) error {
 	case errors.Is(err, metadata.ErrUnauthorized):
 		return apiProblem(http.StatusForbidden, "creator_required", "A verified creator wallet is required")
 	case errors.Is(err, metadata.ErrRevisionConflict):
-		return apiProblem(http.StatusConflict, "revision_conflict", "Resource revision changed")
+		return apiProblem(http.StatusPreconditionFailed, "revision_conflict", "Resource revision changed")
 	default:
 		return apiRequestProblem(ctx, http.StatusInternalServerError, "internal_error", "Request failed")
 	}

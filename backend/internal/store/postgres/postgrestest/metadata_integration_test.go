@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,11 +40,11 @@ func TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically(t *testing.T) {
 		t.Fatalf("unauthorized error=%v", err)
 	}
 	revision, err := store.ReplaceMetadata(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Metadata{Description: "first", Revision: 0, UpdatedAt: at})
-	if err != nil || revision != 0 {
+	if err != nil || revision != 1 {
 		t.Fatalf("create metadata revision=%d error=%v", revision, err)
 	}
-	revision, err = store.ReplaceMetadata(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Metadata{Description: "second", Revision: 0, UpdatedAt: at.Add(time.Second)})
-	if err != nil || revision != 1 {
+	revision, err = store.ReplaceMetadata(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Metadata{Description: "second", Revision: 1, UpdatedAt: at.Add(time.Second)})
+	if err != nil || revision != 2 {
 		t.Fatalf("replace metadata revision=%d error=%v", revision, err)
 	}
 	if _, err := store.ReplaceMetadata(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Metadata{Revision: 0, UpdatedAt: at}); !errors.Is(err, metadata.ErrRevisionConflict) {
@@ -53,7 +54,7 @@ func TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically(t *testing.T) {
 	content := []byte("\x89PNG\r\n\x1a\nfixture")
 	hash := sha256.Sum256(content)
 	revision, err = store.ReplaceImage(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Image{ContentType: "image/png", Content: content, SHA256: hash, Revision: 0, UpdatedAt: at})
-	if err != nil || revision != 0 {
+	if err != nil || revision != 1 {
 		t.Fatalf("create image revision=%d error=%v", revision, err)
 	}
 	image, err := store.GetImage(ctx, chainID, tokenAddress)
@@ -75,5 +76,104 @@ func TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically(t *testing.T) {
 	}
 	if _, err := store.ReplaceImage(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Image{ContentType: "image/png", Content: content, SHA256: hash, Revision: 0, UpdatedAt: at}); !errors.Is(err, metadata.ErrNotFound) {
 		t.Fatalf("orphan image write error=%v", err)
+	}
+}
+
+func TestMetadataAndImageFirstWritesRejectConcurrentExpectedZero(t *testing.T) {
+	database := NewMigrated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool, err := storepostgres.OpenPool(ctx, database.URL, storepostgres.PoolOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	const chainID int64 = 46630
+	at := time.Date(2026, 9, 9, 13, 0, 0, 0, time.UTC)
+	creator := common.Address(addressBytes(0x55))
+	metadataToken := addressBytes(0x92)
+	imageToken := addressBytes(0x93)
+	for block, tokenBytes := range map[int64][]byte{11: metadataToken, 12: imageToken} {
+		blockHash := hashBytes(byte(block))
+		mustInsertBlock(t, ctx, database.DB, chainID, block, blockHash, hashBytes(byte(block-1)), at, "safe")
+		insertProjectionLaunch(t, ctx, database.DB, chainID, block, blockHash, at, hashBytes(byte(block+20)), projectionLaunchFixture{token: tokenBytes, curve: addressBytes(byte(block + 30)), pair: addressBytes(byte(block + 40)), weth: addressBytes(byte(block + 50))})
+		if _, err := database.DB.ExecContext(ctx, `SELECT rebuild_token_projections($1,$2)`, chainID, tokenBytes); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := storepostgres.MetadataStore{Pool: pool, DeploymentID: "metadata-concurrency-test"}
+	content := []byte("\x89PNG\r\n\x1a\nconcurrent")
+	hash := sha256.Sum256(content)
+
+	metadataRevisions := make(chan int64, 2)
+	metadataErrors := make(chan error, 2)
+	imageRevisions := make(chan int64, 2)
+	imageErrors := make(chan error, 2)
+	start := make(chan struct{})
+	var group sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		group.Add(1)
+		go func(i int) {
+			defer group.Done()
+			<-start
+			revision, err := store.ReplaceMetadata(ctx, chainID, common.BytesToAddress(metadataToken), []common.Address{creator}, metadata.Metadata{Description: string(rune('A' + i)), Revision: 0, UpdatedAt: at.Add(time.Duration(i) * time.Second)})
+			metadataRevisions <- revision
+			metadataErrors <- err
+		}(i)
+	}
+	for i := 0; i < 2; i++ {
+		group.Add(1)
+		go func(i int) {
+			defer group.Done()
+			<-start
+			revision, err := store.ReplaceImage(ctx, chainID, common.BytesToAddress(imageToken), []common.Address{creator}, metadata.Image{ContentType: "image/png", Content: content, SHA256: hash, Revision: 0, UpdatedAt: at.Add(time.Duration(i) * time.Second)})
+			imageRevisions <- revision
+			imageErrors <- err
+		}(i)
+	}
+	close(start)
+	group.Wait()
+	close(metadataRevisions)
+	close(metadataErrors)
+	close(imageRevisions)
+	close(imageErrors)
+
+	metadataSuccess, metadataConflict := 0, 0
+	for revision := range metadataRevisions {
+		if revision == 1 {
+			metadataSuccess++
+		}
+	}
+	for err := range metadataErrors {
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, metadata.ErrRevisionConflict) {
+			metadataConflict++
+		} else {
+			t.Errorf("metadata concurrent write error=%v", err)
+		}
+	}
+	if metadataSuccess != 1 || metadataConflict != 1 {
+		t.Fatalf("metadata concurrent result success=%d conflict=%d", metadataSuccess, metadataConflict)
+	}
+	imageSuccess, imageConflict := 0, 0
+	for revision := range imageRevisions {
+		if revision == 1 {
+			imageSuccess++
+		}
+	}
+	for err := range imageErrors {
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, metadata.ErrRevisionConflict) {
+			imageConflict++
+		} else {
+			t.Errorf("image concurrent write error=%v", err)
+		}
+	}
+	if imageSuccess != 1 || imageConflict != 1 {
+		t.Fatalf("image concurrent result success=%d conflict=%d", imageSuccess, imageConflict)
 	}
 }

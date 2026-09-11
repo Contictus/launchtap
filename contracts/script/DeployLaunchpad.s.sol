@@ -8,6 +8,7 @@ import { LaunchTypes } from "../src/types/LaunchTypes.sol";
 import { DeploymentValidation } from "./deployment/DeploymentValidation.sol";
 import { LocalUniswapV2Factory } from "./local/LocalUniswapV2Factory.sol";
 import { LocalWETH } from "./local/LocalWETH.sol";
+import { LocalUniswapV2Router } from "./local/LocalUniswapV2Router.sol";
 
 contract DeployLaunchpad is Script {
     uint16 private constant ENGINE_VERSION = 1;
@@ -28,6 +29,7 @@ contract DeployLaunchpad is Script {
         address protocolTreasury;
         address weth;
         address uniswapFactory;
+        address uniswapRouter;
         bytes32 pairInitCodeHash;
         bytes32 wethRuntimeCodeHash;
         bytes32 uniswapFactoryRuntimeCodeHash;
@@ -55,14 +57,18 @@ contract DeployLaunchpad is Script {
             vm.startBroadcast(result.deployer);
             LocalWETH localWeth = new LocalWETH();
             LocalUniswapV2Factory localFactory = new LocalUniswapV2Factory();
+            LocalUniswapV2Router localRouter =
+                new LocalUniswapV2Router(address(localFactory), address(localWeth));
             vm.stopBroadcast();
             result.weth = address(localWeth);
             result.uniswapFactory = address(localFactory);
+            result.uniswapRouter = address(localRouter);
             result.pairInitCodeHash = localFactory.pairCodeHash();
         } else {
             result.weth = vm.envAddress("WETH");
             result.uniswapFactory = vm.envAddress("UNISWAP_V2_FACTORY");
             result.pairInitCodeHash = vm.envBytes32("PAIR_INIT_CODE_HASH");
+            result.uniswapRouter = address(0);
         }
 
         DeploymentValidation.DependencyEvidence memory evidence =

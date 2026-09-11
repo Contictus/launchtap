@@ -1,0 +1,100 @@
+name: web
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "web/**"
+      - "backend/openapi/**"
+      - "backend/internal/apiserver/**"
+      - "contracts/src/**"
+      - "contracts/abi/v1/**"
+      - "contracts/deployments/**"
+      - ".github/workflows/web.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "backend/openapi/**"
+      - "backend/internal/apiserver/**"
+      - "contracts/src/**"
+      - "contracts/abi/v1/**"
+      - "contracts/deployments/**"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: launchpad_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d launchpad_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+          cache: true
+      - name: Install Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.16.0
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build contract artifacts
+        working-directory: contracts
+        run: forge build --no-lint
+      - name: Install web dependencies
+        run: npm ci
+      - name: Verify generated API and contract boundaries
+        run: npm run web-api-diff && npm run web-contracts-diff
+      - name: Run web static and unit gates
+        run: npm run format:check && npm run lint && npm run typecheck && npm test
+      - name: Configure system Chrome for Playwright
+        shell: bash
+        run: |
+          chrome_path="$(command -v google-chrome || true)"
+          if [ -z "$chrome_path" ]; then
+            echo "google-chrome is required on the ubuntu-latest runner"
+            exit 1
+          fi
+          echo "PLAYWRIGHT_EXECUTABLE_PATH=$chrome_path" >> "$GITHUB_ENV"
+          "$chrome_path" --version
+      - name: Validate cross-platform Anvil gate
+        run: |
+          command -v pwsh
+          pwsh --version
+          npm run test:platform
+          pwsh -NoProfile -Command '$script = Get-Content -Raw scripts/anvil-task6-gate.ps1; [void][scriptblock]::Create($script)'
+      - name: Run browser gate
+        run: npm run test:e2e
+      - name: Run real Anvil transaction gate
+        run: npm run test:anvil
+      - name: Build web
+        run: npm run build
+      - name: Enforce production bundle budgets and secret scan
+        run: npm run verify:bundle

@@ -332,8 +332,10 @@ These do not change contract or backend correctness and are fail-closed or nulla
   3. `docs/plans/2026-09-08-backend-api-identity.md` — Huma API + Privy auth + read
      endpoints + SSE. **7 tasks, complete.**
 - `docs/specs/2026-09-09-web-client-design.md` and
-  `docs/plans/2026-09-09-web-client.md` define Plan 4 core web delivery. **8 tasks, planned;
-  implementation not started.** Forum/Memestock remains a separate later plan.
+  `docs/plans/2026-09-09-web-client.md` define Plan 4 core web delivery. **8 tasks,
+  implemented and independently reviewed on `dev`; deterministic CI is complete, while live
+  Robinhood/Privy/production release inputs remain deferred.** Forum/Memestock remains a
+  separate later plan.
 
 ## Sub-project A — economy & contract parameters (DESIGN CLOSED)
 
@@ -475,7 +477,7 @@ Status: ✅ decided · 🔴 repo-wide, before any code · 🟡 before sub-projec
 - [x] **Backend API layer** — ✅ REST/JSON via `huma` (no tRPC, no gRPC)
 - [x] **Backend architecture** — ✅ modular monolith, 2 processes, hexagonal + feature modules
 - [x] Repo structure — monorepo: `contracts/ backend/ web/ docs/`; web workspace tooling is
-  selected in the Plan 4 design and pinned when Task 1 implementation starts
+  selected in the Plan 4 design and pinned in the implemented Task 1 boundary
 - [x] Frontend stack — Next.js App Router + strict TypeScript + Tailwind + source-owned
   shadcn/ui primitives; Privy + wagmi + viem + TanStack Query; Lightweight Charts. Exact
   versions are pinned in Plan 4 Task 1.

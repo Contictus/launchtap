@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "routes": [
+    "/",
+    "/graduated",
+    "/create",
+    "/analytics",
+    "/docs",
+    "/profile",
+    "/token/0x0000000000000000000000000000000000000001?fixture=populated"
+  ],
+  "profiles": {
+    "small-laptop": {
+      "viewport": { "width": 1280, "height": 800 },
+      "navigationMs": 5000,
+      "transferredBytes": 4000000,
+      "initialJavaScriptBytes": 1800000
+    },
+    "mobile": {
+      "viewport": { "width": 360, "height": 800 },
+      "navigationMs": 5500,
+      "transferredBytes": 4000000,
+      "initialJavaScriptBytes": 1800000
+    }
+  }
+}

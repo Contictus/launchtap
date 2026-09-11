@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "release", "pins", "fmt", "build", "goldens", "vectors", "event-fixtures", "deployments", "simulation", "review", "test", "lint", "size", "slither", "fork")]
+    [ValidateSet("all", "release", "pins", "fmt", "build", "goldens", "vectors", "event-fixtures", "deployments", "simulation", "review", "test", "lint", "size", "slither", "fork", "runner-test")]
     [string] $Target = "all"
 )
 
@@ -9,16 +9,7 @@ Set-StrictMode -Version Latest
 $contractsRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $contractsRoot
 try {
-    function Invoke-Checked([scriptblock] $Command) {
-        & $Command
-        if (-not $?) {
-            $exitCode = Get-Variable -Name LASTEXITCODE -ValueOnly -ErrorAction SilentlyContinue
-            if ($null -ne $exitCode) {
-                throw "Contract check failed with exit code $exitCode"
-            }
-            throw "Contract check failed"
-        }
-    }
+    . (Join-Path $PSScriptRoot "check-runner.ps1")
 
     function Invoke-WithFoundryProfile([string] $Profile, [scriptblock] $Command) {
         $hadPreviousProfile = Test-Path Env:FOUNDRY_PROFILE
@@ -51,11 +42,14 @@ try {
     if ($Target -in @("all", "release", "pins")) {
         Invoke-Checked { & "$PSScriptRoot/check-dependencies.ps1" }
     }
+    if ($Target -in @("all", "release", "runner-test")) {
+        Invoke-Checked { & "$PSScriptRoot/test-check-runner.ps1" }
+    }
     if ($Target -in @("all", "release", "fmt")) {
         Invoke-Checked { forge fmt --check }
     }
     if ($Target -in @("all", "release", "build")) {
-        Invoke-Checked { forge build }
+        Invoke-Checked { forge build --no-lint }
         Invoke-WithFoundryProfile "fork" { forge build --no-lint }
     }
     if ($Target -in @("all", "release", "goldens")) {

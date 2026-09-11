@@ -67,6 +67,7 @@ foreach ($file in $sourceFiles) {
 $checkScript = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "check.ps1"))
 foreach ($gate in @(
     "check-dependencies.ps1",
+    "test-check-runner.ps1",
     "check-goldens.ps1",
     "check-vectors.ps1",
     "check-event-fixtures.ps1",

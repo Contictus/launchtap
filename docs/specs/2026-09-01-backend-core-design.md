@@ -1455,7 +1455,10 @@ phase counts. Structured logs include chain, deployment, block/hash, tx hash, an
 
 ## 13. Deliberately deferred, non-blocking items
 
-- ETH/USD provider: nullable enrichment adapter; ETH remains authoritative.
+- ETH/USD provider: the selected nullable enrichment source is the CoinGecko commercial
+  `/simple/price` API, with operational policy in `docs/runbooks/eth-usd-enrichment.md`;
+  ETH remains authoritative. The adapter is optional and must never gate indexing, quotes,
+  transactions, or canonical list correctness.
 - Image storage migration from PostgreSQL to object storage.
 - Materializing `market_trades` if measured query performance requires it.
 - Post-graduation protocol fee capture; V1 remains vanilla Uniswap v2.
