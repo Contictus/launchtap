@@ -18,8 +18,10 @@ test("Task 6 gate selects platform commands and paths at runtime", () => {
   assert.doesNotMatch(gate, /C:\\\\Users\\\$env:USERNAME/);
 });
 
-test("Playwright uses installed Chromium on non-Windows", () => {
+test("Playwright accepts an environment executable and keeps the Windows fallback", () => {
+  assert.match(playwright, /process\.env\.PLAYWRIGHT_EXECUTABLE_PATH/);
   assert.match(playwright, /process\.platform\s*===\s*"win32"/);
   assert.match(playwright, /fs\.existsSync\(windowsChromePath\)/);
-  assert.match(playwright, /configuredChromePath/);
+  assert.match(playwright, /windowsChromeFallback/);
+  assert.match(playwright, /browserExecutablePath/);
 });

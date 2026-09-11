@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
 
+const configuredExecutablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH?.trim();
 const windowsChromePath =
   process.platform === "win32" ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" : "";
-const configuredChromePath =
+const windowsChromeFallback =
   windowsChromePath && fs.existsSync(windowsChromePath) ? windowsChromePath : undefined;
-const desktopBrowserOptions = configuredChromePath
-  ? { launchOptions: { executablePath: configuredChromePath } }
+const browserExecutablePath = configuredExecutablePath || windowsChromeFallback;
+const desktopBrowserOptions = browserExecutablePath
+  ? { launchOptions: { executablePath: browserExecutablePath } }
   : {};
 
 const fixtureFactory = process.env.TASK6_ANVIL_FACTORY ?? "";

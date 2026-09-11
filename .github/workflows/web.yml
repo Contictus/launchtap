@@ -74,17 +74,16 @@ jobs:
         run: npm run web-api-diff && npm run web-contracts-diff
       - name: Run web static and unit gates
         run: npm run format:check && npm run lint && npm run typecheck && npm test
-      - name: Install Playwright browser
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('web/package-lock.json') }}
-      - name: Install Playwright Chromium and OS dependencies
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - name: Verify Playwright Chromium
-        run: npx playwright install chromium
+      - name: Configure system Chrome for Playwright
+        shell: bash
+        run: |
+          chrome_path="$(command -v google-chrome || true)"
+          if [ -z "$chrome_path" ]; then
+            echo "google-chrome is required on the ubuntu-latest runner"
+            exit 1
+          fi
+          echo "PLAYWRIGHT_EXECUTABLE_PATH=$chrome_path" >> "$GITHUB_ENV"
+          "$chrome_path" --version
       - name: Validate cross-platform Anvil gate
         run: |
           command -v pwsh
