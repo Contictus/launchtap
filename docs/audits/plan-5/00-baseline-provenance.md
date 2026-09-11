@@ -14,10 +14,10 @@ commit date: 2026-09-11T21:40:30+03:00
 parents: cfef0073f11993ddf5de06facc9e916a1a915f5e b73fabe8d64c46b82a24c573c4c35bc6183c0e5d
 ```
 
-The checkout used for this Task 1 documentation is `dev` at `eb7f5f345e93f1ad02058b994d2eb02c721eedbb`.
-`git diff 6184bc5..HEAD` contains only the Plan 5 plan and threat model; the implementation
-tree is therefore the baseline tree. This pack is intentionally not treated as implementation
-evidence.
+The original Task 1 pack was first committed on `dev` at `ee02432`.
+`git diff 6184bc5..HEAD` contains only Plan 5 governance/audit documentation and no product
+implementation paths; the implementation tree is therefore the baseline tree. This pack is
+intentionally not treated as implementation evidence.
 
 Reproducible identity checks:
 
@@ -25,7 +25,7 @@ Reproducible identity checks:
 $baseline = "6184bc5febd43de99ab6cc2b6f71f7f90c878bb6"
 git cat-file -t $baseline
 git show -s --format=fuller $baseline
-git diff --name-status "$baseline..HEAD"
+git diff --name-status "${baseline}..HEAD"
 git ls-tree -r --name-only $baseline | Measure-Object
 ```
 
@@ -46,8 +46,8 @@ inferred from the current checkout:
 Use plumbing when `git submodule status` is unavailable:
 
 ```powershell
-git ls-tree "$baseline:contracts/lib"
-git show "$baseline:.gitmodules"
+git ls-tree "${baseline}:contracts/lib"
+git show "${baseline}:.gitmodules"
 git submodule update --init --recursive
 git -C contracts/lib/forge-std rev-parse HEAD
 git -C contracts/lib/openzeppelin-contracts rev-parse HEAD
@@ -117,7 +117,7 @@ with the host limitation; a failed local prerequisite is never converted into a 
 | Web lint | `cd web; npm run lint` | **Passed** in 6.563 s. |
 | Web typecheck | `cd web; npm run typecheck` | **Passed** in 7.392 s. |
 | Web generated API | `cd web; npm run web-api-diff` | **Passed** in 2.497 s. |
-| Web generated contracts | `cd web; npm run web-contracts-diff` | **Passed** in 1.385 s. |
+| Web generated contracts | `cd web; npm run web-contracts-diff` | **Passed** in 1.385 s using the existing `contracts/out/` on this host; a clean machine must first run `forge build --no-lint`, or apply the harness skip rule when Foundry is unavailable. |
 | Web bundle budget and secret scan | `cd web; npm run verify:bundle` | **Passed** in 1.394 s; reported initial `43,708` bytes, all routes `7,355,145` bytes, largest manifest `607` bytes. |
 | Web unit tests | `cd web; npm test` | **Failed** in 2.849 s with Vite `spawn EPERM` while loading `vitest.config.ts`. |
 | Web production build | `cd web; npm run build` | **Failed** in 3.838 s after compilation with TypeScript `spawn EPERM`. It left only ignored `.next/` output; no tracked source changed. |
@@ -134,7 +134,7 @@ These are repeatable inventory/size measurements, not performance conclusions:
 | --- | ---: | --- |
 | Tracked paths | 444 | `git ls-tree -r --name-only 6184bc5`; includes docs/CI and generated files. |
 | Go test files / declarations | 51 / 134 | `rg --files backend -g '*_test.go'` and `rg '^func Test'`; declaration count, not executed-test count. |
-| Solidity test files / declarations | 55 / 627 | `rg --files contracts -g '*.t.sol'`; declaration count includes invariant helpers and is not a pass count. |
+| Solidity test files / declarations | 9 / 103 | `rg --files contracts/test contracts/fork-test -g '*.t.sol'` plus `rg -n '^\s*function (test|invariant)' contracts/test contracts/fork-test -g '*.t.sol'` (both explicitly exclude `contracts/lib`); 97 `test` and 6 `invariant` declarations. |
 | Web test files / declarations | 30 / 137 | `rg --files web -g '*.test.ts' -g '*.test.mjs' -g '*.spec.ts'`; declaration count is approximate. |
 | Backend OpenAPI | 1 file / 55,720 bytes | `backend/openapi/v1.json`. |
 | Backend sqlc output | 17 files / 164,276 bytes | `backend/internal/store/postgres/sqlc/`. |

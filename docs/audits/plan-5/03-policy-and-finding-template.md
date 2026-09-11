@@ -79,7 +79,7 @@ applicable` with a reason; they must not be omitted.
   rejected/suppressed | deferred
 - Severity: Critical | High | Medium | Low | IMPORTANT | MINOR
 - Confidence: high | medium | low
-- Primary audit task: Task 2 | Task 3 | Task 4 | Task 5 | Task 6 | Task 7
+- Primary audit task: Task 1 | Task 2 | Task 3 | Task 4 | Task 5 | Task 6 | Task 7
 - Affected asset/surface: exact component, resource, and ownership-ledger row
 - Baseline: 6184bc5febd43de99ab6cc2b6f71f7f90c878bb6
 - Attacker/failure actor and prerequisites: public user, creator, trader, RPC/provider,

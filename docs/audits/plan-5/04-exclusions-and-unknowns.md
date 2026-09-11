@@ -32,8 +32,12 @@ $refs = [regex]::Matches($text, '(?<![A-Za-z0-9_])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9
   ForEach-Object { $_.Groups[0].Value } | Sort-Object -Unique
 foreach ($ref in $refs) {
   $path, $line = $ref -split ':'
-  git cat-file -e "\${baseline}:$path"
+  $baselineLines = @(git show "${baseline}:$path")
   if ($LASTEXITCODE -ne 0) { throw "missing baseline path: $ref" }
+  $lineNumber = [int]$line
+  if ($lineNumber -lt 1 -or $lineNumber -gt $baselineLines.Count) {
+    throw "baseline line out of range: $ref (file has $($baselineLines.Count) lines)"
+  }
 }
 ```
 
@@ -76,12 +80,39 @@ policy, RPC provider behavior/SLA and archive depth, deployment bytecode evidenc
 startup path, CI environment protection and artifact retention, and real traffic/cardinality for
 performance measurements. These are not findings until a reachable control failure is shown.
 
-Task 1 also records one documentation-consistency candidate without editing the forbidden
-governing file: `AGENTS.md:37` says that no API/indexer runtime exists and that migration is the
-only executable backend entrypoint, while the baseline contains `backend/cmd/api/`,
-`backend/cmd/indexer/`, and their release/integration gates. This is an `IMPORTANT` documentation
-candidate for later reconciliation, not a product-security finding; the Task 1 scope prohibits
-editing `AGENTS.md`.
+Task 1 records the documentation-consistency issue below without editing the forbidden governing
+file. It is deferred documentation work, not a product-security finding.
+
+## P5-T1-001 — Stale runtime command guidance in AGENTS.md
+
+- State: deferred
+- Severity: IMPORTANT
+- Confidence: high
+- Primary audit task: Task 1
+- Affected asset/surface: `AGENTS.md:37`; repository setup/run instructions
+- Baseline: `6184bc5febd43de99ab6cc2b6f71f7f90c878bb6`
+- Attacker/failure actor and prerequisites: documentation consumer or operator following the
+  repository run table; no attacker privilege is required
+- Source-to-sink or failure path: stale statement says no API/indexer runtime exists and migration
+  is the only executable backend entrypoint -> operator omits API/indexer gate or assumes an
+  unavailable runtime -> audit/release evidence and operational decisions become incomplete
+- Exact evidence: `AGENTS.md:37` says no API/indexer runtime exists; baseline contains
+  `backend/cmd/api/`, `backend/cmd/indexer/`, `backend/Taskfile.yml:82`,
+  `backend/Taskfile.yml:103`, `scripts/verify-release.mjs:132`, and release checks
+- Impact: incorrect audit/runbook guidance and incomplete verification; no direct security exploit
+  was established
+- Counterevidence and assumptions: executable Taskfile, README, workflows, and release script
+  describe the API/indexer and cross-stack gates; `AGENTS.md` is a governing file and cannot be
+  edited by this Task 1 surface
+- Reproduction/proof method: `rg -n "No API/indexer|only executable" AGENTS.md`; inspect
+  `backend/cmd/api`, `backend/cmd/indexer`, and `backend/Taskfile.yml`
+- Proposed remediation: reconcile `AGENTS.md:37` with the current runtime and gate commands;
+  preserve the single-source-of-truth rule
+- Required regression test: documentation check that the run table names the current API,
+  indexer, migration, and release entrypoints, with command paths matching `backend/Taskfile.yml`
+- Disposition/owner: deferred; AGENTS.md owner/Claude must update and review the governing file
+  before the next audit milestone
+- Related findings and cross-task references: none; Task 7 may recheck release documentation
 
 ## Baseline caveats
 

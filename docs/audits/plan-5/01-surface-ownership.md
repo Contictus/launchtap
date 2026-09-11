@@ -11,6 +11,7 @@ primary owner. A path is assigned by its production or release role, not by file
 | `contracts/fork-test/` | Task 2 | Fork assumptions and release-facing contract behavior; Task 7 owns secret/fork configuration. |
 | `contracts/script/deployment/` | Task 2 | Deployment validation semantics and pair/address assumptions; Task 7 reviews release invocation and operator exposure. |
 | `contracts/script/local/` | Task 7 | Local deployment/bootstrap scripts are release and environment boundaries; Task 2 checks contract assumptions they encode. |
+| Root files `contracts/script/*.s.sol` | Task 2 | Foundry deployment/vector/fixture scripts encode contract behavior and evidence generation; Task 7 cross-reviews invocation, provenance, and operator exposure. |
 | `contracts/abi/v1/`, `contracts/fixtures/v1/`, `contracts/vectors/v1/`, `contracts/storage-layout/v1/`, `contracts/sizes/v1/` | Task 2 | These are contract evidence inputs; Task 7 verifies provenance and drift. |
 | `contracts/deployments/` | Task 7 | Reviewed deployment manifests and generated copies are release trust inputs; Task 2 checks address/economic binding. |
 | `contracts/coverage/`, `contracts/slither/` | Task 7 | Generated/scanner evidence provenance; Task 2 re-justifies contract findings and suppressions. |
@@ -28,7 +29,7 @@ primary owner. A path is assigned by its production or release role, not by file
 | `backend/internal/indexer/`, `backend/internal/ledger/`, `backend/internal/holder/` | Task 3 | Canonical event ingestion, reorg/restart behavior, and domain event ownership. |
 | `backend/internal/store/postgres/*.go` and `postgrestest/` | Task 3 | Transactions, ownership, canonical data, projections, and database behavior. |
 | `backend/internal/store/postgres/migrations/`, `backend/internal/store/postgres/queries/` | Task 3 | Schema/query semantics, migration lifecycle, and canonical persistence rules. |
-| `backend/deployments/*.go` and `backend/deployments/testdata/` | Task 7 | Deployment registry schemas and copied manifests are release trust inputs; runtime consumers remain cross-reviewed. |
+| `backend/deployments/*.go` | Task 7 | Deployment registry schemas are release trust inputs; runtime consumers remain cross-reviewed. |
 | `backend/internal/curve/` | Task 2 | Go is a deterministic mirror of Solidity curve math; Task 2 owns differential/economic equivalence. |
 | `backend/internal/stats/` | Task 6 | Aggregation architecture, measured rebuild cost, allocation, and query/resource efficiency; Task 3 checks canonical inputs. |
 | `backend/openapi/`, `backend/deployments/testdata/`, `backend/internal/chain/abi/v1/`, `backend/internal/chain/testdata/`, `backend/internal/curve/testdata/`, `backend/internal/store/postgres/sqlc/` | Task 7 | Generated/copied artifacts are supply-chain/provenance surfaces; Tasks 2–4 own semantic consumers. |

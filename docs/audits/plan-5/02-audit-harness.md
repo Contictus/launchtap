@@ -48,7 +48,7 @@ relevant output. The sequence is deliberately explicit so a missing prerequisite
 | 2 | `pwsh -NoProfile -ExecutionPolicy Bypass -File contracts/scripts/check.ps1 all` | Foundry, gitlinks, `forge`; normal contract test/size/layout/vector gate. |
 | 3 | `cd backend; go run github.com/go-task/task/v3/cmd/task@v3.53.1 verify` | Go, network or cached Task module, Docker PostgreSQL, Foundry/Anvil; backend build, unit/race, integration, lint, migrations, generated drift, and Anvil indexer evidence. |
 | 4 | `cd web; npm ci` | Node/npm and lockfile; clean dependency install. |
-| 5 | `cd web; npm run web-api-diff; npm run web-contracts-diff; npm run format:check; npm run lint; npm run typecheck; npm test` | Node/npm and installed dependencies; generated, static, type, and unit evidence. Run as separate commands when collecting durations. |
+| 5 | `cd web; npm run web-api-diff; npm run web-contracts-diff; npm run format:check; npm run lint; npm run typecheck; npm test` | Node/npm and installed dependencies. `web-api-diff` uses committed OpenAPI; `web-contracts-diff` additionally requires a successful `cd contracts; forge build --no-lint` and `contracts/out/`. Run as separate commands when collecting durations. |
 | 6 | `cd web; npm run build; npm run verify:bundle; npm run test:e2e` | Node/npm, system Chrome or `PLAYWRIGHT_EXECUTABLE_PATH`; production build, bundle budgets/secret scan, and browser evidence. |
 | 7 | `cd web; npm run test:anvil` | Node/npm, Foundry Anvil, PowerShell 7, and Docker PostgreSQL; real local cross-stack transaction evidence. |
 | 8 | `pwsh -NoProfile -ExecutionPolicy Bypass -File contracts/scripts/check.ps1 release` | Foundry, Slither, Python, and conditional fork RPC; contract release/fork evidence. |
@@ -65,7 +65,7 @@ not a substitute for production controls.
 | --- | --- |
 | Baseline commit cannot be resolved, or checkout is dirty before the run | Stop. Do not audit another revision and do not call the result a baseline audit. |
 | A gitlink cannot be initialized or its head cannot be verified | Mark contract-dependent tasks blocked/conditional; preserve the expected gitlink ID and exact error. Do not replace it with a floating dependency. |
-| `forge` or `anvil` is missing | Skip contract/Anvil gates with `tool missing`; run unrelated static checks only. Do not claim contract or cross-stack coverage. |
+| `forge` or `anvil` is missing | Skip contract/Anvil gates with `tool missing`; if `forge` or `contracts/out/` is unavailable, skip only `web-contracts-diff` and continue `web-api-diff`, format, lint, typecheck, and unit checks. Do not claim contract or cross-stack coverage. |
 | Docker/PostgreSQL is unavailable | Skip integration, migration lifecycle, database, and Anvil gates; retain unit/static results and report the missing service. |
 | Chrome or Playwright executable is unavailable | Skip browser/E2E gates. The release script is expected to fail closed rather than silently use a different browser. |
 | Network access or an uncached pinned tool/module is unavailable | Record the exact dependency-fetch failure. Do not change lockfiles, versions, or source to make the run pass. |

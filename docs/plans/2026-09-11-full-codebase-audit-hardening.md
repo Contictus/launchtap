@@ -4,8 +4,8 @@
 > review. This plan audits the immutable completed implementation before authorizing changes.
 > Audit hypotheses are not findings, and green tests are not proof of production safety.
 
-**Status:** Pre-flight plan and repository threat model complete. Audit execution and remediation
-have not started.
+**Status:** Task 1 baseline, architecture, policy, and audit harness complete; independent review
+fixes applied. Tasks 2–7 have not started. Task 8 remediation is not authorized.
 
 **Audit baseline:** `6184bc5febd43de99ab6cc2b6f71f7f90c878bb6` (`main` milestone merge)
 
