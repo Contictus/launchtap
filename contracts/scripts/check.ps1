@@ -49,7 +49,7 @@ try {
         Invoke-Checked { forge fmt --check }
     }
     if ($Target -in @("all", "release", "build")) {
-        Invoke-Checked { forge build }
+        Invoke-Checked { forge build --no-lint }
         Invoke-WithFoundryProfile "fork" { forge build --no-lint }
     }
     if ($Target -in @("all", "release", "goldens")) {
