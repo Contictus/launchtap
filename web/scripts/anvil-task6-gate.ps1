@@ -85,8 +85,11 @@ function Wait-Http([string]$Url, [int]$ExpectedStatus = 200, [int]$Attempts = 12
 function Wait-Postgres {
     for ($attempt = 0; $attempt -lt 120; $attempt++) {
         try {
-            & docker exec $postgresContainer pg_isready -U postgres -d postgres | Out-Null
-            if ($LASTEXITCODE -eq 0) { return }
+            # Do not pipe this native command: on pwsh/Linux the pipeline can mask
+            # docker exec's exit code and race the container's readiness.
+            $readyOutput = & docker exec $postgresContainer pg_isready -U postgres -d postgres 2>$null
+            $readyExitCode = $LASTEXITCODE
+            if ($readyExitCode -eq 0) { return }
         } catch { }
         Start-Sleep -Milliseconds 250
     }
