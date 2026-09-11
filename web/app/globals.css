@@ -1038,6 +1038,7 @@ h2 {
   .app-content {
     margin-left: 0;
     padding: 0 24px;
+    padding-bottom: 92px;
   }
   .mobile-topbar {
     display: flex;
@@ -1087,7 +1088,7 @@ h2 {
 }
 @media (max-width: 767px) {
   .app-content {
-    padding: 0 16px;
+    padding: 0 16px 92px;
     overflow-x: hidden;
   }
   .content-topline {

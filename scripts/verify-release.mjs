@@ -7,6 +7,14 @@ const windows = process.platform === "win32";
 const npm = windows ? "npm.cmd" : "npm";
 const task = ["run", "github.com/go-task/task/v3/cmd/task@v3.53.1", "verify"];
 
+function selectedTarget() {
+  const argument = process.argv.find((value) => value.startsWith("--target="));
+  const target = argument ? argument.slice("--target=".length) : process.env.RELEASE_TARGET ?? "anvil";
+  if (target !== "production" && target !== "anvil")
+    throw new Error(`Unknown release target: ${target}. Use production or anvil.`);
+  return target;
+}
+
 function required(command) {
   const probe = spawnSync(windows ? "where.exe" : "which", [command], { stdio: "ignore" });
   if (probe.status !== 0) throw new Error(`Required command is missing: ${command}`);
@@ -20,6 +28,7 @@ function run(command, args, cwd, env = {}) {
 }
 
 try {
+  const target = selectedTarget();
   for (const command of ["forge", "go", npm]) required(command);
   if (!fs.existsSync(path.join(root, "contracts", "scripts", "check.ps1"))) throw new Error("Contract gate script is missing");
   if (!fs.existsSync(path.join(root, "backend", "Taskfile.yml"))) throw new Error("Backend Taskfile is missing");
@@ -30,6 +39,14 @@ try {
   run(shell, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "contracts/scripts/check.ps1", "all"], root);
   run("go", task, path.join(root, "backend"));
   run(npm, ["ci"], path.join(root, "web"));
+  // The selected target is part of the release gate. Production cannot proceed
+  // without real reviewed deployment, Privy, API, RPC, and public-origin values.
+  run(
+    npm,
+    ["run", target === "production" ? "verify:release" : "verify:anvil-config", "--", target === "production" ? "--production" : "--anvil"],
+    path.join(root, "web"),
+    target === "anvil" ? { NEXT_PUBLIC_E2E_FIXTURE: "1" } : {},
+  );
   run(npm, ["run", "web-api-diff"], path.join(root, "web"));
   run(npm, ["run", "web-contracts-diff"], path.join(root, "web"));
   run(npm, ["run", "format:check"], path.join(root, "web"));
@@ -41,7 +58,7 @@ try {
   run(npm, ["run", "test:e2e"], path.join(root, "web"));
   // The Anvil gate is mandatory: it starts and checks Anvil, API, indexer, and PostgreSQL itself.
   run(npm, ["run", "test:anvil"], path.join(root, "web"));
-  console.log("\nRelease verification passed: contracts, backend, web, browser, and Anvil gates completed.");
+  console.log(`\nRelease verification passed for ${target}: contracts, backend, web, browser, and Anvil gates completed.`);
 } catch (error) {
   console.error(`\nRelease verification failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);

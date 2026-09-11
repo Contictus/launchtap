@@ -20,6 +20,7 @@ export function validateReleaseEnvironment(
       "NEXT_PUBLIC_DEPLOYMENT_ID",
       "NEXT_PUBLIC_API_BASE_URL",
       "NEXT_PUBLIC_RPC_URL",
+      "NEXT_PUBLIC_WEB_ORIGIN",
     ]) {
       const value = env[key]?.trim();
       if (value && forbiddenProductionValue.test(value))

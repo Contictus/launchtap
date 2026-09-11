@@ -12,6 +12,14 @@ describe("safe logging", () => {
     ).toEqual({ Authorization: "[REDACTED]", signature: "[REDACTED]", ok: "value" });
   });
 
+  it("scrubs mixed-case long hexadecimal values", () => {
+    expect(redactLogValue(`0X${"aB".repeat(40)}`)).toBe("[REDACTED]");
+    expect(scrubTelemetry(new Error(`provider 0x${"fE".repeat(40)}`))).toEqual({
+      name: "Error",
+      message: "[REDACTED]",
+    });
+  });
+
   it("scrubs error objects without retaining provider payloads", () => {
     const scrubbed = scrubTelemetry(new Error("RPC failed: Bearer very-secret-token"));
     expect(scrubbed).toEqual({ name: "Error", message: "[REDACTED]" });

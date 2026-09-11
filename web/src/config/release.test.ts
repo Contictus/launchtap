@@ -7,6 +7,7 @@ const valid = {
   NEXT_PUBLIC_CHAIN_ID: "46630",
   NEXT_PUBLIC_API_BASE_URL: "https://api.launchpad.example",
   NEXT_PUBLIC_RPC_URL: "https://rpc.launchpad.example",
+  NEXT_PUBLIC_WEB_ORIGIN: "https://launchpad.example",
 };
 
 describe("validateReleaseEnvironment", () => {

@@ -52,7 +52,7 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "desktop",
+      name: "small-laptop",
       use: {
         ...devices["Desktop Chrome"],
         ...desktopBrowserOptions,
@@ -70,8 +70,9 @@ export default defineConfig({
       name: "reduced-motion",
       use: {
         ...devices["Desktop Chrome"],
+        reducedMotion: "reduce",
         ...desktopBrowserOptions,
-      },
+      } as never,
     },
   ],
 });
