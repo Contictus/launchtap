@@ -13,7 +13,7 @@ import (
 
 const listProfileActions = `-- name: ListProfileActions :many
 SELECT t.token_address, t.curve_address, t.name, t.symbol, t.phase,
-       CASE WHEN t.creator = $1 THEN GREATEST(
+       CASE WHEN t.creator = ANY($1::bytea[]) THEN GREATEST(
            COALESCE((SELECT sum(trade.creator_fee) FROM trades AS trade
                      WHERE trade.chain_id = t.chain_id AND trade.token_address = t.token_address), 0::numeric)
            - COALESCE((SELECT sum(claim.amount) FROM creator_fee_claims AS claim
@@ -22,30 +22,34 @@ SELECT t.token_address, t.curve_address, t.name, t.symbol, t.phase,
        ) ELSE 0::numeric END::numeric(78, 0) AS creator_fee_amount,
        GREATEST(
            COALESCE((SELECT sum(credit.amount) FROM refund_credits AS credit
-                     WHERE credit.chain_id = t.chain_id AND credit.token_address = t.token_address AND credit.account = $1), 0::numeric)
+                     WHERE credit.chain_id = t.chain_id AND credit.token_address = t.token_address
+                       AND credit.account = ANY($1::bytea[])), 0::numeric)
            - COALESCE((SELECT sum(claim.amount) FROM refund_claims AS claim
-                       WHERE claim.chain_id = t.chain_id AND claim.token_address = t.token_address AND claim.account = $1), 0::numeric),
+                       WHERE claim.chain_id = t.chain_id AND claim.token_address = t.token_address
+                         AND claim.account = ANY($1::bytea[])), 0::numeric),
            0::numeric
        )::numeric(78, 0) AS refund_amount
 FROM tokens AS t
 WHERE t.chain_id = $2
   AND (
-      (t.creator = $1
+      (t.creator = ANY($1::bytea[])
        AND COALESCE((SELECT sum(trade.creator_fee) FROM trades AS trade
                      WHERE trade.chain_id = t.chain_id AND trade.token_address = t.token_address), 0::numeric)
            - COALESCE((SELECT sum(claim.amount) FROM creator_fee_claims AS claim
                        WHERE claim.chain_id = t.chain_id AND claim.token_address = t.token_address), 0::numeric) > 0)
       OR
       (COALESCE((SELECT sum(credit.amount) FROM refund_credits AS credit
-                 WHERE credit.chain_id = t.chain_id AND credit.token_address = t.token_address AND credit.account = $1), 0::numeric)
+                 WHERE credit.chain_id = t.chain_id AND credit.token_address = t.token_address
+                   AND credit.account = ANY($1::bytea[])), 0::numeric)
        - COALESCE((SELECT sum(claim.amount) FROM refund_claims AS claim
-                   WHERE claim.chain_id = t.chain_id AND claim.token_address = t.token_address AND claim.account = $1), 0::numeric) > 0)
+                   WHERE claim.chain_id = t.chain_id AND claim.token_address = t.token_address
+                     AND claim.account = ANY($1::bytea[])), 0::numeric) > 0)
   )
 ORDER BY t.token_address ASC
 `
 
 type ListProfileActionsParams struct {
-	Wallet  Address
+	Wallets [][]byte
 	ChainID int64
 }
 
@@ -60,7 +64,7 @@ type ListProfileActionsRow struct {
 }
 
 func (q *Queries) ListProfileActions(ctx context.Context, arg ListProfileActionsParams) ([]ListProfileActionsRow, error) {
-	rows, err := q.db.Query(ctx, listProfileActions, arg.Wallet, arg.ChainID)
+	rows, err := q.db.Query(ctx, listProfileActions, arg.Wallets, arg.ChainID)
 	if err != nil {
 		return nil, err
 	}
