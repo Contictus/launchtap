@@ -89,7 +89,10 @@ function Wait-Postgres {
             # docker exec's exit code and race the container's readiness.
             $readyOutput = & docker exec $postgresContainer pg_isready -U postgres -d postgres 2>$null
             $readyExitCode = $LASTEXITCODE
-            if ($readyExitCode -eq 0) { return }
+            if ($readyExitCode -eq 0) {
+                $probeOutput = & docker exec $postgresContainer psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT 1" 2>$null
+                if ($LASTEXITCODE -eq 0) { return }
+            }
         } catch { }
         Start-Sleep -Milliseconds 250
     }

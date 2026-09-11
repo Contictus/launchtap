@@ -16,6 +16,7 @@ test("Task 6 gate selects platform commands and paths at runtime", () => {
   assert.doesNotMatch(gate, /Invoke-Checked\s+"powershell\.exe"/);
   assert.doesNotMatch(gate, /Invoke-Checked\s+"npm\.cmd"/);
   assert.doesNotMatch(gate, /C:\\\\Users\\\$env:USERNAME/);
+  assert.match(gate, /psql.*SELECT 1/);
 });
 
 test("Playwright accepts an environment executable and keeps the Windows fallback", () => {
