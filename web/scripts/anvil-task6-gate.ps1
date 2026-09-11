@@ -28,10 +28,10 @@ $apiProcess = $null
 $indexerProcess = $null
 $postgresStarted = $false
 $oldGoCache = $env:GOCACHE
-$isWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
-$powershellCommand = if ($isWindows) { "powershell.exe" } else { "pwsh" }
-$npmCommand = if ($isWindows) { "npm.cmd" } else { "npm" }
-$foundryExtension = if ($isWindows) { ".exe" } else { "" }
+$runningOnWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+$powershellCommand = if ($runningOnWindows) { "powershell.exe" } else { "pwsh" }
+$npmCommand = if ($runningOnWindows) { "npm.cmd" } else { "npm" }
+$foundryExtension = if ($runningOnWindows) { ".exe" } else { "" }
 
 function Get-FreeTcpPort {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)

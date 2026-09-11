@@ -8,10 +8,10 @@ const gate = fs.readFileSync(path.join(webRoot, "scripts", "anvil-task6-gate.ps1
 const playwright = fs.readFileSync(path.join(webRoot, "playwright.config.ts"), "utf8");
 
 test("Task 6 gate selects platform commands and paths at runtime", () => {
-  assert.match(gate, /\$isWindows\s*=/);
-  assert.match(gate, /\$powershellCommand\s*=\s*if \(\$isWindows\)/);
-  assert.match(gate, /\$npmCommand\s*=\s*if \(\$isWindows\)/);
-  assert.match(gate, /\$foundryExtension\s*=\s*if \(\$isWindows\)/);
+  assert.match(gate, /\$runningOnWindows\s*=/);
+  assert.match(gate, /\$powershellCommand\s*=\s*if \(\$runningOnWindows\)/);
+  assert.match(gate, /\$npmCommand\s*=\s*if \(\$runningOnWindows\)/);
+  assert.match(gate, /\$foundryExtension\s*=\s*if \(\$runningOnWindows\)/);
   assert.match(gate, /\[IO\.Path\]::PathSeparator/);
   assert.doesNotMatch(gate, /Invoke-Checked\s+"powershell\.exe"/);
   assert.doesNotMatch(gate, /Invoke-Checked\s+"npm\.cmd"/);
