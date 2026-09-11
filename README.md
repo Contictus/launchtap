@@ -11,18 +11,19 @@ indexes canonical chain data and never holds trading funds.
 | --- | --- |
 | Contract Foundations (Tasks 1–12) | Complete |
 | Backend Foundations (Tasks 1–12) | Complete |
-| Backend Indexer (Plan 2, Tasks 1–5) | Code complete; live Robinhood evidence pending |
+| Backend Indexer (Plan 2, Tasks 1–5) | Code complete; deterministic Anvil and health gates verified; live Robinhood evidence pending |
 | API and identity (Plan 3, Tasks 1–7) | Complete |
-| Web client (Plan 4) | Planned; implementation not started |
+| Web client (Plan 4, Tasks 1–8) | Code and deterministic CI complete on `dev`; live release pending |
 
 Plan 2 still needs the external Robinhood probe and reviewed chain-46630 deployment
 manifest before live operation. Its Anvil end-to-end indexer scenario and health surface are
-implemented and included in the backend verification gate. Production Privy credentials,
-origins, hosting configuration, ETH/USD enrichment, and governance inputs remain external
-release prerequisites. Plan 2 and Plan 3 form the verified backend milestone. Plan 4 is
-specified in
-[`docs/plans/2026-09-09-web-client.md`](docs/plans/2026-09-09-web-client.md); implementation has
-not started.
+implemented and included in the backend verification gate. Plan 4's eight tasks are
+implemented and covered by the web, backend, contracts, drift, browser, and Anvil gates on
+`dev`; this is deterministic repository evidence, not live Robinhood or production acceptance.
+Production Privy configuration, public API/RPC and origin values, hosting/operations ownership,
+ETH/USD enrichment, and governance/audit inputs remain external release prerequisites. The
+Forum/Memestock surface is intentionally a later plan. The milestone merge from `dev` to
+`main` remains a repository closeout step.
 
 ## Repository layout
 

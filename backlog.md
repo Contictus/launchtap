@@ -64,17 +64,24 @@
 - **Pitfalls / notes:** USD availability must not affect indexing, list correctness, quotes,
   or transaction construction.
 
-### Production governance and audit inputs
+### Production release, governance, and audit inputs
 - **Date:** 2026-09-01
 - **Reason:** production-only external coordination
 - **Where it stopped:** Contract roles and permitted actions are designed, but signer set,
   timelock delay, legal/geo policy, monitoring provider, and audit vendor are not selected.
-- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`
-- **Resume (next step):** Resolve these inputs before a production deployment checklist is
-  approved; transfer deployer authority and complete an external audit before accepting
-  mainnet funds.
+  Plan 4 additionally needs a real Privy application, verified production API/RPC endpoints
+  and web origins, hosting/domain/CSP and edge-rate-limit ownership, monitoring, rollback
+  ownership, and named incident contacts. The repository contains the deterministic release
+  gate and runbook, but it must not invent these live values.
+- **Related files:** `docs/specs/2026-09-01-contract-core-design.md`,
+  `docs/plans/2026-09-09-web-client.md`, `docs/runbooks/web-release.md`,
+  `web/.env.example`, `scripts/verify-release.mjs`
+- **Resume (next step):** Resolve the Privy, public API/RPC/origin, hosting and operator
+  inputs; then resolve governance signers/timelock/legal policy, monitoring, and external
+  audit before approving a production deployment checklist or accepting mainnet funds.
 - **Pitfalls / notes:** These do not authorize changing existing launch economics or adding
-  a reserve rescue path.
+  a reserve rescue path. Do not commit credentials, private RPC URLs, wallet keys, or guessed
+  deployment addresses.
 
 <!-- Template:
 ### <short title>
