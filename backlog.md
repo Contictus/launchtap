@@ -31,17 +31,6 @@
 - **Pitfalls / notes:** Testnet startup must remain graduation-disabled until the manifest
   is complete; never substitute mainnet addresses.
 
-### ETH/USD enrichment source
-- **Date:** 2026-09-01
-- **Reason:** non-blocking product enrichment
-- **Where it stopped:** No verified Robinhood Chain ETH/USD feed was selected. ETH-native
-  values are canonical; USD columns are nullable by design.
-- **Related files:** `docs/specs/2026-09-01-backend-core-design.md`
-- **Resume (next step):** Before USD UI work, verify an on-chain feed deployment or select
-  one cached external adapter with freshness and outage semantics.
-- **Pitfalls / notes:** USD availability must not affect indexing, list correctness, quotes,
-  or transaction construction.
-
 ### Production release, governance, and audit inputs
 - **Date:** 2026-09-01
 - **Reason:** production-only external coordination
@@ -74,6 +63,17 @@
 ---
 
 ## Done
+
+### ETH/USD enrichment source selection
+
+- **Completed:** 2026-09-11
+- **Evidence:** `docs/runbooks/eth-usd-enrichment.md` records the official Robinhood and
+  Chainlink review and selects CoinGecko’s commercial `/simple/price` API as the optional
+  cached source. The runbook defines authentication, commercial attribution, numeric
+  handling, freshness, outage, and rate-limit semantics.
+- **Boundary:** This closes source selection only. The provider adapter, source/retrieval
+  timestamps, attribution UI, and production API key remain a future implementation and
+  operations step; ETH-native indexing, quotes, and transactions remain independent.
 
 ### Robinhood RPC finality and getLogs capacity probe
 

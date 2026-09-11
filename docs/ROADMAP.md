@@ -53,7 +53,10 @@ and API contracts do not exist yet; Plan 4 does not claim it with static fixture
 
 ## Deferred operational work
 
-- ETH/USD enrichment source; ETH-native values remain canonical and USD fields nullable.
+- ETH/USD adapter implementation and production CoinGecko account/configuration; the source
+  selection and failure semantics are recorded in
+  [`docs/runbooks/eth-usd-enrichment.md`](runbooks/eth-usd-enrichment.md). ETH-native values
+  remain canonical and USD fields nullable.
 - Production governance signer set, timelock policy, monitoring, and external audit.
 - Production hosting and deployment topology after the local/testnet acceptance gate.
 

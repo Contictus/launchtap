@@ -22,7 +22,10 @@ implemented and included in the backend verification gate. Plan 4's eight tasks 
 implemented and covered by the web, backend, contracts, drift, browser, and Anvil gates on
 `dev`; this is deterministic repository evidence, not live Robinhood or production acceptance.
 Production Privy configuration, public API/RPC and origin values, hosting/operations ownership,
-ETH/USD enrichment, and governance/audit inputs remain external release prerequisites. The
+the selected ETH/USD adapter configuration, and governance/audit inputs remain external release
+prerequisites. The source-selection decision is recorded in
+[`docs/runbooks/eth-usd-enrichment.md`](docs/runbooks/eth-usd-enrichment.md); ETH-native values
+remain authoritative and the adapter is optional. The
 Forum/Memestock surface is intentionally a later plan. The milestone merge from `dev` to
 `main` remains a repository closeout step.
 
