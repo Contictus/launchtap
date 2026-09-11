@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   powerShellPrerequisiteMessage,
+  releaseCommandTimeoutMs,
+  run,
   selectPowerShellCommand,
 } from "../../scripts/verify-release.mjs";
 
@@ -17,5 +19,21 @@ describe("root release gate PowerShell selection", () => {
       "PowerShell 7 (pwsh) is required on Windows",
     );
     expect(powerShellPrerequisiteMessage("win32")).not.toContain("powershell.exe");
+  });
+
+  it("uses a bounded default and accepts a positive override", () => {
+    expect(releaseCommandTimeoutMs({})).toBe(10 * 60 * 1000);
+    expect(releaseCommandTimeoutMs({ RELEASE_COMMAND_TIMEOUT_MS: "2500" })).toBe(2500);
+    expect(releaseCommandTimeoutMs({ RELEASE_COMMAND_TIMEOUT_MS: "0" })).toBe(
+      10 * 60 * 1000,
+    );
+  });
+
+  it("terminates a child that exceeds the release command timeout", () => {
+    expect(() =>
+      run(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], process.cwd(), {}, {
+        timeoutMs: 50,
+      }),
+    ).toThrow(/timed out after 50ms/);
   });
 });

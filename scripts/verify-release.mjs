@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
 const task = ["run", "github.com/go-task/task/v3/cmd/task@v3.53.1", "verify"];
+const defaultReleaseCommandTimeoutMs = 10 * 60 * 1000;
 
 export function selectPowerShellCommand(platform = process.platform) {
   // PowerShell 7 is required by the contract scripts on every host. Windows
@@ -50,14 +51,47 @@ function required(command, platform = process.platform) {
     );
 }
 
-function run(command, args, cwd, env = {}) {
+export function releaseCommandTimeoutMs(env = process.env) {
+  const configured = Number(env.RELEASE_COMMAND_TIMEOUT_MS ?? "");
+  return Number.isInteger(configured) && configured > 0
+    ? configured
+    : defaultReleaseCommandTimeoutMs;
+}
+
+function terminateProcessTree(pid, platform = process.platform) {
+  if (!pid) return;
+  if (platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      stdio: "ignore",
+    });
+    return;
+  }
+  try {
+    // run() starts Unix commands detached, making the child PID the process
+    // group ID. Kill the complete group so npm/PowerShell descendants cannot
+    // outlive a timed-out release command.
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // The direct child may already have exited after spawnSync's killSignal.
+  }
+}
+
+export function run(command, args, cwd, env = {}, options = {}) {
   console.log(`\n> ${command} ${args.join(" ")}`);
+  const timeoutMs = options.timeoutMs ?? releaseCommandTimeoutMs({ ...process.env, ...env });
   const result = spawnSync(command, args, {
     cwd,
     env: { ...process.env, ...env },
     stdio: "inherit",
     shell: false,
+    timeout: timeoutMs,
+    killSignal: "SIGTERM",
+    detached: process.platform !== "win32",
   });
+  if (result.error?.code === "ETIMEDOUT" || result.signal === "SIGTERM") {
+    terminateProcessTree(result.pid);
+    throw new Error(`${command} timed out after ${timeoutMs}ms`);
+  }
   if (result.error) throw result.error;
   if (result.status !== 0)
     throw new Error(`${command} failed with exit code ${result.status}`);
