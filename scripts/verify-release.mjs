@@ -95,6 +95,21 @@ export function runReleaseVerification(
   );
   run("go", task, path.join(root, "backend"));
   run(npm, ["ci"], path.join(root, "web"));
+  // The release gate owns its browser prerequisites. CI runners do not retain
+  // Playwright browsers between jobs, and the browser gate must not depend on
+  // an incidental system installation.
+  run(
+    npm,
+    [
+      "exec",
+      "playwright",
+      "--",
+      "install",
+      ...(process.platform === "linux" ? ["--with-deps"] : []),
+      "chromium",
+    ],
+    path.join(root, "web"),
+  );
   // The selected target is part of the release gate. Production cannot proceed
   // without real reviewed deployment, Privy, API, RPC, and public-origin values.
   run(
