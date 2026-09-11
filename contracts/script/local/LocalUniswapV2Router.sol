@@ -6,6 +6,12 @@ import { LocalUniswapV2Factory } from "./LocalUniswapV2Factory.sol";
 import { LocalUniswapV2Pair } from "./LocalUniswapV2Pair.sol";
 import { LocalWETH } from "./LocalWETH.sol";
 
+// The router is a test-only Anvil fixture, not production swap infrastructure.
+// forge-lint: disable-start(missing-zero-check)
+// forge-lint: disable-start(unused-return)
+// forge-lint: disable-start(block-timestamp)
+// forge-lint: disable-start(arbitrary-send-eth)
+
 /// @dev Anvil-only Uniswap v2 router used by the real browser transaction gate.
 contract LocalUniswapV2Router {
     uint256 private constant FEE_NUMERATOR = 997;
@@ -82,5 +88,10 @@ contract LocalUniswapV2Router {
         LocalUniswapV2Pair(pair).swap(amount0Out, amount1Out, to);
     }
 
-    receive() external payable { }
+receive() external payable { }
 }
+
+// forge-lint: disable-end(arbitrary-send-eth)
+// forge-lint: disable-end(block-timestamp)
+// forge-lint: disable-end(unused-return)
+// forge-lint: disable-end(missing-zero-check)

@@ -5,6 +5,11 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
+// The local pair intentionally mirrors the minimal Uniswap V2 surface for the
+// Anvil browser fixture; these checks are not applicable to its test-only flow.
+// forge-lint: disable-start(reentrancy-no-eth)
+// forge-lint: disable-start(reentrancy-events)
+
 /// @dev Anvil/testnet-only Uniswap v2-compatible pair surface used by deployment simulations.
 contract LocalUniswapV2Pair {
     using SafeCast for uint256;
@@ -116,3 +121,6 @@ contract LocalUniswapV2Pair {
         return a < b ? a : b;
     }
 }
+
+// forge-lint: disable-end(reentrancy-events)
+// forge-lint: disable-end(reentrancy-no-eth)
