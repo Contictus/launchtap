@@ -110,12 +110,21 @@ that comparison. Write the reviewed record as:
 contracts/deployments/config/robinhood-testnet.json
 ```
 
-Then remove the disabled marker, run the deployment artifact gate, and commit the dependency
-review as its own change. Do not remove the marker before the active file validates:
+Temporarily move the disabled marker out of `config/`, run the deployment artifact gate, and
+commit the dependency review as its own change. Moving it keeps the marker recoverable while
+the active file is being checked; restore it immediately if validation fails:
 
 ```powershell
-Remove-Item ./deployments/config/robinhood-testnet.disabled.json
-pwsh ./scripts/check-deployments.ps1
+$disabled = "./deployments/config/robinhood-testnet.disabled.json"
+$disabledPending = "./deployments/config/robinhood-testnet.disabled.pending-review.json"
+Move-Item $disabled $disabledPending
+try {
+  pwsh ./scripts/check-deployments.ps1
+  if ($LASTEXITCODE -ne 0) { throw "deployment artifact gate failed" }
+} catch {
+  Move-Item $disabledPending $disabled
+  throw
+}
 ```
 
 Expected output:
@@ -171,6 +180,8 @@ go run github.com/go-task/task/v3/cmd/task@v3.53.1 verify
 ```
 
 Only a reviewed manifest in `config/` may replace the disabled marker in a release commit.
+Delete the pending marker only in the same reviewed commit that adds the active record; do
+not commit the pending filename.
 The first testnet acceptance run must then use fresh funded test wallets and record the
 exact manifest digest, deployment block, transaction hashes, API/indexer health output, and
 reorg/finality observations. Those wallets and funding are operator actions and must not be

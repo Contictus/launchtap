@@ -32,6 +32,7 @@ operation still requires:
 1. Reviewed chain-46630 dependency and Launchpad deployment manifest. The repository-owned
    bootstrap and review procedure is documented in
    [`docs/runbooks/robinhood-testnet-deployment.md`](runbooks/robinhood-testnet-deployment.md).
+
 ### API and identity (Plan 3) — code complete
 
 Plan 3 consumes canonical and derived backend state. It owns Huma REST endpoints, finality
