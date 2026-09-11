@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 
 	"github.com/Contictus/launchtap/backend/internal/profile"
@@ -27,9 +28,17 @@ func (r ProfileReader) List(ctx context.Context, chainID int64, wallets []common
 			return err
 		}
 		for _, row := range rows {
+			creatorFees, err := profileNumeric(row.CreatorFeeAmount)
+			if err != nil {
+				return fmt.Errorf("decode profile creator fees for token %s: %w", common.Address(row.TokenAddress).Hex(), err)
+			}
+			refund, err := profileNumeric(row.RefundAmount)
+			if err != nil {
+				return fmt.Errorf("decode profile refund for token %s: %w", common.Address(row.TokenAddress).Hex(), err)
+			}
 			page.Items = append(page.Items, profile.Action{
 				Token: common.Address(row.TokenAddress), Curve: common.Address(row.CurveAddress), Name: row.Name, Symbol: row.Symbol, Phase: row.Phase,
-				CreatorFees: profileNumeric(row.CreatorFeeAmount), Refund: profileNumeric(row.RefundAmount),
+				CreatorFees: creatorFees, Refund: refund,
 			})
 		}
 		page.Snapshot = snapshot.Identity
@@ -39,9 +48,6 @@ func (r ProfileReader) List(ctx context.Context, chainID int64, wallets []common
 	return page, err
 }
 
-func profileNumeric(value pgtype.Numeric) *big.Int {
-	if value.Int == nil {
-		return new(big.Int)
-	}
-	return new(big.Int).Set(value.Int)
+func profileNumeric(value pgtype.Numeric) (*big.Int, error) {
+	return numericBigExact(value)
 }

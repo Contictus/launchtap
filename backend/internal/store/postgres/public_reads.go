@@ -280,15 +280,40 @@ func (r ProtocolReader) ReadProtocolDaily(ctx context.Context, chainID int64, qu
 }
 
 func numericBig(v pgtype.Numeric) *big.Int {
+	n, _ := numericBigWithExponent(v, false)
+	return n
+}
+
+// numericBigExact decodes a PostgreSQL NUMERIC without losing its exponent.
+// Profile action amounts are NUMERIC(78,0), so a negative exponent is valid
+// when it represents an exact integer (for example, 100e-2 = 1) and must
+// reject a fractional value instead of truncating it silently.
+func numericBigExact(v pgtype.Numeric) (*big.Int, error) {
 	if !v.Valid || v.Int == nil {
-		return new(big.Int)
+		return nil, fmt.Errorf("numeric value is null")
 	}
-	if v.Exp == 0 {
-		return new(big.Int).Set(v.Int)
+	if v.NaN || v.InfinityModifier != pgtype.Finite {
+		return nil, fmt.Errorf("numeric value is not finite")
+	}
+	return numericBigWithExponent(v, true)
+}
+
+func numericBigWithExponent(v pgtype.Numeric, exact bool) (*big.Int, error) {
+	if !v.Valid || v.Int == nil {
+		return new(big.Int), nil
 	}
 	n := new(big.Int).Set(v.Int)
 	if v.Exp > 0 {
-		return n.Mul(n, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(v.Exp)), nil))
+		return n.Mul(n, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(v.Exp)), nil)), nil
 	}
-	return n.Quo(n, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-v.Exp)), nil))
+	if v.Exp == 0 {
+		return n, nil
+	}
+	divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-v.Exp)), nil)
+	quotient, remainder := new(big.Int), new(big.Int)
+	quotient.QuoRem(n, divisor, remainder)
+	if exact && remainder.Sign() != 0 {
+		return nil, fmt.Errorf("numeric value is fractional")
+	}
+	return quotient, nil
 }
