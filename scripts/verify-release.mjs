@@ -95,9 +95,11 @@ export function runReleaseVerification(
   );
   run("go", task, path.join(root, "backend"));
   run(npm, ["ci"], path.join(root, "web"));
-  // The release gate owns its browser prerequisites. CI runners do not retain
-  // Playwright browsers between jobs, and the browser gate must not depend on
-  // an incidental system installation.
+  // The release gate owns its browser binary prerequisite. CI runners do not
+  // retain Playwright browsers between jobs, and the browser gate must not
+  // depend on an incidental system installation. Hosted runners provide the
+  // required Chromium libraries; avoid an apt dependency install here because
+  // it is both redundant and not deterministic across runner images.
   run(
     npm,
     [
@@ -105,7 +107,6 @@ export function runReleaseVerification(
       "playwright",
       "--",
       "install",
-      ...(process.platform === "linux" ? ["--with-deps"] : []),
       "chromium",
     ],
     path.join(root, "web"),
