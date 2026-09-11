@@ -38,7 +38,10 @@ jobs:
           --health-cmd "pg_isready -U postgres -d launchpad_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      RELEASE_TARGET: ${{ github.event.inputs.target || 'production' }}
+      # Pull requests exercise the deterministic Anvil release gate. Production
+      # validation remains fail-closed and is available only when explicitly
+      # selected through workflow_dispatch.
+      RELEASE_TARGET: ${{ github.event_name == 'pull_request' && 'anvil' || github.event.inputs.target || 'production' }}
       NEXT_PUBLIC_PRIVY_APP_ID: ${{ vars.NEXT_PUBLIC_PRIVY_APP_ID }}
       NEXT_PUBLIC_DEPLOYMENT_ID: ${{ vars.NEXT_PUBLIC_DEPLOYMENT_ID }}
       NEXT_PUBLIC_CHAIN_ID: ${{ vars.NEXT_PUBLIC_CHAIN_ID }}
@@ -49,7 +52,7 @@ jobs:
       INTEGRATION_REQUIRED: "true"
     steps:
       - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
           submodules: recursive
