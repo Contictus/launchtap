@@ -35,7 +35,8 @@ contract LocalUniswapV2Router {
             : (reserve1, reserve0);
         require(amountIn > 0 && reserveIn > 0 && reserveOut > 0, "LocalRouter: liquidity");
         uint256 amountInWithFee = amountIn * FEE_NUMERATOR;
-        amounts[1] = (amountInWithFee * reserveOut) / (reserveIn * FEE_DENOMINATOR + amountInWithFee);
+        amounts[1] =
+            (amountInWithFee * reserveOut) / (reserveIn * FEE_DENOMINATOR + amountInWithFee);
         require(amounts[1] > 0, "LocalRouter: output");
     }
 
