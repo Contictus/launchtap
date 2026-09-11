@@ -10,6 +10,13 @@ export const maxAllJavaScriptBytes = 8_000_000;
 export const maxRouteManifestBytes = 500_000;
 const addressPattern = /\b0x[0-9a-f]{40}\b/gi;
 const privateKeyPattern = /(?<![0-9a-f])(?:0x)?[0-9a-f]{64}(?![0-9a-f])/gi;
+const secretAssignmentPattern =
+  /(?:private[\s._-]*key|account[\s._-]*(?:private[\s._-]*)?(?:key|secret)|secret|seed(?:[\s._-]*phrase)?|mnemonic|wallet[\s._-]*key)\s*["']?\s*(?::|=|=>)\s*["'`]?$/i;
+const highConfidenceSecretPatterns = [
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i,
+  /\b(?:sk_(?:live|test)|gh[ps]_|xox[baprs]-)[A-Za-z0-9_-]{16,}/i,
+  /\bBearer\s+[A-Za-z0-9._-]{20,}/i,
+];
 const knownAnvilAddresses = [
   "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
   "70997970c51812dc3a010c7d01b50e0d17dc79c8",
@@ -128,38 +135,36 @@ function isKnownGeneratedCryptoContext(source, start, end) {
 
 export function scanBundleText(source, filename, allowlist = reviewedAddressAllowlist()) {
   const violations = [];
+  for (const pattern of highConfidenceSecretPatterns) {
+    if (pattern.test(source)) violations.push(`sensitive value pattern in ${filename}`);
+  }
   for (const match of source.matchAll(privateKeyPattern)) {
     const value = match[0].replace(/^0x/i, "").toLowerCase();
-    const hasPrefix = /^0x/i.test(match[0]);
-    const keyContext = source
-      .slice(
-        Math.max(0, match.index - 120),
-        Math.min(source.length, match.index + match[0].length + 120),
-      )
+    const assignmentContext = source
+      .slice(Math.max(0, match.index - 180), match.index)
       .toLowerCase();
+    const isSecretAssignment = secretAssignmentPattern.test(assignmentContext);
+    // A transaction/block hash has the same shape as a private key. Shape alone
+    // is not evidence of leakage; only a secret assignment or an explicit known
+    // Anvil key is high-confidence enough to reject it.
+    if (!knownAnvilPrivateKeys.has(value) && !isSecretAssignment) continue;
     if (
-      !hasPrefix &&
       !knownAnvilPrivateKeys.has(value) &&
-      !/private[\s_-]*key|secret|seed phrase|mnemonic|wallet[\s_-]*key/.test(keyContext)
+      !isSecretAssignment &&
+      (isBytecodeOrAbiContext(source, match.index, match.index + match[0].length) ||
+        isKnownGeneratedCryptoContext(source, match.index, match.index + match[0].length))
     )
       continue;
-    if (/^(..)(?:\1){8,}$/.test(value) || /^(....)(?:\1){8,}$/.test(value)) continue;
-    if (
-      isBytecodeOrAbiContext(source, match.index, match.index + match[0].length) ||
-      isKnownGeneratedCryptoContext(source, match.index, match.index + match[0].length)
-    )
-      continue;
-    if (knownAnvilPrivateKeys.has(value) || value.length === 64)
-      violations.push(`private-key pattern in ${filename}`);
+    violations.push(`private-key pattern in ${filename}`);
   }
   for (const match of source.matchAll(addressPattern)) {
     const value = match[0].slice(2).toLowerCase();
     const context = source
       .slice(Math.max(0, match.index - 120), match.index + match[0].length + 120)
       .toLowerCase();
-    if (/asset:|network:|zeroaddress|native/.test(context)) continue;
     if (knownAnvilAddressSet.has(value))
       violations.push(`known Anvil address ${match[0]} in ${filename}`);
+    else if (/asset:|network:|zeroaddress|native/.test(context)) continue;
     else if (!allowlist.has(value) && !knownDependencyAddresses.has(value))
       violations.push(`unreviewed address ${match[0]} in ${filename}`);
   }

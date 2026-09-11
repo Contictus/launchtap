@@ -1,11 +1,22 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
-const windows = process.platform === "win32";
-const npm = windows ? "npm.cmd" : "npm";
 const task = ["run", "github.com/go-task/task/v3/cmd/task@v3.53.1", "verify"];
+
+export function selectPowerShellCommand(platform = process.platform) {
+  // PowerShell 7 is required by the contract scripts on every host. Windows
+  // PowerShell 5.1 is not a compatible fallback.
+  return "pwsh";
+}
+
+export function powerShellPrerequisiteMessage(platform = process.platform) {
+  if (platform === "win32")
+    return "PowerShell 7 (pwsh) is required on Windows to run the contract release gate; install PowerShell 7 and ensure pwsh is on PATH.";
+  return "Required command is missing: pwsh";
+}
 
 export function selectedTarget(argv = process.argv, env = process.env) {
   const argument = argv.find((value) => value.startsWith("--target="));
@@ -23,12 +34,20 @@ export function selectedTarget(argv = process.argv, env = process.env) {
   return target;
 }
 
-function required(command) {
-  const probe = spawnSync(windows ? "where.exe" : "which", [command], {
-    stdio: "ignore",
-  });
+function required(command, platform = process.platform) {
+  const probe = spawnSync(
+    platform === "win32" ? "where.exe" : "which",
+    [command],
+    {
+      stdio: "ignore",
+    },
+  );
   if (probe.status !== 0)
-    throw new Error(`Required command is missing: ${command}`);
+    throw new Error(
+      command === "pwsh"
+        ? powerShellPrerequisiteMessage(platform)
+        : `Required command is missing: ${command}`,
+    );
 }
 
 function run(command, args, cwd, env = {}) {
@@ -44,9 +63,17 @@ function run(command, args, cwd, env = {}) {
     throw new Error(`${command} failed with exit code ${result.status}`);
 }
 
-try {
-  const target = selectedTarget();
-  for (const command of ["forge", "go", npm]) required(command);
+export function runReleaseVerification(
+  argv = process.argv,
+  env = process.env,
+  platform = process.platform,
+) {
+  const windows = platform === "win32";
+  const npm = windows ? "npm.cmd" : "npm";
+  const target = selectedTarget(argv, env);
+  const shell = selectPowerShellCommand(platform);
+  required(shell, platform);
+  for (const command of ["forge", "go", npm]) required(command, platform);
   if (!fs.existsSync(path.join(root, "contracts", "scripts", "check.ps1")))
     throw new Error("Contract gate script is missing");
   if (!fs.existsSync(path.join(root, "backend", "Taskfile.yml")))
@@ -54,8 +81,6 @@ try {
   if (!fs.existsSync(path.join(root, "web", "package-lock.json")))
     throw new Error("Web lockfile is missing");
 
-  const shell = windows ? "powershell.exe" : "pwsh";
-  required(shell);
   run(
     shell,
     [
@@ -97,9 +122,17 @@ try {
   console.log(
     `\nRelease verification passed for ${target}: contracts, backend, web, browser, and Anvil gates completed.`,
   );
-} catch (error) {
-  console.error(
-    `\nRelease verification failed: ${error instanceof Error ? error.message : String(error)}`,
-  );
-  process.exit(1);
+}
+
+const isMain =
+  process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+if (isMain) {
+  try {
+    runReleaseVerification();
+  } catch (error) {
+    console.error(
+      `\nRelease verification failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
 }
