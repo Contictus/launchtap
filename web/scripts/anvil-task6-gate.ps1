@@ -207,7 +207,10 @@ try {
     $env:TASK6_WEB_PORT = [string]$webPort
     Push-Location $webRoot
     try {
-        $playwrightArgs = @("run", "test:e2e", "--", "e2e/task6-anvil.spec.ts")
+        # The complete UI suite also has a reduced-motion project. Keep the real
+        # transaction gate at the established 14 checks (7 scenarios x desktop/mobile)
+        # while the general release suite covers reduced motion separately.
+        $playwrightArgs = @("run", "test:e2e", "--", "e2e/task6-anvil.spec.ts", "--project=desktop", "--project=mobile")
         if (-not [string]::IsNullOrWhiteSpace($PlaywrightGrep)) { $playwrightArgs += @("-g", $PlaywrightGrep) }
         Invoke-Checked $npmCommand $playwrightArgs
     }

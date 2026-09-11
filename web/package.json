@@ -24,7 +24,10 @@
     "web-api-sync": "node scripts/generate-api.mjs --write",
     "web-api-diff": "node scripts/generate-api.mjs --check",
     "web-contracts-sync": "node scripts/generate-contracts.mjs --write",
-    "web-contracts-diff": "node scripts/generate-contracts.mjs --check"
+    "web-contracts-diff": "node scripts/generate-contracts.mjs --check",
+    "verify:bundle": "node scripts/check-budgets.mjs",
+    "verify:release": "node scripts/validate-release.mjs --production",
+    "verify:anvil-config": "node scripts/validate-release.mjs --anvil"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

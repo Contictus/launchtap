@@ -15,14 +15,10 @@ test("shell routes have no serious or critical accessibility violations", async 
   }
 });
 
-test("analytics tabs expose their panels and keyboard order", async ({ page }) => {
+test("analytics unavailable state is explicit when no reviewed API is configured", async ({
+  page,
+}) => {
   await page.goto("/analytics");
-  const tabs = page.getByRole("tab");
-  await expect(tabs).toHaveCount(2);
-  await expect(tabs.nth(0)).toHaveAttribute("aria-controls", /panel/);
-  await expect(page.getByRole("tabpanel", { includeHidden: true })).toHaveCount(2);
-  await expect(tabs.nth(0)).toHaveAttribute("tabindex", "0");
-  await tabs.nth(0).press("End");
-  await expect(tabs.nth(1)).toBeFocused();
-  await expect(tabs.nth(1)).toHaveAttribute("tabindex", "0");
+  await expect(page.getByRole("heading", { name: "Analytics unavailable" })).toBeVisible();
+  await expect(page.getByText("No reviewed API deployment is connected.")).toBeVisible();
 });

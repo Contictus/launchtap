@@ -478,16 +478,18 @@ export function TokenDetail({
         </div>
       </section>
 
-      <TradingPanel
-        token={{
-          address: token.address,
-          curve: token.curve,
-          pair: token.pair,
-          phase: token.phase,
-          name: token.name,
-          symbol: token.symbol,
-        }}
-      />
+      {!useFixture ? (
+        <TradingPanel
+          token={{
+            address: token.address,
+            curve: token.curve,
+            pair: token.pair,
+            phase: token.phase,
+            name: token.name,
+            symbol: token.symbol,
+          }}
+        />
+      ) : null}
 
       <section className="workspace-panel market-panel" aria-labelledby="market-title">
         <div className="panel-head market-panel-head">
@@ -612,16 +614,18 @@ export function TokenDetail({
           ) : null}
         </div>
       </section>
-      <MetadataEditor
-        token={{
-          address: token.address,
-          description: token.description,
-          x_url: token.x_url,
-          telegram_url: token.telegram_url,
-          image_url: token.image_url,
-        }}
-        onConflict={loadToken}
-      />
+      {!useFixture ? (
+        <MetadataEditor
+          token={{
+            address: token.address,
+            description: token.description,
+            x_url: token.x_url,
+            telegram_url: token.telegram_url,
+            image_url: token.image_url,
+          }}
+          onConflict={loadToken}
+        />
+      ) : null}
     </div>
   );
 }

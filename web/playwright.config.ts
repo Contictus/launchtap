@@ -11,13 +11,13 @@ const desktopBrowserOptions = browserExecutablePath
   ? { launchOptions: { executablePath: browserExecutablePath } }
   : {};
 
+const webPort = Number(process.env.TASK6_WEB_PORT ?? "3000");
 const fixtureFactory = process.env.TASK6_ANVIL_FACTORY ?? "";
 const fixtureWeth = process.env.TASK6_ANVIL_WETH ?? "";
 const fixtureRouter = process.env.TASK6_ANVIL_ROUTER ?? "";
 const fixtureUniswapFactory = process.env.TASK6_ANVIL_UNISWAP_FACTORY ?? "";
 const fixtureRpc = process.env.TASK6_ANVIL_RPC_URL ?? "";
 const fixtureApi = process.env.TASK6_ANVIL_API_URL ?? "";
-const webPort = Number(process.env.TASK6_WEB_PORT ?? "3000");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -63,6 +63,13 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 360, height: 800 },
+        ...desktopBrowserOptions,
+      },
+    },
+    {
+      name: "reduced-motion",
+      use: {
+        ...devices["Desktop Chrome"],
         ...desktopBrowserOptions,
       },
     },

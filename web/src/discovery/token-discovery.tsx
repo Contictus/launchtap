@@ -478,7 +478,7 @@ function TokenCard({ token }: { token: TokenCardData }) {
 
 function TokenListSkeleton() {
   return (
-    <div className="token-list" aria-label="Loading token routes" aria-busy="true">
+    <div className="token-list" role="region" aria-label="Loading token routes" aria-busy="true">
       {Array.from({ length: 4 }, (_, index) => (
         <div className="token-card token-card-skeleton" key={index}>
           <Skeleton className="token-image" />

@@ -96,3 +96,5 @@ jobs:
         run: npm run test:anvil
       - name: Build web
         run: npm run build
+      - name: Enforce production bundle budgets and secret scan
+        run: npm run verify:bundle
