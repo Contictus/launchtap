@@ -12,7 +12,6 @@ type AggregationSource struct {
 	ChainID int64
 }
 
-func (s AggregationSource) Poll(context.Context) ([]stats.Claim, error) { return nil, nil }
 func (s AggregationSource) Claim(ctx context.Context, worker string, batch int32) ([]stats.Claim, error) {
 	var claims []DirtyClaim
 	err := func() error {

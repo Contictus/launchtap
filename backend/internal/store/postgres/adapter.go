@@ -43,14 +43,17 @@ func (err *InvariantConflictError) Unwrap() error {
 	return err.Cause
 }
 
-// Adapter adds persistence invariants around generated sqlc queries. It does
-// not own transaction lifecycle; db may be a pool or an existing pgx.Tx.
+// Adapter adds persistence invariants around generated sqlc queries. Most
+// methods use the supplied database handle as-is; protocol aggregate refreshes
+// open a transaction for a pool-backed adapter and reuse an existing tx.
 type Adapter struct {
-	queries *sqlc.Queries
+	queries  *sqlc.Queries
+	beginner TransactionBeginner
 }
 
 func NewAdapter(db DBTX) *Adapter {
-	return &Adapter{queries: sqlc.New(db)}
+	beginner, _ := db.(TransactionBeginner)
+	return &Adapter{queries: sqlc.New(db), beginner: beginner}
 }
 
 func (adapter *Adapter) InsertTrade(ctx context.Context, trade ledger.Trade) (ledger.InsertResult, error) {
@@ -744,6 +747,17 @@ func (adapter *Adapter) DeleteTokenStats(ctx context.Context, chainID int64, tok
 	return nil
 }
 func (adapter *Adapter) RecomputeProtocolAggregates(ctx context.Context, chainID int64) error {
+	if adapter.beginner != nil {
+		return WithinTx(ctx, adapter.beginner, func(ctx context.Context, transaction *Adapter) error {
+			return transaction.recomputeProtocolAggregates(ctx, chainID)
+		})
+	}
+	return adapter.recomputeProtocolAggregates(ctx, chainID)
+}
+
+// recomputeProtocolAggregates performs the refresh within the transaction
+// selected by RecomputeProtocolAggregates or its existing caller.
+func (adapter *Adapter) recomputeProtocolAggregates(ctx context.Context, chainID int64) error {
 	if err := adapter.queries.ClearProtocolDaily(ctx, chainID); err != nil {
 		return fmt.Errorf("clear protocol daily: %w", err)
 	}

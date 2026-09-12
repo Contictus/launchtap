@@ -6,7 +6,6 @@ import (
 )
 
 const DefaultDirtyPollInterval = 5 * time.Second
-const DefaultClaimLease = 30 * time.Second
 
 type Claim struct {
 	ChainID    int64
@@ -14,7 +13,6 @@ type Claim struct {
 	Generation int64
 }
 type DirtySource interface {
-	Poll(context.Context) ([]Claim, error)
 	Claim(context.Context, string, int32) ([]Claim, error)
 	Compute(context.Context, Claim) error
 	Complete(context.Context, Claim, string) (bool, error)

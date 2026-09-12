@@ -51,3 +51,14 @@ func TestComputeTokenStatsUsesBoundaryCandleForSignedChangeAndStableATH(t *testi
 		t.Fatalf("stats=%+v", got)
 	}
 }
+
+func TestComputeTokenStatsKeepsPriceChangeBeyondPostgresIntegerRange(t *testing.T) {
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	got := ComputeTokenStats(TokenInput{Candles: []Candle{
+		{Start: now.Add(-25 * time.Hour), Close: big.NewInt(1)},
+		{Start: now.Add(-time.Hour), Close: big.NewInt(214_750)},
+	}}, now)
+	if got.PriceChange24hBPS != 2_147_490_000 {
+		t.Fatalf("price change = %d bps, want 2147490000", got.PriceChange24hBPS)
+	}
+}
