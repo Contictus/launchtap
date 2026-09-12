@@ -4,8 +4,8 @@
 > review. This plan audits the immutable completed implementation before authorizing changes.
 > Audit hypotheses are not findings, and green tests are not proof of production safety.
 
-**Status:** Tasks 1–4 complete; Tasks 5–7 pending. Task 8 remediation is not authorized and has
-not started.
+**Status:** Tasks 1–7 complete. Task 8 remediation is next, but is not authorized and has not
+started.
 
 **Audit baseline:** `6184bc5febd43de99ab6cc2b6f71f7f90c878bb6` (`main` milestone merge)
 
