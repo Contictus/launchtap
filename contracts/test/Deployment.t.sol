@@ -6,6 +6,7 @@ import { BondingCurveV1 } from "../src/BondingCurveV1.sol";
 import { IBondingCurveV1 } from "../src/interfaces/IBondingCurveV1.sol";
 import { LaunchFactory } from "../src/LaunchFactory.sol";
 import { LaunchTypes } from "../src/types/LaunchTypes.sol";
+import { DeployLaunchpad } from "../script/DeployLaunchpad.s.sol";
 import { DeploymentValidation } from "../script/deployment/DeploymentValidation.sol";
 import { LocalUniswapV2Factory } from "../script/local/LocalUniswapV2Factory.sol";
 import { LocalUniswapV2Pair } from "../script/local/LocalUniswapV2Pair.sol";
@@ -43,6 +44,20 @@ contract DeploymentValidationHarness {
         bytes32 pairInitCodeHash
     ) external pure returns (address) {
         return DeploymentValidation.expectedPairAddress(factory, tokenA, tokenB, pairInitCodeHash);
+    }
+}
+
+contract DeployLaunchpadTestHarness is DeployLaunchpad {
+    function defaults(address weth, address uniswapFactory)
+        external
+        pure
+        returns (LaunchTypes.FactoryDefaults memory)
+    {
+        return _defaults(weth, uniswapFactory);
+    }
+
+    function assertDeployment(DeploymentResult memory result, LaunchFactory factory) external view {
+        _assertDeployment(result, factory);
     }
 }
 
@@ -84,6 +99,7 @@ contract DeploymentTest is Test {
     uint256 private constant GRADUATION_ETH = 4.2 ether;
     uint256 private constant INITIAL_VIRTUAL_ETH = 1.4 ether;
     uint256 private constant INITIAL_VIRTUAL_TOKEN = 1_066_666_666_666_666_666_666_666_667;
+    uint256 private constant EXPECTED_LAUNCH_FEE = 0.0005 ether;
     uint16 private constant TRADE_FEE_BPS = 100;
     uint16 private constant PROTOCOL_SHARE_BPS = 5000;
     address private constant LP_BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
@@ -105,6 +121,41 @@ contract DeploymentTest is Test {
 
     function setUp() external {
         validator = new DeploymentValidationHarness();
+    }
+
+    function testDeploymentScriptUsesAndAssertsSpecifiedLaunchFee() external {
+        DeployLaunchpadTestHarness deployment = new DeployLaunchpadTestHarness();
+        LocalWETH weth = new LocalWETH();
+        LocalUniswapV2Factory uniswapFactory = new LocalUniswapV2Factory();
+        BondingCurveV1 implementation = new BondingCurveV1();
+        LaunchTypes.FactoryDefaults memory defaults =
+            deployment.defaults(address(weth), address(uniswapFactory));
+        assertEq(defaults.launchFee, EXPECTED_LAUNCH_FEE);
+
+        LaunchFactory factory = _factoryWithDefaults(address(implementation), defaults);
+        assertEq(factory.launchFee(), EXPECTED_LAUNCH_FEE);
+
+        DeployLaunchpad.DeploymentResult memory result = DeployLaunchpad.DeploymentResult({
+            target: DeploymentValidation.Target.Anvil,
+            deployer: address(0xD3E1),
+            pauseAuthority: PAUSE_AUTHORITY,
+            timelock: TIMELOCK,
+            protocolTreasury: TREASURY,
+            weth: address(weth),
+            uniswapFactory: address(uniswapFactory),
+            uniswapRouter: address(0),
+            pairInitCodeHash: bytes32(0),
+            wethRuntimeCodeHash: bytes32(0),
+            uniswapFactoryRuntimeCodeHash: bytes32(0),
+            curveImplementation: address(implementation),
+            launchFactory: address(factory)
+        });
+        deployment.assertDeployment(result, factory);
+
+        defaults.launchFee = 0;
+        LaunchFactory zeroFeeFactory = _factoryWithDefaults(address(implementation), defaults);
+        vm.expectRevert(bytes("launch fee mismatch"));
+        deployment.assertDeployment(result, zeroFeeFactory);
     }
 
     function testAnvilStackDeploysLaunchpadAndGraduatesThroughLocalPair() external {
@@ -357,6 +408,22 @@ contract DeploymentTest is Test {
                     uniswapFactory: uniswapFactory,
                     launchFee: 0
                 })
+            })
+        );
+    }
+
+    function _factoryWithDefaults(
+        address implementation,
+        LaunchTypes.FactoryDefaults memory defaults
+    ) private returns (LaunchFactory) {
+        return new LaunchFactory(
+            LaunchTypes.FactoryInitialization({
+                pauseAuthority: PAUSE_AUTHORITY,
+                timelock: TIMELOCK,
+                protocolTreasury: TREASURY,
+                engineVersion: ENGINE_VERSION,
+                implementation: implementation,
+                defaults: defaults
             })
         );
     }

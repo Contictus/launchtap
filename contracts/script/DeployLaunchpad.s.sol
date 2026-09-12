@@ -20,6 +20,7 @@ contract DeployLaunchpad is Script {
     uint256 private constant INITIAL_VIRTUAL_TOKEN = 1_066_666_666_666_666_666_666_666_667;
     uint16 private constant TRADE_FEE_BPS = 100;
     uint16 private constant PROTOCOL_SHARE_BPS = 5000;
+    uint256 private constant LAUNCH_FEE = 0.0005 ether;
 
     struct DeploymentResult {
         DeploymentValidation.Target target;
@@ -112,7 +113,10 @@ contract DeployLaunchpad is Script {
         _assertDeployment(result, factory);
     }
 
-    function _assertDeployment(DeploymentResult memory result, LaunchFactory factory) private view {
+    function _assertDeployment(DeploymentResult memory result, LaunchFactory factory)
+        internal
+        view
+    {
         require(factory.pauseAuthority() == result.pauseAuthority, "pause authority mismatch");
         require(factory.timelock() == result.timelock, "timelock mismatch");
         require(factory.protocolTreasury() == result.protocolTreasury, "protocol treasury mismatch");
@@ -123,12 +127,13 @@ contract DeployLaunchpad is Script {
         require(factory.engineEnabled(ENGINE_VERSION), "engine disabled");
         require(factory.weth() == result.weth, "WETH mismatch");
         require(factory.uniswapFactory() == result.uniswapFactory, "factory mismatch");
+        require(factory.launchFee() == LAUNCH_FEE, "launch fee mismatch");
         require(factory.pauseAuthority() != result.deployer, "deployer retains pause authority");
         require(factory.timelock() != result.deployer, "deployer retains timelock authority");
     }
 
     function _defaults(address weth, address uniswapFactory)
-        private
+        internal
         pure
         returns (LaunchTypes.FactoryDefaults memory)
     {
@@ -145,7 +150,7 @@ contract DeployLaunchpad is Script {
             }),
             weth: weth,
             uniswapFactory: uniswapFactory,
-            launchFee: 0
+            launchFee: LAUNCH_FEE
         });
     }
 
