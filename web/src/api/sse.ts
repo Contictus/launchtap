@@ -2,7 +2,7 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { ApiEvent } from "./types";
 
 export type EventSourceLike = {
-  addEventListener: (type: string, listener: (event: MessageEvent<string>) => void) => void;
+  addEventListener: (type: string, listener: (event: Event) => void) => void;
   close: () => void;
 };
 export type EventSourceFactory = (url: string) => EventSourceLike;
@@ -13,6 +13,7 @@ export class SseInvalidationStream {
   private reconnecting = false;
   private stopped = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private stableConnectionTimer: ReturnType<typeof setTimeout> | null = null;
   private retryAttempt = 0;
   private recoveryAbortController: AbortController | null = null;
   constructor(
@@ -39,6 +40,8 @@ export class SseInvalidationStream {
     this.recoveryAbortController = null;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
+    this.stableConnectionTimer = null;
     this.source?.close();
     this.source = null;
   }
@@ -48,10 +51,21 @@ export class SseInvalidationStream {
     const factory = this.options.eventSourceFactory ?? ((url) => new EventSource(url));
     const source = factory(this.options.url);
     this.source = source;
+    source.addEventListener("open", () => {
+      if (this.source !== source) return;
+      if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
+      this.stableConnectionTimer = setTimeout(() => {
+        this.stableConnectionTimer = null;
+        if (this.source === source) this.retryAttempt = 0;
+      }, 30_000);
+    });
     for (const eventType of ["launch", "token", "reorg"]) {
-      source.addEventListener(eventType, (event) => this.handleEvent(eventType, event));
+      source.addEventListener(eventType, (event) => {
+        if (this.source === source) this.handleEvent(eventType, event as MessageEvent<string>);
+      });
     }
     source.addEventListener("error", () => {
+      if (this.source !== source) return;
       void this.reconnect();
     });
   }
@@ -64,6 +78,9 @@ export class SseInvalidationStream {
       return;
     }
     if (!isApiEvent(eventType, data)) return;
+    this.retryAttempt = 0;
+    if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
+    this.stableConnectionTimer = null;
     const queryKey = this.options.queryKeyForEvent?.({ event: eventType, data } as ApiEvent);
     if (queryKey) void this.options.queryClient.invalidateQueries({ queryKey });
   }
@@ -71,8 +88,11 @@ export class SseInvalidationStream {
   private async reconnect() {
     if (this.reconnecting || this.stopped) return;
     this.reconnecting = true;
+    if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
+    this.stableConnectionTimer = null;
     this.source?.close();
     this.source = null;
+    this.retryAttempt += 1;
     this.scheduleRecovery();
     this.reconnecting = false;
   }
@@ -87,8 +107,7 @@ export class SseInvalidationStream {
     }
     const baseDelay = retry.baseDelayMs ?? 250;
     const maxDelay = retry.maxDelayMs ?? 5_000;
-    const delay =
-      this.retryAttempt === 0 ? 0 : Math.min(maxDelay, baseDelay * 2 ** (this.retryAttempt - 1));
+    const delay = Math.min(maxDelay, baseDelay * 2 ** Math.max(0, this.retryAttempt - 1));
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       void this.performRecovery();
@@ -102,7 +121,6 @@ export class SseInvalidationStream {
     try {
       // Ordering is intentional: refill canonical REST state before accepting new hints.
       await this.options.refetchSnapshot(abortController.signal);
-      this.retryAttempt = 0;
       if (!this.stopped) this.connect();
     } catch {
       this.retryAttempt += 1;

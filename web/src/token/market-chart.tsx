@@ -9,7 +9,7 @@ import {
   createChart,
   type IChartApi,
 } from "lightweight-charts";
-import type { CandleChartPoint } from "./chart-data";
+import { setChartSnapshot, type CandleChartPoint, type ChartSnapshotSeries } from "./chart-data";
 
 export function MarketChart({
   points,
@@ -22,9 +22,8 @@ export function MarketChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<{
     setData: (data: unknown[]) => void;
-    update: (data: unknown) => void;
   } | null>(null);
-  const volumeRef = useRef<{ update: (data: unknown) => void } | null>(null);
+  const volumeRef = useRef<{ setData: (data: unknown[]) => void } | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -59,29 +58,16 @@ export function MarketChart({
       color: "#38516B",
     });
     chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
-    if (mode === "candles") {
-      priceSeries.setData(
-        points.map((point) => ({
-          time: point.time as never,
-          open: point.open,
-          high: point.high,
-          low: point.low,
-          close: point.close,
-        })),
-      );
-    } else {
-      priceSeries.setData(
-        points.map((point) => ({ time: point.time as never, value: point.close })),
-      );
-    }
-    volumeSeries.setData(
-      points.map((point) => ({ time: point.time as never, value: point.volume })),
+    setChartSnapshot(
+      priceSeries as unknown as ChartSnapshotSeries,
+      volumeSeries as unknown as ChartSnapshotSeries,
+      points,
+      mode,
     );
     seriesRef.current = priceSeries as unknown as {
       setData: (data: unknown[]) => void;
-      update: (data: unknown) => void;
     };
-    volumeRef.current = volumeSeries as unknown as { update: (data: unknown) => void };
+    volumeRef.current = volumeSeries as unknown as { setData: (data: unknown[]) => void };
     chart.timeScale().fitContent();
     const observer = new ResizeObserver(() => {
       if (host.clientWidth > 0) chart.applyOptions({ width: host.clientWidth });
@@ -94,24 +80,15 @@ export function MarketChart({
       chartRef.current = null;
       chart.remove();
     };
-    // Chart recreation is keyed only by display mode; subsequent data uses update() below.
+    // Recreate only when the mode or point count changes; snapshots replace series data below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, points.length]);
 
   useEffect(() => {
     const series = seriesRef.current;
-    const last = points.at(-1);
-    if (!series || !last) return;
-    if (mode === "candles")
-      series.update({
-        time: last.time as never,
-        open: last.open,
-        high: last.high,
-        low: last.low,
-        close: last.close,
-      });
-    else series.update({ time: last.time as never, value: last.close });
-    volumeRef.current?.update({ time: last.time as never, value: last.volume });
+    const volume = volumeRef.current;
+    if (!series || !volume) return;
+    setChartSnapshot(series, volume, points, mode);
   }, [mode, points]);
 
   return (

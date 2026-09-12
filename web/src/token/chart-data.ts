@@ -10,6 +10,29 @@ export type CandleChartPoint = {
   volume: number;
 };
 
+export type ChartSnapshotSeries = { setData: (data: unknown[]) => void };
+
+/** Replaces the complete indexed snapshot so same-length reorg corrections cannot remain stale. */
+export function setChartSnapshot(
+  priceSeries: ChartSnapshotSeries,
+  volumeSeries: ChartSnapshotSeries,
+  points: readonly CandleChartPoint[],
+  mode: "area" | "candles",
+): void {
+  priceSeries.setData(
+    mode === "candles"
+      ? points.map((point) => ({
+          time: point.time as never,
+          open: point.open,
+          high: point.high,
+          low: point.low,
+          close: point.close,
+        }))
+      : points.map((point) => ({ time: point.time as never, value: point.close })),
+  );
+  volumeSeries.setData(points.map((point) => ({ time: point.time as never, value: point.volume })));
+}
+
 /** Chart values are decimal spot/volume strings from CandleDTO only, never trade execution data. */
 export function transformCandles(candles: readonly components["schemas"]["CandleDTO"][] | null) {
   if (!candles) return [];

@@ -4,9 +4,44 @@ import path from "node:path";
 const tokenAddress = "0x0000000000000000000000000000000000000001";
 const snapshot = { chain_id: 4663, as_of_block: 123, as_of_block_hash: "0xabc", finality: "safe" };
 const wad = (value: string) => `${BigInt(value) * 10n ** 18n}`;
+const wadFraction = (numerator: bigint, denominator: bigint) =>
+  `${(numerator * 10n ** 18n) / denominator}`;
 
 async function installFixture(page: Page) {
   const candleRequests: string[] = [];
+  type FixtureCandle = {
+    start: string;
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+    eth_volume: string;
+    token_volume: string;
+    trade_count: number;
+  };
+  const initialCandles: FixtureCandle[] = [
+    {
+      start: "2026-09-10T12:00:00Z",
+      open: wad("1"),
+      high: wad("2"),
+      low: wad("1"),
+      close: wad("2"),
+      eth_volume: wad("3"),
+      token_volume: wad("20"),
+      trade_count: 2,
+    },
+    {
+      start: "2026-09-10T13:00:00Z",
+      open: wad("2"),
+      high: wad("3"),
+      low: wad("2"),
+      close: wad("3"),
+      eth_volume: wad("4"),
+      token_volume: wad("25"),
+      trade_count: 3,
+    },
+  ];
+  let candleItems = initialCandles;
   await page.route("http://127.0.0.1:3000/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/events")) {
@@ -20,28 +55,7 @@ async function installFixture(page: Page) {
         contentType: "application/json",
         body: JSON.stringify({
           snapshot,
-          items: [
-            {
-              start: "2026-09-10T12:00:00Z",
-              open: wad("1"),
-              high: wad("2"),
-              low: wad("1"),
-              close: wad("2"),
-              eth_volume: wad("3"),
-              token_volume: wad("20"),
-              trade_count: 2,
-            },
-            {
-              start: "2026-09-10T13:00:00Z",
-              open: wad("2"),
-              high: wad("3"),
-              low: wad("2"),
-              close: wad("3"),
-              eth_volume: wad("4"),
-              token_volume: wad("25"),
-              trade_count: 3,
-            },
-          ],
+          items: candleItems,
         }),
       });
       return;
@@ -132,7 +146,12 @@ async function installFixture(page: Page) {
       }),
     });
   });
-  return { candleRequests };
+  return {
+    candleRequests,
+    setCandles(next: FixtureCandle[]) {
+      candleItems = next;
+    },
+  };
 }
 
 test("malformed token address has a stable not-found state", async ({ page }) => {
@@ -159,7 +178,7 @@ test("token route remains readable with reduced motion", async ({ page }) => {
 test("populated token detail renders controls, pages, and responsive captures", async ({
   page,
 }) => {
-  const { candleRequests } = await installFixture(page);
+  const { candleRequests, setCandles } = await installFixture(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/token/${tokenAddress}?fixture=populated`);
   await expect(page.getByRole("heading", { name: "Fixture Route" })).toBeVisible();
@@ -181,6 +200,41 @@ test("populated token detail renders controls, pages, and responsive captures", 
   await page.getByRole("tab", { name: "Recent trades" }).click();
   await page.getByRole("button", { name: "Candles" }).click();
   await expect(page.locator(".market-chart")).toBeVisible();
+  const chart = page.locator(".market-chart");
+  const initialChart = await chart.screenshot();
+  const correctedCandles = [
+    {
+      start: "2026-09-10T12:00:00Z",
+      open: wad("1"),
+      high: wad("2"),
+      low: wad("1"),
+      close: wadFraction(5n, 4n),
+      eth_volume: wad("8"),
+      token_volume: wad("20"),
+      trade_count: 2,
+    },
+    {
+      start: "2026-09-10T13:00:00Z",
+      open: wadFraction(5n, 4n),
+      high: wad("3"),
+      low: wad("1.25"),
+      close: wadFraction(5n, 2n),
+      eth_volume: wad("1"),
+      token_volume: wad("25"),
+      trade_count: 3,
+    },
+  ];
+  setCandles(correctedCandles);
+  await page.getByLabel("Timeframe").selectOption("1d");
+  await expect.poll(() => candleRequests.length).toBe(3);
+  await expect.poll(async () => Buffer.compare(initialChart, await chart.screenshot())).not.toBe(0);
+  const correctedChart = await chart.screenshot();
+  setCandles(correctedCandles.slice(0, 1));
+  await page.getByLabel("Timeframe").selectOption("all");
+  await expect.poll(() => candleRequests.length).toBe(4);
+  await expect
+    .poll(async () => Buffer.compare(correctedChart, await chart.screenshot()))
+    .not.toBe(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(1280);
   await page.screenshot({
     path: path.resolve(process.cwd(), "../.impeccable/review/task5-token-wide.png"),

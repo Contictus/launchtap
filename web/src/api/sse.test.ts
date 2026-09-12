@@ -5,13 +5,13 @@ afterEach(() => vi.useRealTimers());
 
 function sourceHarness(order: string[]) {
   let currentError: (() => void) | undefined;
-  const listeners = new Map<string, (event: MessageEvent<string>) => void>();
+  const listeners = new Map<string, (event: Event) => void>();
   const sources: EventSourceLike[] = [];
   const factory = () => {
     order.push("connect");
     const source: EventSourceLike = {
       addEventListener: (name, listener) => {
-        if (name === "error") currentError = () => listener(new MessageEvent("error"));
+        if (name === "error") currentError = () => listener(new Event("error"));
         else listeners.set(name, listener);
       },
       close: () => order.push("close"),
@@ -43,7 +43,7 @@ describe("SSE invalidation", () => {
     });
     stream.start();
     harness.triggerError();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
     expect(order.indexOf("rest")).toBeLessThan(order.lastIndexOf("connect"));
     stream.stop();
     expect(harness.sources.length).toBe(2);
@@ -67,7 +67,7 @@ describe("SSE invalidation", () => {
     });
     stream.start();
     harness.triggerError();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
     expect(order.slice(0, 4)).toEqual(["connect", "close", "token", "candles"]);
     await Promise.resolve();
     expect(order).toEqual(["connect", "close", "token", "candles", "collection", "connect"]);
@@ -92,11 +92,50 @@ describe("SSE invalidation", () => {
     });
     stream.start();
     harness.triggerError();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(harness.sources.length).toBe(1);
     await vi.advanceTimersByTimeAsync(100);
+    expect(harness.sources.length).toBe(1);
+    await vi.advanceTimersByTimeAsync(200);
     expect(harness.sources.length).toBe(2);
     expect(order.indexOf("rest-2")).toBeLessThan(order.lastIndexOf("connect"));
+    stream.stop();
+  });
+
+  it("backs off and caps reconnects when REST succeeds but every SSE source errors", async () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    const harness = sourceHarness(order);
+    let attempts = 0;
+    let exhausted = 0;
+    const stream = new SseInvalidationStream({
+      url: "https://api.example/events",
+      eventSourceFactory: harness.factory,
+      queryClient: { invalidateQueries: async () => undefined },
+      retry: { baseDelayMs: 100, maxDelayMs: 1_000, maxAttempts: 3 },
+      onRecoveryExhausted: () => {
+        exhausted += 1;
+      },
+      refetchSnapshot: async () => {
+        attempts += 1;
+      },
+    });
+    stream.start();
+    harness.triggerError();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(attempts).toBe(1);
+    expect(harness.sources).toHaveLength(2);
+
+    harness.triggerError();
+    await vi.advanceTimersByTimeAsync(199);
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(2);
+    expect(harness.sources).toHaveLength(3);
+
+    harness.triggerError();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(attempts).toBe(2);
+    expect(harness.sources).toHaveLength(3);
+    expect(exhausted).toBe(1);
     stream.stop();
   });
 
@@ -117,10 +156,10 @@ describe("SSE invalidation", () => {
     });
     stream.start();
     harness.triggerError();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(99);
     stream.stop();
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(attempts).toBe(1);
+    expect(attempts).toBe(0);
     expect(harness.sources.length).toBe(1);
   });
 
@@ -141,7 +180,7 @@ describe("SSE invalidation", () => {
     });
     stream.start();
     harness.triggerError();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
     stream.stop();
     expect(signal?.aborted).toBe(true);
   });

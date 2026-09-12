@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { decodeFunctionData, encodeFunctionData } from "viem";
 import fs from "node:fs";
 import path from "node:path";
+import { browserAbis } from "../src/contracts/generated";
 
 const sender = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as const;
 
@@ -9,6 +11,11 @@ async function installWallet(page: Page, initialChainId = "0x7a69") {
     ({ account, initialChainId }) => {
       let rejectNext = false;
       let chainId = initialChainId;
+      const writeRequests: { from?: string; to?: string; data?: string; value?: string }[] = [];
+      Object.defineProperty(window, "__task6WriteRequests", {
+        configurable: true,
+        get: () => writeRequests,
+      });
       Object.defineProperty(window, "__task6RejectNext", {
         configurable: true,
         get: () => rejectNext,
@@ -53,6 +60,8 @@ async function installWallet(page: Page, initialChainId = "0x7a69") {
               Object.assign(error, { code: 4001 });
               throw error;
             }
+            if (method === "eth_sendTransaction")
+              writeRequests.push(params[0] as { to?: string; data?: string; value?: string });
             const response = await fetch("/e2e/rpc", {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -189,8 +198,82 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await expect(page.getByRole("heading", { name: "Browser Trade Task 6" })).toBeVisible({
       timeout: 30_000,
     });
+    const buyTab = page.getByRole("tab", { name: "Buy", exact: true });
+    await buyTab.focus();
+    await expect(buyTab).toHaveAttribute("tabindex", "0");
+    await page.keyboard.press("ArrowRight");
+    const sellTab = page.getByRole("tab", { name: "Sell", exact: true });
+    await expect(sellTab).toHaveAttribute("aria-selected", "true");
+    await expect(sellTab).toHaveAttribute("tabindex", "0");
+    await expect(sellTab).toBeFocused();
+    const tabPanel = page.getByRole("tabpanel");
+    const panelId = await tabPanel.getAttribute("id");
+    const sellTabId = await sellTab.getAttribute("id");
+    expect(panelId).toBeTruthy();
+    expect(sellTabId).toBeTruthy();
+    await expect(sellTab).toHaveAttribute("aria-controls", panelId!);
+    await expect(tabPanel).toHaveAttribute("aria-labelledby", sellTabId!);
+    await page.keyboard.press("Home");
+    await expect(buyTab).toHaveAttribute("aria-selected", "true");
+    await expect(buyTab).toBeFocused();
     await page.getByLabel("ETH input").fill("0.001");
     await page.getByRole("button", { name: "Review buy" }).click();
+    const tradeReview = page.getByRole("region", { name: "Trade confirmation" });
+    const reviewedField = (name: string) =>
+      tradeReview.getByText(name, { exact: true }).locator("xpath=following-sibling::dd[1]");
+    await expect(tradeReview.getByText("Chain ID", { exact: true })).toBeVisible();
+    await expect(tradeReview.getByText("Wallet", { exact: true })).toBeVisible();
+    await expect(tradeReview.getByText("Target", { exact: true })).toBeVisible();
+    await expect(tradeReview.getByText("Function and arguments", { exact: true })).toBeVisible();
+    await expect(tradeReview.getByText("Native value", { exact: true })).toBeVisible();
+    await expect(tradeReview.getByText("Deadline", { exact: true })).toBeVisible();
+
+    // Change the on-chain quote while the original confirmation remains open.
+    const reviewedDeadline = BigInt(
+      (await reviewedField("Deadline").textContent())!.split(" ")[0]!,
+    );
+    const curveRiskText = (await page.locator(".transaction-risk").first().textContent()) ?? "";
+    const curveAddress = curveRiskText.match(/0x[0-9a-f]{40}/i)?.[0];
+    expect(curveAddress).toBeTruthy();
+    const externalBuyData = encodeFunctionData({
+      abi: browserAbis.curve,
+      functionName: "buy",
+      args: [sender, sender, 0n, reviewedDeadline],
+    });
+    const externalWrite = await page.request.post("/e2e/rpc", {
+      data: {
+        jsonrpc: "2.0",
+        id: Date.now(),
+        method: "eth_sendTransaction",
+        params: [
+          { from: sender, to: curveAddress, data: externalBuyData, value: "0x38d7ea4c68000" },
+        ],
+      },
+    });
+    expect(externalWrite.ok()).toBeTruthy();
+    const externalBody = (await externalWrite.json()) as { result?: string; error?: unknown };
+    expect(externalBody.result).toMatch(/^0x[0-9a-f]{64}$/i);
+    await expect
+      .poll(async () => {
+        const response = await page.request.post("/e2e/rpc", {
+          data: {
+            jsonrpc: "2.0",
+            id: Date.now(),
+            method: "eth_getTransactionReceipt",
+            params: [externalBody.result],
+          },
+        });
+        const body = (await response.json()) as { result?: { status?: string } | null };
+        return body.result?.status;
+      })
+      .toBe("0x1");
+
+    const pageWriteCount = () =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __task6WriteRequests: unknown[] }).__task6WriteRequests.length,
+      );
+    expect(await pageWriteCount()).toBe(0);
     const evidenceDir = path.resolve(process.cwd(), "..", ".impeccable", "review");
     fs.mkdirSync(evidenceDir, { recursive: true });
     await page.screenshot({
@@ -198,12 +281,63 @@ test.describe("Task 6 Anvil transaction gate", () => {
       fullPage: true,
     });
     await page.getByRole("button", { name: "Sign buy" }).click();
+    await expect(tradeReview.getByRole("status")).toContainText("details changed");
+    expect(await pageWriteCount()).toBe(0);
+    const reviewedWallet = (await reviewedField("Wallet").textContent())?.trim();
+    const reviewedChainId = Number((await reviewedField("Chain ID").textContent())?.trim());
+    const reviewedTarget = (await reviewedField("Target").textContent())?.trim();
+    const reviewedCall = (await reviewedField("Function and arguments").textContent())?.trim();
+    const reviewedValueText = (await reviewedField("Native value").textContent()) ?? "";
+    const reviewedValueWei = BigInt(reviewedValueText.match(/\((\d+) wei\)/)?.[1] ?? "-1");
+    const finalReviewedDeadline = BigInt(
+      (await reviewedField("Deadline").textContent())!.split(" ")[0]!,
+    );
+    expect(reviewedWallet).toBeTruthy();
+    expect(reviewedChainId).toBe(31337);
+    expect(reviewedTarget?.toLowerCase()).toBe(curveAddress?.toLowerCase());
+    expect(reviewedCall).toMatch(/^buy\(/);
+    expect(reviewedValueWei).toBeGreaterThan(0n);
+    await page.getByRole("button", { name: "Sign buy" }).click();
     await expect(page.getByRole("status").last()).toContainText(
       /indexing|indexed|safe|finalized/i,
       { timeout: 30_000 },
     );
+    const writeRequests = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __task6WriteRequests: { from?: string; to?: string; data?: string; value?: string }[];
+          }
+        ).__task6WriteRequests,
+    );
+    const signedRequest = writeRequests.at(-1);
+    const signedCall = decodeFunctionData({
+      abi: browserAbis.curve,
+      data: signedRequest?.data as `0x${string}`,
+    });
+    expect(signedCall.functionName).toBe("buy");
+    expect(reviewedCall).toBe(
+      `${signedCall.functionName}(${signedCall.args.map(String).join(", ")})`,
+    );
+    expect(signedRequest?.from?.toLowerCase()).toBe(reviewedWallet?.toLowerCase());
+    expect(signedRequest?.to?.toLowerCase()).toBe(reviewedTarget?.toLowerCase());
+    expect(BigInt(signedRequest?.value ?? "0x0")).toBe(reviewedValueWei);
+    expect(String(signedCall.args.at(-1))).toBe(finalReviewedDeadline.toString());
+    const signingChainId = await page.evaluate(() =>
+      (
+        window as unknown as {
+          ethereum: { request: (args: { method: string }) => Promise<unknown> };
+        }
+      ).ethereum.request({ method: "eth_chainId" }),
+    );
+    expect(Number(BigInt(String(signingChainId)))).toBe(reviewedChainId);
+    const savedHash = (await page.locator(".transaction-progress").last().textContent())?.match(
+      /0x[0-9a-f]{64}/i,
+    )?.[0];
+    expect(savedHash).toBeTruthy();
 
     await page.reload();
+    await expect(page.locator(".transaction-progress").last()).toContainText(savedHash!);
     await page.getByRole("tab", { name: "Sell" }).click();
     await page.getByLabel(/BT6 input/).fill("1");
     await page.getByRole("button", { name: "Review sell" }).click();
@@ -223,6 +357,45 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await expect(page.getByRole("status").last()).toContainText(/indexed|safe|finalized/i, {
       timeout: 30_000,
     });
+    const savedSellHash = (
+      await page.locator(".transaction-progress").first().textContent()
+    )?.match(/0x[0-9a-f]{64}/i)?.[0];
+    expect(savedSellHash).toBeTruthy();
+    const seededCanonicalStatus = await page.evaluate((hash) => {
+      const records = JSON.parse(
+        window.localStorage.getItem("launchpad.transactions.v1") ?? "[]",
+      ) as { action?: string; hash?: string; status?: string }[];
+      const record = records.find(
+        (value) => value.action === "trade" && value.hash?.toLowerCase() === hash.toLowerCase(),
+      );
+      if (!record) return false;
+      record.status = "safe";
+      window.localStorage.setItem("launchpad.transactions.v1", JSON.stringify(records));
+      return true;
+    }, savedSellHash!);
+    expect(seededCanonicalStatus).toBe(true);
+
+    const canonicalRoute = "**/v1/transactions/*";
+    let canonicalAbsenceResponses = 0;
+    await page.route(canonicalRoute, async (route) => {
+      if (!route.request().url().toLowerCase().endsWith(savedSellHash!.toLowerCase())) {
+        await route.continue();
+        return;
+      }
+      canonicalAbsenceResponses += 1;
+      await route.fulfill({
+        status: 404,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ type: "about:blank", status: 404, title: "Not found" }),
+      });
+    });
+    await page.reload();
+    await expect(page.locator(".transaction-progress").first()).toContainText(savedSellHash!);
+    await expect.poll(() => canonicalAbsenceResponses).toBeGreaterThan(0);
+    await expect(page.locator(".transaction-progress").first()).toContainText(/indexing/i);
+    await expect(page.getByRole("button", { name: "Review buy" })).toBeDisabled();
+    expect(await pageWriteCount()).toBe(0);
+    await page.unroute(canonicalRoute);
   });
 
   test("switches from a wrong chain before signing", async ({ page }) => {

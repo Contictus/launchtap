@@ -19,7 +19,12 @@ export type TransactionStatus =
   | "indexed"
   | "safe"
   | "finalized";
-export type TransactionState = { status: TransactionStatus; hash?: `0x${string}`; error?: string };
+export type TransactionState = {
+  status: TransactionStatus;
+  hash?: `0x${string}`;
+  error?: string;
+  canonicalRefreshUnavailable?: boolean;
+};
 
 export type CanonicalObservationAction = "launch" | "trade" | "claim" | "refund";
 export type CanonicalObservationRecord = {
@@ -188,6 +193,44 @@ export type ExactWrite = {
   deadline?: bigint;
   minimumOutput?: bigint;
 };
+
+export type ReviewedWriteIntent = ExactWrite & {
+  chainId: number;
+  functionName: string;
+};
+
+/** The wallet may be asked to sign only the intent the user has reviewed. */
+export function sameReviewedWriteIntent(
+  reviewed: ReviewedWriteIntent,
+  candidate: ReviewedWriteIntent,
+): boolean {
+  return (
+    reviewed.chainId === candidate.chainId &&
+    reviewed.functionName === candidate.functionName &&
+    sameWriteIntent(reviewed, candidate)
+  );
+}
+
+export function reconcileCanonicalFetch(args: {
+  state: TransactionState;
+  submittedHash: string;
+  action: CanonicalObservationAction;
+  records?: readonly CanonicalObservationRecord[];
+  snapshotFinality?: string;
+  outcome: "success" | "not-found" | "unavailable";
+}): TransactionState {
+  if (args.outcome === "unavailable") return { ...args.state, canonicalRefreshUnavailable: true };
+  return {
+    ...observeCanonicalTransaction({
+      state: args.state,
+      submittedHash: args.submittedHash,
+      action: args.action,
+      records: args.records ?? [],
+      snapshotFinality: args.snapshotFinality,
+    }),
+    canonicalRefreshUnavailable: false,
+  };
+}
 
 /** Used by tests and executors to ensure simulation and signing use byte-for-byte equal intent. */
 export function sameWriteIntent(left: ExactWrite, right: ExactWrite): boolean {
