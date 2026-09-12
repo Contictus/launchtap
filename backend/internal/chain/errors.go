@@ -14,9 +14,22 @@ var (
 	ErrUnsupportedEngine   = errors.New("unsupported engine version")
 	ErrFinalityUnsupported = errors.New("provider does not support finality tag")
 	ErrRPCCapacity         = errors.New("RPC log query exceeds provider capacity")
+	ErrChainIDMismatch     = errors.New("RPC chain ID does not match configured deployment")
 	ErrBytecodeMismatch    = errors.New("runtime bytecode hash mismatch")
 	ErrPairMismatch        = errors.New("pair address mismatch")
 )
+
+type ChainIDMismatchError struct {
+	ConfiguredChainID uint64
+	DeploymentChainID uint64
+	ActualChainID     string
+}
+
+func (e *ChainIDMismatchError) Error() string {
+	return fmt.Sprintf("%v: configured=%d deployment=%d RPC=%s", ErrChainIDMismatch, e.ConfiguredChainID, e.DeploymentChainID, e.ActualChainID)
+}
+
+func (e *ChainIDMismatchError) Unwrap() error { return ErrChainIDMismatch }
 
 type LogError struct {
 	Coordinates LogCoordinates

@@ -17,6 +17,7 @@ import (
 	"github.com/Contictus/launchtap/backend/internal/indexer"
 	"github.com/Contictus/launchtap/backend/internal/stats"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -48,21 +49,26 @@ func run() error {
 		return err
 	}
 	defer source.Close()
-	pool, err := storepostgres.OpenPool(ctx, c.DatabaseURL, storepostgres.PoolOptions{})
+	pool, owner, err := initializeIndexerResources(ctx, source, c.ChainID, deployment,
+		func() (*pgxpool.Pool, error) {
+			return storepostgres.OpenPool(ctx, c.DatabaseURL, storepostgres.PoolOptions{})
+		},
+		func() (*storepostgres.Ownership, error) {
+			return storepostgres.AcquireOwnership(ctx, c.DatabaseURL, int64(c.ChainID), c.DeploymentID)
+		},
+	)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-	owner, err := storepostgres.AcquireOwnership(ctx, c.DatabaseURL, int64(c.ChainID), c.DeploymentID)
-	if err != nil {
-		return err
-	}
 	defer func() { _ = owner.Close() }()
 	decoder, err := chain.NewDecoder(deployment.EngineVersion)
 	if err != nil {
 		return err
 	}
-	discovery, err := chain.NewDiscoverer(source, decoder, deployment.Factory, c.IndexerLogAddressBatchSize)
+	discovery, err := chain.NewDiscovererWithPairVerification(source, decoder, deployment.Factory, c.IndexerLogAddressBatchSize, func(ctx context.Context, launch chain.TokenLaunched) error {
+		return chain.VerifyLaunchPair(ctx, source, deployment.UniV2Factory, deployment.WETH, deployment.PairInitCodeHash, launch)
+	})
 	if err != nil {
 		return err
 	}
@@ -149,6 +155,25 @@ func run() error {
 	default:
 	}
 	return runErr
+}
+
+func initializeIndexerResources(ctx context.Context, source chain.RuntimeVerifier, configuredChainID uint64, deployment deployments.Deployment, openPool func() (*pgxpool.Pool, error), acquireOwnership func() (*storepostgres.Ownership, error)) (*pgxpool.Pool, *storepostgres.Ownership, error) {
+	if err := chain.VerifyRPCChainID(ctx, source, configuredChainID, deployment); err != nil {
+		return nil, nil, fmt.Errorf("verify indexer RPC chain identity before database startup: %w", err)
+	}
+	if err := chain.VerifyDeploymentBytecode(ctx, source, deployment); err != nil {
+		return nil, nil, fmt.Errorf("verify indexer deployment bytecode before database startup: %w", err)
+	}
+	pool, err := openPool()
+	if err != nil {
+		return nil, nil, fmt.Errorf("open indexer database pool: %w", err)
+	}
+	owner, err := acquireOwnership()
+	if err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("acquire indexer writer ownership: %w", err)
+	}
+	return pool, owner, nil
 }
 
 func loadDeploymentRegistry() (*deployments.Registry, error) {

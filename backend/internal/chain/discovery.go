@@ -22,6 +22,7 @@ type Discoverer struct {
 	decoder          *Decoder
 	factory          common.Address
 	addressBatchSize int
+	verifyLaunchPair func(context.Context, TokenLaunched) error
 }
 
 func NewDiscoverer(source LogSource, decoder *Decoder, factory common.Address, addressBatchSize uint64) (*Discoverer, error) {
@@ -35,6 +36,18 @@ func NewDiscoverer(source LogSource, decoder *Decoder, factory common.Address, a
 		return nil, errors.New("address batch size is invalid")
 	}
 	return &Discoverer{source: source, decoder: decoder, factory: factory, addressBatchSize: int(addressBatchSize)}, nil
+}
+
+func NewDiscovererWithPairVerification(source LogSource, decoder *Decoder, factory common.Address, addressBatchSize uint64, verifyLaunchPair func(context.Context, TokenLaunched) error) (*Discoverer, error) {
+	if verifyLaunchPair == nil {
+		return nil, errors.New("launch pair verifier is required")
+	}
+	discoverer, err := NewDiscoverer(source, decoder, factory, addressBatchSize)
+	if err != nil {
+		return nil, err
+	}
+	discoverer.verifyLaunchPair = verifyLaunchPair
+	return discoverer, nil
 }
 
 type DiscoveryResult struct {
@@ -68,6 +81,11 @@ func (d *Discoverer) Discover(ctx context.Context, from, to uint64, known Emitte
 		launch, ok := decoded.Value.(TokenLaunched)
 		if !ok {
 			continue
+		}
+		if d.verifyLaunchPair != nil {
+			if verifyErr := d.verifyLaunchPair(ctx, launch); verifyErr != nil {
+				return DiscoveryResult{}, fmt.Errorf("verify discovered launch pair for token %s at block %d: %w", launch.Token.Hex(), log.BlockNumber, verifyErr)
+			}
 		}
 		launches = append(launches, launch)
 		emitters.Curves[launch.Curve] = struct{}{}
