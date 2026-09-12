@@ -1,9 +1,17 @@
-# Plan 5 Task 1 Audit Pack
+# Plan 5 Audit Index
 
-This directory is the Task 1 baseline and audit-policy pack for Plan 5. It is documentation
-only. The implementation under review is immutable commit
-`6184bc5febd43de99ab6cc2b6f71f7f90c878bb6`; the Plan 5 plan, threat model, and this pack do not
-move that target.
+Plan 5 Tasks 1–4 are complete. Tasks 5–7 are pending, and Task 8 remediation is not authorized
+or started. This directory contains the Task 1 baseline and audit-policy pack plus the completed
+Task 2–4 reports. The implementation under review is immutable commit
+`6184bc5febd43de99ab6cc2b6f71f7f90c878bb6`; later audit documentation does not move that target.
+
+| Audit task | Report | Disposition summary |
+| --- | --- | --- |
+| Task 2 — Smart contracts and economics | [05-task-2-contracts.md](05-task-2-contracts.md) | 1 validated finding, 2 rejected/suppressed hypotheses, 1 deferred release verification; five baseline Slither High/Medium rows were separately suppressed. |
+| Task 3 — Indexer and canonical data | [06-task-3-indexer-data.md](06-task-3-indexer-data.md) | 2 validated findings, 1 candidate, 2 deferred items. |
+| Task 4 — API, identity, authorization, and content security | [07-task-4-api-auth.md](07-task-4-api-auth.md) | 4 validated findings (1 Medium, 3 Low), 1 rejected hypothesis, 1 deferred boundary. |
+
+## Task 1 baseline and policy pack
 
 | Artifact | Purpose |
 | --- | --- |
