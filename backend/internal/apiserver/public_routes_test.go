@@ -151,6 +151,19 @@ func TestPublicReadProblemsAreTyped(t *testing.T) {
 	}
 }
 
+func TestPublicReadReturnsUnavailableBeforeFirstSnapshot(t *testing.T) {
+	s := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), nil)
+	s.RegisterPublicRoutes(PublicRoutes{
+		Tokens: publicTokenStub{err: pagination.ErrSnapshotUnavailable},
+		Market: publicMarketStub{}, Protocol: protocolStub{}, ChainID: 46630,
+	})
+	w := httptest.NewRecorder()
+	s.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/tokens/0x0000000000000000000000000000000000000001", nil))
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "urn:launchpad:problem:snapshot_unavailable") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestInternalReadProblemExposesRequestIDWithoutCause(t *testing.T) {
 	s := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), nil)
 	s.RegisterPublicRoutes(PublicRoutes{Tokens: publicTokenStub{err: errors.New("SELECT secret FROM hidden")}, Market: publicMarketStub{}, Protocol: protocolStub{}, ChainID: 46630})

@@ -32,7 +32,7 @@ func WithReadSnapshot(ctx context.Context, pool *pgxpool.Pool, chainID int64, de
 	adapter := NewAdapter(tx)
 	state, err := adapter.GetSyncState(ctx, chainID, deploymentID)
 	if err != nil {
-		return fmt.Errorf("read snapshot watermark: %w", err)
+		return readSnapshotWatermarkError(err)
 	}
 	identity, err := observedIdentity(state)
 	if err != nil {
@@ -47,9 +47,25 @@ func WithReadSnapshot(ctx context.Context, pool *pgxpool.Pool, chainID int64, de
 	return nil
 }
 
+func readSnapshotWatermarkError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("%w: sync state is not initialized", pagination.ErrSnapshotUnavailable)
+	}
+	return fmt.Errorf("read snapshot watermark: %w", err)
+}
+
 func observedIdentity(state SyncState) (pagination.Snapshot, error) {
-	if !state.ObservedNumber.Valid || state.ObservedNumber.Int64 < 0 || state.ObservedHash == nil {
-		return pagination.Snapshot{}, errors.New("snapshot has no observed canonical block")
+	hasNumber := state.ObservedNumber.Valid
+	hasHash := state.ObservedHash != nil
+	hasTime := state.ObservedAt.Valid
+	if !hasNumber && !hasHash && !hasTime {
+		return pagination.Snapshot{}, fmt.Errorf("%w: no observed canonical block", pagination.ErrSnapshotUnavailable)
+	}
+	if !hasNumber || !hasHash || !hasTime {
+		return pagination.Snapshot{}, errors.New("snapshot has incomplete observed canonical block")
+	}
+	if state.ObservedNumber.Int64 < 0 {
+		return pagination.Snapshot{}, errors.New("snapshot has negative observed block number")
 	}
 	return pagination.Snapshot{ChainID: state.ChainID, BlockNumber: state.ObservedNumber.Int64, BlockHash: [32]byte(*state.ObservedHash)}, nil
 }

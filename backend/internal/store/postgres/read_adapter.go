@@ -340,7 +340,7 @@ func withReadSnapshotBeginner(ctx context.Context, pool PoolReadBeginner, chainI
 	a := NewAdapter(tx)
 	state, err := a.GetSyncState(ctx, chainID, deploymentID)
 	if err != nil {
-		return err
+		return readSnapshotWatermarkError(err)
 	}
 	identity, err := observedIdentity(state)
 	if err != nil {

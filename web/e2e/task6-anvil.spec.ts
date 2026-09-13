@@ -206,7 +206,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await expect(sellTab).toHaveAttribute("aria-selected", "true");
     await expect(sellTab).toHaveAttribute("tabindex", "0");
     await expect(sellTab).toBeFocused();
-    const tabPanel = page.getByRole("tabpanel");
+    const tabPanel = page.getByRole("tabpanel", { name: "Sell", exact: true });
+    await expect(tabPanel).toHaveCount(1);
     const panelId = await tabPanel.getAttribute("id");
     const sellTabId = await sellTab.getAttribute("id");
     expect(panelId).toBeTruthy();
@@ -342,24 +343,22 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await page.getByLabel(/BT6 input/).fill("1");
     await page.getByRole("button", { name: "Review sell" }).click();
     await page.getByRole("button", { name: "Sign sell" }).click();
-    await expect(page.getByRole("status").last()).toContainText(
-      /mined|indexing|indexed|safe|finalized/i,
-      {
-        timeout: 30_000,
-      },
-    );
+    const tradeStatus = page.locator(".transaction-progress").first();
+    const approvalStatus = page.locator(".transaction-progress").last();
+    await expect(approvalStatus).toContainText(/approval mined/i, { timeout: 30_000 });
+    const priorTradeHash = (await tradeStatus.textContent())?.match(/0x[0-9a-f]{64}/i)?.[0];
+    expect(priorTradeHash).toBeTruthy();
     await page.getByRole("button", { name: "Resume sell" }).click();
     await page.screenshot({
       path: path.join(evidenceDir, `task6-approval-confirm-${testInfo.project.name}.png`),
       fullPage: true,
     });
+    const writesBeforeResumedSell = await pageWriteCount();
     await page.getByRole("button", { name: "Sign sell" }).click();
-    await expect(page.getByRole("status").last()).toContainText(/indexed|safe|finalized/i, {
-      timeout: 30_000,
-    });
-    const savedSellHash = (
-      await page.locator(".transaction-progress").first().textContent()
-    )?.match(/0x[0-9a-f]{64}/i)?.[0];
+    await expect.poll(pageWriteCount, { timeout: 10_000 }).toBeGreaterThan(writesBeforeResumedSell);
+    await expect(tradeStatus).not.toContainText(priorTradeHash!);
+    await expect(tradeStatus).toContainText(/indexed|safe|finalized/i, { timeout: 30_000 });
+    const savedSellHash = (await tradeStatus.textContent())?.match(/0x[0-9a-f]{64}/i)?.[0];
     expect(savedSellHash).toBeTruthy();
     const seededCanonicalStatus = await page.evaluate((hash) => {
       const records = JSON.parse(
@@ -522,14 +521,37 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await page.getByLabel(/GR6 input/).fill("1");
     await page.getByRole("button", { name: "Review sell" }).click();
     await page.getByRole("button", { name: "Sign sell" }).click();
-    await expect(page.getByRole("status").last()).toContainText(/mined/i, { timeout: 30_000 });
+    const routerHandoff = page.getByRole("region", { name: "Router handoff" });
+    const tradeStatus = routerHandoff.getByRole("status").first();
+    await expect(tradeStatus).toContainText(/indexing|indexed|safe|finalized/i, {
+      timeout: 30_000,
+    });
+    await expect(routerHandoff.getByRole("status").last()).toContainText(/approval mined/i, {
+      timeout: 30_000,
+    });
+    const priorTradeText = (await tradeStatus.textContent()) ?? "";
+    const priorTradeHash = priorTradeText.match(/0x[0-9a-f]{64}/i)?.[0];
+    expect(priorTradeHash).toBeTruthy();
     await page.getByRole("button", { name: "Resume sell" }).click();
     await page.screenshot({
       path: path.join(evidenceDir, `task6-graduated-approval-${testInfo.project.name}.png`),
       fullPage: true,
     });
+    const writesBeforeResumedSell = await page.evaluate(
+      () => (window as unknown as { __task6WriteRequests: unknown[] }).__task6WriteRequests.length,
+    );
     await page.getByRole("button", { name: "Sign sell" }).click();
-    await expect(page.getByRole("status").last()).toContainText(
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => (window as unknown as { __task6WriteRequests: unknown[] }).__task6WriteRequests.length,
+          ),
+        { timeout: 10_000 },
+      )
+      .toBeGreaterThan(writesBeforeResumedSell);
+    await expect(tradeStatus).not.toContainText(priorTradeHash!);
+    await expect(tradeStatus).toContainText(
       /indexing|indexed|safe|finalized/i,
       { timeout: 30_000 },
     );

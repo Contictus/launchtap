@@ -161,6 +161,9 @@ func address(value string) (common.Address, error) {
 	return common.HexToAddress(value), nil
 }
 func mapReadError(ctx context.Context, err error) error {
+	if errors.Is(err, pagination.ErrSnapshotUnavailable) {
+		return apiProblem(http.StatusServiceUnavailable, "snapshot_unavailable", "Canonical read snapshot is not available yet")
+	}
 	if errors.Is(err, token.ErrNotFound) {
 		return apiProblem(http.StatusNotFound, "token_not_found", "Token not found")
 	}

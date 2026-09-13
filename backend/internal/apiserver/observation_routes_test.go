@@ -65,3 +65,13 @@ func TestCanonicalObservationRejectsMalformedAndNotIndexed(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalObservationReturnsUnavailableBeforeFirstSnapshot(t *testing.T) {
+	server := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), nil)
+	server.RegisterObservationRoutes(ObservationRoutes{Reader: observationReaderStub{err: pagination.ErrSnapshotUnavailable}, ChainID: 46630, DeploymentID: "testnet"})
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/transactions/0x"+strings.Repeat("11", 32), nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "urn:launchpad:problem:snapshot_unavailable") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
