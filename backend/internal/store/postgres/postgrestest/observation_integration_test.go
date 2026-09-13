@@ -11,6 +11,7 @@ import (
 
 	"github.com/Contictus/launchtap/backend/internal/ledger"
 	"github.com/Contictus/launchtap/backend/internal/observation"
+	"github.com/Contictus/launchtap/backend/internal/pagination"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -18,8 +19,9 @@ import (
 
 // TestCanonicalObservationUnionAndScope exercises every event source in the
 // HTTP transaction lookup query against PostgreSQL. It also verifies finality
-// propagation, deployment scoping, and canonical disappearance after rollback.
-func TestCanonicalObservationUnionAndScope(t *testing.T) {
+// propagation, snapshot availability precedence, and canonical disappearance
+// after rollback.
+func TestCanonicalObservationUnionAndSnapshotAvailability(t *testing.T) {
 	database := NewMigrated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -56,7 +58,16 @@ func TestCanonicalObservationUnionAndScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	finalHash := storepostgres.Hash(blockHash)
-	if _, err := adapter.UpsertSyncState(ctx, storepostgres.SyncState{ChainID: chainID, DeploymentID: deploymentID, ObservedNumber: pgtype.Int8{Int64: 100, Valid: true}, ObservedHash: &finalHash, ObservedAt: pgtype.Timestamptz{Time: when, Valid: true}, SafeNumber: pgtype.Int8{Int64: 100, Valid: true}, SafeHash: &finalHash, SafeAt: pgtype.Timestamptz{Time: when, Valid: true}, FinalizedNumber: pgtype.Int8{Int64: 100, Valid: true}, FinalizedHash: &finalHash, FinalizedAt: pgtype.Timestamptz{Time: when, Valid: true}}); err != nil {
+	syncState := storepostgres.SyncState{
+		ChainID: chainID, DeploymentID: deploymentID,
+		ObservedNumber: pgtype.Int8{Int64: 100, Valid: true}, ObservedHash: &finalHash,
+		ObservedAt: pgtype.Timestamptz{Time: when, Valid: true},
+		SafeNumber: pgtype.Int8{Int64: 100, Valid: true}, SafeHash: &finalHash,
+		SafeAt:          pgtype.Timestamptz{Time: when, Valid: true},
+		FinalizedNumber: pgtype.Int8{Int64: 100, Valid: true}, FinalizedHash: &finalHash,
+		FinalizedAt: pgtype.Timestamptz{Time: when, Valid: true},
+	}
+	if _, err := adapter.UpsertSyncState(ctx, syncState); err != nil {
 		t.Fatal(err)
 	}
 	reader := storepostgres.ObservationReader{Pool: pool}
@@ -69,8 +80,12 @@ func TestCanonicalObservationUnionAndScope(t *testing.T) {
 			t.Fatalf("lookup %s = %+v", kind, observation.Events)
 		}
 	}
-	if _, err := reader.Get(ctx, chainID, "other-deployment", tradeHash); !errors.Is(err, observation.ErrNotFound) {
-		t.Fatalf("cross-deployment lookup error = %v, want not found", err)
+	if _, err := reader.Get(ctx, chainID, "other-deployment", tradeHash); !errors.Is(err, pagination.ErrSnapshotUnavailable) {
+		t.Fatalf("lookup without deployment snapshot error = %v, want unavailable snapshot", err)
+	}
+	missingHash := common.Hash{31: 0xff}
+	if _, err := reader.Get(ctx, chainID, deploymentID, missingHash); !errors.Is(err, observation.ErrNotFound) {
+		t.Fatalf("lookup for absent transaction under an initialized snapshot error = %v, want not found", err)
 	}
 	if err := storepostgres.WithinTx(ctx, pool, func(ctx context.Context, tx *storepostgres.Adapter) error {
 		return tx.DeleteCanonicalAbove(ctx, chainID, 99)
