@@ -82,7 +82,7 @@ LEFT JOIN token_reserves AS r USING (chain_id, token_address)
 LEFT JOIN token_metadata AS m
   ON m.chain_id = t.chain_id AND m.token_address = t.token_address
  AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1
   AND t.token_address = $2
 `
@@ -551,7 +551,7 @@ SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.laun
 FROM tokens AS t
 LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
     AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1 AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left($3::text,2)='0x' THEN substr($3::text,3) ELSE $3::text END))
   AND ($4::numeric IS NULL OR (COALESCE(s.market_cap_eth_wad,0::numeric), t.token_address) < ($4::numeric, $5::bytea))
@@ -640,7 +640,8 @@ FROM tokens AS t
 LEFT JOIN token_metadata AS m
   ON m.chain_id = t.chain_id AND m.token_address = t.token_address
  AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s
+  ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1
   AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%'
@@ -729,7 +730,7 @@ SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.laun
 FROM tokens AS t
 LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
     AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1 AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left($3::text,2)='0x' THEN substr($3::text,3) ELSE $3::text END))
   AND ($4::bigint IS NULL OR (t.launch_block_number, t.token_address) > ($4::bigint, $5::bytea))
@@ -813,7 +814,7 @@ SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.laun
 FROM tokens AS t
 LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
     AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1 AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left($3::text,2)='0x' THEN substr($3::text,3) ELSE $3::text END))
   AND ($4::numeric IS NULL OR (COALESCE(s.volume_24h_eth_wad,0::numeric), t.token_address) < ($4::numeric, $5::bytea))

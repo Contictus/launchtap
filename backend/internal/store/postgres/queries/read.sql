@@ -10,7 +10,8 @@ FROM tokens AS t
 LEFT JOIN token_metadata AS m
   ON m.chain_id = t.chain_id AND m.token_address = t.token_address
  AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s
+  ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = sqlc.arg(chain_id)
   AND t.phase = sqlc.arg(phase)
   AND (sqlc.arg(search)::text = '' OR lower(t.name) LIKE lower(sqlc.arg(search)::text) || '%'
@@ -28,7 +29,7 @@ SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.laun
 FROM tokens AS t
 LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
     AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = sqlc.arg(chain_id) AND t.phase = sqlc.arg(phase)
   AND (sqlc.arg(search)::text = '' OR lower(t.name) LIKE lower(sqlc.arg(search)::text) || '%' OR lower(t.symbol) LIKE lower(sqlc.arg(search)::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left(sqlc.arg(search)::text,2)='0x' THEN substr(sqlc.arg(search)::text,3) ELSE sqlc.arg(search)::text END))
   AND (sqlc.narg(after_block)::bigint IS NULL OR (t.launch_block_number, t.token_address) > (sqlc.narg(after_block)::bigint, sqlc.narg(after_address)::bytea))
@@ -41,7 +42,7 @@ SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.laun
 FROM tokens AS t
 LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
     AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = sqlc.arg(chain_id) AND t.phase = sqlc.arg(phase)
   AND (sqlc.arg(search)::text = '' OR lower(t.name) LIKE lower(sqlc.arg(search)::text) || '%' OR lower(t.symbol) LIKE lower(sqlc.arg(search)::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left(sqlc.arg(search)::text,2)='0x' THEN substr(sqlc.arg(search)::text,3) ELSE sqlc.arg(search)::text END))
   AND (sqlc.narg(after_metric)::numeric IS NULL OR (COALESCE(s.market_cap_eth_wad,0::numeric), t.token_address) < (sqlc.narg(after_metric)::numeric, sqlc.narg(after_address)::bytea))
@@ -54,7 +55,7 @@ SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.laun
 FROM tokens AS t
 LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
     AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = sqlc.arg(chain_id) AND t.phase = sqlc.arg(phase)
   AND (sqlc.arg(search)::text = '' OR lower(t.name) LIKE lower(sqlc.arg(search)::text) || '%' OR lower(t.symbol) LIKE lower(sqlc.arg(search)::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left(sqlc.arg(search)::text,2)='0x' THEN substr(sqlc.arg(search)::text,3) ELSE sqlc.arg(search)::text END))
   AND (sqlc.narg(after_metric)::numeric IS NULL OR (COALESCE(s.volume_24h_eth_wad,0::numeric), t.token_address) < (sqlc.narg(after_metric)::numeric, sqlc.narg(after_address)::bytea))
@@ -123,7 +124,7 @@ LEFT JOIN token_reserves AS r USING (chain_id, token_address)
 LEFT JOIN token_metadata AS m
   ON m.chain_id = t.chain_id AND m.token_address = t.token_address
  AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = sqlc.arg(chain_id)
   AND t.token_address = sqlc.arg(token_address);
 
