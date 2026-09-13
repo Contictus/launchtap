@@ -338,14 +338,17 @@ type Token struct {
 }
 
 type TokenImage struct {
-	ChainID      int64
-	TokenAddress Address
-	ContentType  string
-	Content      []byte
-	ByteSize     int32
-	Sha256       Hash
-	Revision     int64
-	UpdatedAt    pgtype.Timestamptz
+	ChainID        int64
+	TokenAddress   Address
+	ContentType    string
+	Content        []byte
+	ByteSize       int32
+	Sha256         Hash
+	Revision       int64
+	UpdatedAt      pgtype.Timestamptz
+	ContentID      pgtype.Int8
+	LaunchTxHash   *Hash
+	LaunchLogIndex pgtype.Int4
 }
 
 type TokenLaunch struct {
@@ -377,14 +380,17 @@ type TokenLaunch struct {
 }
 
 type TokenMetadatum struct {
-	ChainID      int64
-	TokenAddress Address
-	Description  pgtype.Text
-	ImageUrl     pgtype.Text
-	XUrl         pgtype.Text
-	TelegramUrl  pgtype.Text
-	UpdatedAt    pgtype.Timestamptz
-	Revision     int64
+	ChainID        int64
+	TokenAddress   Address
+	Description    pgtype.Text
+	ImageUrl       pgtype.Text
+	XUrl           pgtype.Text
+	TelegramUrl    pgtype.Text
+	UpdatedAt      pgtype.Timestamptz
+	Revision       int64
+	ContentID      pgtype.Int8
+	LaunchTxHash   *Hash
+	LaunchLogIndex pgtype.Int4
 }
 
 type TokenReserf struct {

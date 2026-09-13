@@ -750,9 +750,9 @@ export interface operations {
     getProfile: {
         parameters: {
             query?: never;
-            header?: {
-                Authorization?: string;
-                "privy-id-token"?: string;
+            header: {
+                Authorization: string;
+                "privy-id-token": string;
             };
             path?: never;
             cookie?: never;
@@ -1036,6 +1036,19 @@ export interface operations {
                     "image/webp": string;
                 };
             };
+            /** @description Not modified when If-None-Match matches; the response has no body. */
+            304: {
+                headers: {
+                    /** @description Image content hash validator. */
+                    ETag?: string;
+                    /** @description Image response security policy. */
+                    "X-Content-Type-Options"?: string;
+                    /** @description Image revision. */
+                    "X-Revision"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Error */
             default: {
                 headers: {
@@ -1051,9 +1064,9 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                Authorization?: string;
-                "privy-id-token"?: string;
-                "If-Match"?: string;
+                Authorization: string;
+                "privy-id-token": string;
+                "If-Match": string;
                 "Content-Type": string;
             };
             path: {
@@ -1063,7 +1076,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/octet-stream": string;
                 "image/jpeg": string;
                 "image/png": string;
                 "image/webp": string;
@@ -1126,10 +1138,10 @@ export interface operations {
     replaceTokenMetadata: {
         parameters: {
             query?: never;
-            header?: {
-                Authorization?: string;
-                "privy-id-token"?: string;
-                "If-Match"?: string;
+            header: {
+                Authorization: string;
+                "privy-id-token": string;
+                "If-Match": string;
             };
             path: {
                 token: string;

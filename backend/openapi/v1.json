@@ -1350,6 +1350,7 @@
           {
             "in": "header",
             "name": "Authorization",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1357,6 +1358,7 @@
           {
             "in": "header",
             "name": "privy-id-token",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1841,6 +1843,30 @@
               }
             }
           },
+          "304": {
+            "description": "Not modified when If-None-Match matches; the response has no body.",
+            "headers": {
+              "ETag": {
+                "description": "Image content hash validator.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Image response security policy.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Revision": {
+                "description": "Image revision.",
+                "schema": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              }
+            }
+          },
           "default": {
             "content": {
               "application/problem+json": {
@@ -1870,6 +1896,7 @@
           {
             "in": "header",
             "name": "Authorization",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1877,6 +1904,7 @@
           {
             "in": "header",
             "name": "privy-id-token",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1884,6 +1912,7 @@
           {
             "in": "header",
             "name": "If-Match",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1899,13 +1928,6 @@
         ],
         "requestBody": {
           "content": {
-            "application/octet-stream": {
-              "schema": {
-                "contentMediaType": "application/octet-stream",
-                "format": "binary",
-                "type": "string"
-              }
-            },
             "image/jpeg": {
               "schema": {
                 "contentMediaType": "application/octet-stream",
@@ -2024,6 +2046,7 @@
           {
             "in": "header",
             "name": "Authorization",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -2031,6 +2054,7 @@
           {
             "in": "header",
             "name": "privy-id-token",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -2038,6 +2062,7 @@
           {
             "in": "header",
             "name": "If-Match",
+            "required": true,
             "schema": {
               "type": "string"
             }

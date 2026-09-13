@@ -32,8 +32,13 @@ func (q *Queries) GetTokenCreatorForUpdate(ctx context.Context, arg GetTokenCrea
 
 const getTokenImage = `-- name: GetTokenImage :one
 SELECT content_type, content, sha256, revision, updated_at
-FROM token_images
-WHERE chain_id = $1 AND token_address = $2
+FROM token_images AS image
+JOIN token_launches AS launch
+  ON launch.chain_id = image.chain_id
+ AND launch.token_address = image.token_address
+ AND launch.tx_hash = image.launch_tx_hash
+ AND launch.log_index = image.launch_log_index
+WHERE image.chain_id = $1 AND image.token_address = $2
 `
 
 type GetTokenImageParams struct {
@@ -64,8 +69,13 @@ func (q *Queries) GetTokenImage(ctx context.Context, arg GetTokenImageParams) (G
 
 const getTokenMetadata = `-- name: GetTokenMetadata :one
 SELECT description, image_url, x_url, telegram_url, revision, updated_at
-FROM token_metadata
-WHERE chain_id = $1 AND token_address = $2
+FROM token_metadata AS metadata
+JOIN token_launches AS launch
+  ON launch.chain_id = metadata.chain_id
+ AND launch.token_address = metadata.token_address
+ AND launch.tx_hash = metadata.launch_tx_hash
+ AND launch.log_index = metadata.launch_log_index
+WHERE metadata.chain_id = $1 AND metadata.token_address = $2
 `
 
 type GetTokenMetadataParams struct {
@@ -97,17 +107,19 @@ func (q *Queries) GetTokenMetadata(ctx context.Context, arg GetTokenMetadataPara
 }
 
 const replaceTokenImage = `-- name: ReplaceTokenImage :one
-INSERT INTO token_images (chain_id, token_address, content_type, content, byte_size, sha256, revision, updated_at)
-SELECT $1, $2, $3, $4,
-       $5, $6, 1, $7
-FROM token_launches
-WHERE chain_id = $1 AND token_address = $2
-  AND creator = $8
+INSERT INTO token_images (chain_id, token_address, launch_tx_hash, launch_log_index, content_type, content, byte_size, sha256, revision, updated_at)
+SELECT launch.chain_id, launch.token_address, launch.tx_hash, launch.log_index,
+       $1, $2, $3, $4, 1, $5
+FROM token_launches AS launch
+WHERE launch.chain_id = $6 AND launch.token_address = $7
+  AND launch.creator = $8
   AND ($9::bigint = 0 OR EXISTS (
       SELECT 1 FROM token_images
-      WHERE chain_id = $1 AND token_address = $2
+      WHERE chain_id = launch.chain_id AND token_address = launch.token_address
+        AND launch_tx_hash = launch.tx_hash AND launch_log_index = launch.log_index
   ))
-ON CONFLICT (chain_id, token_address) DO UPDATE
+ON CONFLICT (chain_id, token_address, launch_tx_hash, launch_log_index)
+WHERE launch_tx_hash IS NOT NULL AND launch_log_index IS NOT NULL DO UPDATE
 SET content_type = EXCLUDED.content_type, content = EXCLUDED.content,
     byte_size = EXCLUDED.byte_size, sha256 = EXCLUDED.sha256,
     revision = token_images.revision + 1, updated_at = EXCLUDED.updated_at
@@ -116,26 +128,26 @@ RETURNING revision
 `
 
 type ReplaceTokenImageParams struct {
-	ChainID          int64
-	TokenAddress     Address
 	ContentType      string
 	Content          []byte
 	ByteSize         int32
 	Sha256           Hash
 	UpdatedAt        pgtype.Timestamptz
+	ChainID          int64
+	TokenAddress     Address
 	Creator          Address
 	ExpectedRevision int64
 }
 
 func (q *Queries) ReplaceTokenImage(ctx context.Context, arg ReplaceTokenImageParams) (int64, error) {
 	row := q.db.QueryRow(ctx, replaceTokenImage,
-		arg.ChainID,
-		arg.TokenAddress,
 		arg.ContentType,
 		arg.Content,
 		arg.ByteSize,
 		arg.Sha256,
 		arg.UpdatedAt,
+		arg.ChainID,
+		arg.TokenAddress,
 		arg.Creator,
 		arg.ExpectedRevision,
 	)
@@ -145,17 +157,19 @@ func (q *Queries) ReplaceTokenImage(ctx context.Context, arg ReplaceTokenImagePa
 }
 
 const replaceTokenMetadata = `-- name: ReplaceTokenMetadata :one
-INSERT INTO token_metadata (chain_id, token_address, description, image_url, x_url, telegram_url, revision, updated_at)
-SELECT $1, $2, $3, $4,
-       $5, $6, 1, $7
-FROM token_launches
-WHERE chain_id = $1 AND token_address = $2
-  AND creator = $8
+INSERT INTO token_metadata (chain_id, token_address, launch_tx_hash, launch_log_index, description, image_url, x_url, telegram_url, revision, updated_at)
+SELECT launch.chain_id, launch.token_address, launch.tx_hash, launch.log_index,
+       $1, $2, $3, $4, 1, $5
+FROM token_launches AS launch
+WHERE launch.chain_id = $6 AND launch.token_address = $7
+  AND launch.creator = $8
   AND ($9::bigint = 0 OR EXISTS (
       SELECT 1 FROM token_metadata
-      WHERE chain_id = $1 AND token_address = $2
+      WHERE chain_id = launch.chain_id AND token_address = launch.token_address
+        AND launch_tx_hash = launch.tx_hash AND launch_log_index = launch.log_index
   ))
-ON CONFLICT (chain_id, token_address) DO UPDATE
+ON CONFLICT (chain_id, token_address, launch_tx_hash, launch_log_index)
+WHERE launch_tx_hash IS NOT NULL AND launch_log_index IS NOT NULL DO UPDATE
 SET description = EXCLUDED.description, image_url = EXCLUDED.image_url,
     x_url = EXCLUDED.x_url, telegram_url = EXCLUDED.telegram_url,
     revision = token_metadata.revision + 1, updated_at = EXCLUDED.updated_at
@@ -164,26 +178,26 @@ RETURNING revision
 `
 
 type ReplaceTokenMetadataParams struct {
-	ChainID          int64
-	TokenAddress     Address
 	Description      pgtype.Text
 	ImageUrl         pgtype.Text
 	XUrl             pgtype.Text
 	TelegramUrl      pgtype.Text
 	UpdatedAt        pgtype.Timestamptz
+	ChainID          int64
+	TokenAddress     Address
 	Creator          Address
 	ExpectedRevision int64
 }
 
 func (q *Queries) ReplaceTokenMetadata(ctx context.Context, arg ReplaceTokenMetadataParams) (int64, error) {
 	row := q.db.QueryRow(ctx, replaceTokenMetadata,
-		arg.ChainID,
-		arg.TokenAddress,
 		arg.Description,
 		arg.ImageUrl,
 		arg.XUrl,
 		arg.TelegramUrl,
 		arg.UpdatedAt,
+		arg.ChainID,
+		arg.TokenAddress,
 		arg.Creator,
 		arg.ExpectedRevision,
 	)

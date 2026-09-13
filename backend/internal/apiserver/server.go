@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -35,6 +36,9 @@ type Server struct {
 	Handler http.Handler
 	HTTP    *http.Server
 	API     huma.API
+
+	streamShutdown chan struct{}
+	shutdownOnce   sync.Once
 }
 
 type HealthResponse struct {
@@ -100,19 +104,30 @@ func New(cfg Config, ready Readiness, logger *slog.Logger) *Server {
 		_ = json.NewEncoder(w).Encode(HealthResponse{Status: "ready"})
 	})
 	h := middleware(mux, cfg, logger)
-	return &Server{Handler: h, API: api, HTTP: &http.Server{Handler: h, ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout, MaxHeaderBytes: cfg.MaxHeaderBytes}}
+	return &Server{
+		Handler:        h,
+		API:            api,
+		HTTP:           &http.Server{Handler: h, ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout, MaxHeaderBytes: cfg.MaxHeaderBytes},
+		streamShutdown: make(chan struct{}),
+	}
 }
 
-func (s *Server) RegisterTokenRoutes(r TokenRoutes)             { r.Register(s.API) }
-func (s *Server) RegisterQuoteRoutes(r QuoteRoutes)             { r.Register(s.API) }
-func (s *Server) RegisterCandleRoutes(r CandleRoutes)           { r.Register(s.API) }
-func (s *Server) RegisterPublicRoutes(r PublicRoutes)           { r.Register(s.API) }
-func (s *Server) RegisterMetadataRoutes(r MetadataRoutes)       { r.Register(s.API) }
-func (s *Server) RegisterEventRoutes(r EventRoutes)             { r.Register(s.API) }
+func (s *Server) RegisterTokenRoutes(r TokenRoutes)       { r.Register(s.API) }
+func (s *Server) RegisterQuoteRoutes(r QuoteRoutes)       { r.Register(s.API) }
+func (s *Server) RegisterCandleRoutes(r CandleRoutes)     { r.Register(s.API) }
+func (s *Server) RegisterPublicRoutes(r PublicRoutes)     { r.Register(s.API) }
+func (s *Server) RegisterMetadataRoutes(r MetadataRoutes) { r.Register(s.API) }
+func (s *Server) RegisterEventRoutes(r EventRoutes) {
+	r.shutdown = s.streamShutdown
+	r.Register(s.API)
+}
 func (s *Server) RegisterObservationRoutes(r ObservationRoutes) { r.Register(s.API) }
 func (s *Server) RegisterProfileRoutes(r ProfileRoutes)         { r.Register(s.API) }
 
-func (s *Server) Shutdown(ctx context.Context) error { return s.HTTP.Shutdown(ctx) }
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.shutdownOnce.Do(func() { close(s.streamShutdown) })
+	return s.HTTP.Shutdown(ctx)
+}
 
 type ctxKey string
 
@@ -204,6 +219,7 @@ func cors(w http.ResponseWriter, origins []string, r *http.Request) bool {
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,privy-id-token,If-Match,If-None-Match")
+			w.Header().Set("Access-Control-Expose-Headers", "ETag, X-Revision")
 			return true
 		}
 	}

@@ -3,8 +3,11 @@
 package postgrestest
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,8 +25,8 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first migration up: %v", err)
 	}
-	assertMigrationResults(t, firstUp, []migrationResultWant{{version: 1, direction: "up"}, {version: 2, direction: "up"}, {version: 3, direction: "up"}, {version: 4, direction: "up"}, {version: 5, direction: "up"}, {version: 6, direction: "up"}, {version: 7, direction: "up"}, {version: 8, direction: "up"}, {version: 9, direction: "up"}})
-	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied", 7: "applied", 8: "applied", 9: "applied"})
+	assertMigrationResults(t, firstUp, []migrationResultWant{{version: 1, direction: "up"}, {version: 2, direction: "up"}, {version: 3, direction: "up"}, {version: 4, direction: "up"}, {version: 5, direction: "up"}, {version: 6, direction: "up"}, {version: 7, direction: "up"}, {version: 8, direction: "up"}, {version: 9, direction: "up"}, {version: 10, direction: "up"}})
+	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied", 7: "applied", 8: "applied", 9: "applied", 10: "applied"})
 	assertTableExists(t, ctx, database.DB, "sync_state", true)
 	assertTableExists(t, ctx, database.DB, "indexed_blocks", true)
 	assertTableExists(t, ctx, database.DB, "token_launches", true)
@@ -33,8 +36,8 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migration down: %v", err)
 	}
-	assertMigrationResults(t, down, []migrationResultWant{{version: 9, direction: "down"}})
-	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied", 7: "applied", 8: "applied", 9: "pending"})
+	assertMigrationResults(t, down, []migrationResultWant{{version: 10, direction: "down"}})
+	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied", 7: "applied", 8: "applied", 9: "applied", 10: "pending"})
 	assertTableExists(t, ctx, database.DB, "sync_state", true)
 	assertTableExists(t, ctx, database.DB, "indexed_blocks", true)
 	assertTableExists(t, ctx, database.DB, "token_launches", true)
@@ -44,12 +47,84 @@ func TestMigrationsUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second migration up: %v", err)
 	}
-	assertMigrationResults(t, secondUp, []migrationResultWant{{version: 9, direction: "up"}})
-	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied", 7: "applied", 8: "applied", 9: "applied"})
+	assertMigrationResults(t, secondUp, []migrationResultWant{{version: 10, direction: "up"}})
+	assertMigrationStates(t, ctx, database.DB, map[int64]string{1: "applied", 2: "applied", 3: "applied", 4: "applied", 5: "applied", 6: "applied", 7: "applied", 8: "applied", 9: "applied", 10: "applied"})
 	assertTableExists(t, ctx, database.DB, "sync_state", true)
 	assertTableExists(t, ctx, database.DB, "indexed_blocks", true)
 	assertTableExists(t, ctx, database.DB, "token_launches", true)
 	assertTableExists(t, ctx, database.DB, "tokens", true)
+}
+
+func TestMetadataLaunchIdentityMigrationQuarantinesLegacyRowsAndProtectsDown(t *testing.T) {
+	database := NewMigrated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	if _, err := migrations.Run(ctx, database.DB, migrations.CommandDown); err != nil {
+		t.Fatalf("rollback launch identity migration: %v", err)
+	}
+	const chainID int64 = 46630
+	at := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	blockHash, txHash, token := hashBytes(0x91), hashBytes(0x92), addressBytes(0x93)
+	mustInsertBlock(t, ctx, database.DB, chainID, 21, blockHash, hashBytes(0x90), at, "safe")
+	insertProjectionLaunch(t, ctx, database.DB, chainID, 21, blockHash, at, txHash, projectionLaunchFixture{token: token, curve: addressBytes(0x94), pair: addressBytes(0x95), weth: addressBytes(0x96)})
+	imageContent := []byte("legacy-image")
+	imageHash := sha256.Sum256(imageContent)
+	if _, err := database.DB.ExecContext(ctx, `
+		INSERT INTO token_metadata (chain_id, token_address, description, updated_at)
+		VALUES ($1, $2, 'legacy metadata', $3)
+	`, chainID, token, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.DB.ExecContext(ctx, `
+		INSERT INTO token_images (chain_id, token_address, content_type, content, byte_size, sha256, updated_at)
+		VALUES ($1, $2, 'image/png', $3, $4, $5, $6)
+	`, chainID, token, imageContent, len(imageContent), imageHash[:], at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := migrations.Run(ctx, database.DB, migrations.CommandUp); err != nil {
+		t.Fatalf("backfill launch identity: %v", err)
+	}
+	var legacyHash []byte
+	var legacyLogIndex sql.NullInt64
+	if err := database.DB.QueryRowContext(ctx, `SELECT launch_tx_hash, launch_log_index FROM token_metadata WHERE chain_id=$1 AND token_address=$2`, chainID, token).Scan(&legacyHash, &legacyLogIndex); err != nil {
+		t.Fatal(err)
+	}
+	if legacyHash != nil || legacyLogIndex.Valid {
+		t.Fatalf("legacy metadata was guessed onto a current launch: hash=%x log=%+v", legacyHash, legacyLogIndex)
+	}
+	if err := database.DB.QueryRowContext(ctx, `SELECT launch_tx_hash, launch_log_index FROM token_images WHERE chain_id=$1 AND token_address=$2`, chainID, token).Scan(&legacyHash, &legacyLogIndex); err != nil {
+		t.Fatal(err)
+	}
+	if legacyHash != nil || legacyLogIndex.Valid {
+		t.Fatalf("legacy image was guessed onto a current launch: hash=%x log=%+v", legacyHash, legacyLogIndex)
+	}
+	var description string
+	if err := database.DB.QueryRowContext(ctx, `SELECT description FROM token_metadata WHERE chain_id=$1 AND token_address=$2`, chainID, token).Scan(&description); err != nil || description != "legacy metadata" {
+		t.Fatalf("migration changed quarantined metadata: description=%q error=%v", description, err)
+	}
+	var gotImage []byte
+	if err := database.DB.QueryRowContext(ctx, `SELECT content FROM token_images WHERE chain_id=$1 AND token_address=$2`, chainID, token).Scan(&gotImage); err != nil || !bytes.Equal(gotImage, imageContent) {
+		t.Fatalf("migration changed quarantined image: content=%q error=%v", gotImage, err)
+	}
+
+	// The new launch-scoped row coexists with preserved legacy content. Down
+	// refuses to collapse the two identities into the vulnerable address key.
+	if _, err := database.DB.ExecContext(ctx, `
+		INSERT INTO token_metadata (chain_id, token_address, launch_tx_hash, launch_log_index, description, revision, updated_at)
+		VALUES ($1, $2, $3, 0, 'launch-scoped metadata', 1, $4)
+	`, chainID, token, txHash, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.DB.ExecContext(ctx, `
+		INSERT INTO token_images (chain_id, token_address, launch_tx_hash, launch_log_index, content_type, content, byte_size, sha256, revision, updated_at)
+		VALUES ($1, $2, $3, 0, 'image/png', $4, $5, $6, 1, $7)
+	`, chainID, token, txHash, imageContent, len(imageContent), imageHash[:], at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := migrations.Run(ctx, database.DB, migrations.CommandDown); err == nil || !strings.Contains(err.Error(), "multiple metadata or image rows exist") {
+		t.Fatalf("down migration with legacy and scoped rows error=%v", err)
+	}
 }
 
 type migrationResultWant struct {

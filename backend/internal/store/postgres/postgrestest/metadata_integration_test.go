@@ -12,6 +12,7 @@ import (
 
 	"github.com/Contictus/launchtap/backend/internal/metadata"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
+	"github.com/Contictus/launchtap/backend/internal/store/postgres/sqlc"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -27,8 +28,9 @@ func TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically(t *testing.T) {
 	const chainID int64 = 46630
 	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	blockHash, tokenBytes := hashBytes(0x81), addressBytes(0x82)
+	launchTxHash := hashBytes(0x83)
 	mustInsertBlock(t, ctx, database.DB, chainID, 10, blockHash, hashBytes(0x80), at, "safe")
-	insertProjectionLaunch(t, ctx, database.DB, chainID, 10, blockHash, at, hashBytes(0x83), projectionLaunchFixture{token: tokenBytes, curve: addressBytes(0x84), pair: addressBytes(0x85), weth: addressBytes(0x86)})
+	insertProjectionLaunch(t, ctx, database.DB, chainID, 10, blockHash, at, launchTxHash, projectionLaunchFixture{token: tokenBytes, curve: addressBytes(0x84), pair: addressBytes(0x85), weth: addressBytes(0x86)})
 	if _, err := database.DB.ExecContext(ctx, `SELECT rebuild_token_projections($1,$2)`, chainID, tokenBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -62,20 +64,70 @@ func TestMetadataAndImagesAuthorizeAndUseRevisionsAtomically(t *testing.T) {
 		t.Fatalf("image=%+v error=%v", image, err)
 	}
 
-	// Off-chain creator content must not block or disappear during canonical rollback.
-	for _, table := range []string{"aggregation_dirty", "token_reserves", "holder_balances", "candles", "token_stats", "tokens"} {
-		if _, err := database.DB.ExecContext(ctx, `DELETE FROM `+table+` WHERE chain_id=$1 AND token_address=$2`, chainID, tokenBytes); err != nil {
-			t.Fatalf("delete %s projection with image: %v", table, err)
+	removeLaunch := func() {
+		t.Helper()
+		for _, table := range []string{"aggregation_dirty", "token_reserves", "holder_balances", "candles", "token_stats", "tokens"} {
+			if _, err := database.DB.ExecContext(ctx, `DELETE FROM `+table+` WHERE chain_id=$1 AND token_address=$2`, chainID, tokenBytes); err != nil {
+				t.Fatalf("delete %s projection with image: %v", table, err)
+			}
+		}
+		if _, err := database.DB.ExecContext(ctx, `DELETE FROM token_launches WHERE chain_id=$1 AND token_address=$2`, chainID, tokenBytes); err != nil {
+			t.Fatalf("delete launch with image: %v", err)
 		}
 	}
-	if _, err := database.DB.ExecContext(ctx, `DELETE FROM token_launches WHERE chain_id=$1 AND token_address=$2`, chainID, tokenBytes); err != nil {
-		t.Fatalf("delete launch with image: %v", err)
+	removeLaunch()
+	if _, err := store.GetImage(ctx, chainID, tokenAddress); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("orphan image read error=%v, want not found", err)
 	}
-	if _, err := store.GetImage(ctx, chainID, tokenAddress); err != nil {
-		t.Fatalf("image did not survive rollback: %v", err)
+	if _, err := store.GetMetadata(ctx, chainID, tokenAddress); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("orphan metadata read error=%v, want not found", err)
 	}
-	if _, err := store.ReplaceImage(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Image{ContentType: "image/png", Content: content, SHA256: hash, Revision: 0, UpdatedAt: at}); !errors.Is(err, metadata.ErrNotFound) {
-		t.Fatalf("orphan image write error=%v", err)
+
+	// A replacement launch at the same address must not inherit the previous
+	// launch's creator-controlled metadata or image.
+	replacementTxHash := hashBytes(0x87)
+	insertProjectionLaunch(t, ctx, database.DB, chainID, 10, blockHash, at, replacementTxHash, projectionLaunchFixture{token: tokenBytes, curve: addressBytes(0x88), pair: addressBytes(0x89), weth: addressBytes(0x8a)})
+	if _, err := database.DB.ExecContext(ctx, `UPDATE token_launches SET creator=$3 WHERE chain_id=$1 AND tx_hash=$2`, chainID, replacementTxHash, addressBytes(0x66)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.DB.ExecContext(ctx, `SELECT rebuild_token_projections($1,$2)`, chainID, tokenBytes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetImage(ctx, chainID, tokenAddress); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("replacement launch image read error=%v, want not found", err)
+	}
+	if _, err := store.GetMetadata(ctx, chainID, tokenAddress); !errors.Is(err, metadata.ErrNotFound) {
+		t.Fatalf("replacement launch metadata read error=%v, want not found", err)
+	}
+	detail, err := sqlc.New(pool).GetTokenDetail(ctx, sqlc.GetTokenDetailParams{ChainID: chainID, TokenAddress: sqlc.Address(tokenAddress)})
+	if err != nil || detail.Description.Valid || detail.ImageUrl.Valid || detail.XUrl.Valid || detail.TelegramUrl.Valid {
+		t.Fatalf("replacement launch detail leaked prior metadata: detail=%+v error=%v", detail, err)
+	}
+	if _, err := store.ReplaceImage(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Image{ContentType: "image/png", Content: content, SHA256: hash, Revision: 0, UpdatedAt: at}); !errors.Is(err, metadata.ErrUnauthorized) {
+		t.Fatalf("prior creator write against replacement launch error=%v, want unauthorized", err)
+	}
+
+	// Replaying the original canonical launch identity makes its own content
+	// visible again, which is the intended reorg-survival behavior.
+	removeLaunch()
+	insertProjectionLaunch(t, ctx, database.DB, chainID, 10, blockHash, at, launchTxHash, projectionLaunchFixture{token: tokenBytes, curve: addressBytes(0x84), pair: addressBytes(0x85), weth: addressBytes(0x86)})
+	if _, err := database.DB.ExecContext(ctx, `SELECT rebuild_token_projections($1,$2)`, chainID, tokenBytes); err != nil {
+		t.Fatal(err)
+	}
+	image, err = store.GetImage(ctx, chainID, tokenAddress)
+	if err != nil || image.SHA256 != hash || image.ContentType != "image/png" {
+		t.Fatalf("same-launch replay image=%+v error=%v", image, err)
+	}
+	metadataValue, err := store.GetMetadata(ctx, chainID, tokenAddress)
+	if err != nil || metadataValue.Description != "second" {
+		t.Fatalf("same-launch replay metadata=%+v error=%v", metadataValue, err)
+	}
+	detail, err = sqlc.New(pool).GetTokenDetail(ctx, sqlc.GetTokenDetailParams{ChainID: chainID, TokenAddress: sqlc.Address(tokenAddress)})
+	if err != nil || !detail.Description.Valid || detail.Description.String != "second" {
+		t.Fatalf("same-launch replay detail=%+v error=%v", detail, err)
+	}
+	if _, err := store.ReplaceImage(ctx, chainID, tokenAddress, []common.Address{creator}, metadata.Image{ContentType: "image/png", Content: content, SHA256: hash, Revision: 0, UpdatedAt: at}); !errors.Is(err, metadata.ErrRevisionConflict) {
+		t.Fatalf("stale image write error=%v", err)
 	}
 }
 
