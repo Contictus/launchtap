@@ -15,26 +15,24 @@
 
 ## Active
 
-### Robinhood testnet deployment manifest
-- **Date:** 2026-09-01
-- **Reason:** external deployment prerequisite
-- **Where it stopped:** Mainnet WETH/Uniswap addresses are verified. Official Uniswap v2
-  deployment records list Robinhood Chain mainnet, not chain 46630 testnet. The repository
-  now has a deterministic project-owned dependency bootstrap, candidate evidence capture,
-  Launchpad candidate-manifest flow, and operator runbook; no testnet transaction has been
-  authorized or broadcast by the repository workflow.
-- **Owner:** Backend Plan 2 Task 1 (`docs/plans/2026-09-05-backend-indexer.md`). Only that
-  plan's Task 8 testnet acceptance depends on it, so it does not block backend Tasks 2-7.
+### Robinhood testnet live acceptance
+
+- **Date:** 2026-09-13
+- **Reason:** external test-wallet funding and live acceptance operation
+- **Where it stopped:** The reviewed chain-46630 dependency and Launchpad manifests are
+  active. Contract receipts, runtime hashes, configuration getters, repository gates, and
+  local backend/web verification passed. The first live product acceptance run has not yet
+  been performed with separate creator and trader wallets.
 - **Related files:** `docs/runbooks/robinhood-testnet-deployment.md`,
-  `contracts/scripts/bootstrap-testnet-dependencies.ps1`, `contracts/scripts/deploy.ps1`,
-  `contracts/deployments/config/robinhood-testnet.disabled.json`
-- **Resume (next step):** A human operator must fund a named Foundry account, run the dry-run
-  and broadcast commands in the runbook, independently review receipts/code hashes/source
-  evidence, commit the reviewed dependency record, then run the Launchpad deployment and
-  commit its reviewed chain-46630 manifest. The exact first command is:
-  `pwsh ./contracts/scripts/bootstrap-testnet-dependencies.ps1 -RpcUrl <RPC> -Sender <address>`.
-- **Pitfalls / notes:** Testnet startup must remain graduation-disabled until the manifest
-  is complete; never substitute mainnet addresses.
+  `contracts/deployments/robinhood-testnet-v1.json`,
+  `backend/internal/deployments/robinhood-testnet-v1.json`
+- **Resume (next step):** Create and faucet-fund fresh test-only creator and trader wallets,
+  start PostgreSQL plus the API/indexer against the reviewed testnet manifest, execute the
+  create/buy/sell/graduation acceptance flow, and record the exact manifest digest,
+  deployment block, transaction hashes, API/indexer health output, and finality/reorg
+  observations required by the runbook.
+- **Pitfalls / notes:** Do not reuse pause, timelock, treasury, or deployer identities as the
+  creator/trader pair. Never commit wallet private keys, passwords, or private RPC URLs.
 
 ### Production release, governance, and audit inputs
 - **Date:** 2026-09-01
@@ -67,6 +65,23 @@
 ---
 
 ## Done
+
+### Robinhood testnet deployment manifest
+
+- **Completed:** 2026-09-13
+- **Evidence:** commits `4187301` and `0f198c2` contain the independently reviewed dependency
+  record and active Launchpad manifest for chain `46630`. WETH is
+  `0xcc02c43352422cc5ce27d8f222302050aeecbd6f`, Uniswap V2 Factory is
+  `0x76748a790c21335ac0a170504e362b8859c514f5`, BondingCurveV1 is
+  `0x979b9b8172fba6daec305e388fb500b32f740497`, and LaunchFactory is
+  `0xedddb61a53226ffdc6ecf7c042b803e769168d55`.
+- **Verification:** All four deployment receipts succeeded; live runtime-code hashes and
+  LaunchFactory configuration getters matched the reviewed evidence. Foundry passed 97/97,
+  the complete backend verification gate passed locally, and web tests, lint, typecheck,
+  build, and deployment drift checks passed. GitHub contracts and web workflows for
+  `0f198c2` passed; its backend workflow was still running when this item was closed.
+- **Boundary:** This closes dependency bootstrap and deployment-manifest activation. The
+  first live end-to-end product acceptance remains separately tracked above.
 
 ### ETH/USD enrichment source selection
 
