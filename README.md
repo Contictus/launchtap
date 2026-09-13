@@ -14,6 +14,7 @@ indexes canonical chain data and never holds trading funds.
 | Backend Indexer (Plan 2, Tasks 1–5) | Code complete; deterministic Anvil and health gates verified; live testnet manifest remains external |
 | API and identity (Plan 3, Tasks 1–7) | Complete |
 | Web client (Plan 4, Tasks 1–8) | Code and deterministic CI complete on `dev`; live release pending |
+| Full codebase audit and hardening (Plan 5, Tasks 1–8) | Repository remediation and available deterministic gates complete on `dev`; production readiness not claimed |
 
 Plan 2 still needs the reviewed chain-46630 deployment manifest before live operation. The
 repository-owned deployment procedure is in
@@ -31,6 +32,12 @@ prerequisites. The complete handoff is in
 remain authoritative and the adapter is optional. The
 Forum/Memestock surface is intentionally a later plan. The milestone merge from `dev` to
 `main` remains a repository closeout step.
+
+Plan 5 audited the immutable `main` baseline, remediated independently validated repository
+findings, and recorded its evidence and limitations in
+[`docs/audits/plan-5/README.md`](docs/audits/plan-5/README.md). Remaining live deployment and
+production inputs are listed in `backlog.md`; fresh Slither detector output and archive-RPC fork
+verification are not claimed by the closeout.
 
 ## Repository layout
 

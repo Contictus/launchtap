@@ -1,8 +1,9 @@
 # Plan 5 Audit Index
 
-Plan 5 Tasks 1–7 are complete. Task 8 remediation is next, but is not authorized or started.
-This directory contains the Task 1 baseline and audit-policy pack plus the completed Task 2–7
-reports. The implementation under review is immutable commit
+Plan 5 Tasks 1–8 are complete on `dev`; Task 8 remediation and the available deterministic
+verification are closed with limitations recorded in the final report. This is not a production
+readiness statement. This directory contains the Task 1 baseline and audit-policy pack, completed
+Task 2–7 baseline reports, and the Task 8 remediation closeout. The implementation under review is immutable commit
 `6184bc5febd43de99ab6cc2b6f71f7f90c878bb6`; later audit documentation does not move that target.
 
 | Audit task | Report | Disposition summary |
@@ -13,8 +14,9 @@ reports. The implementation under review is immutable commit
 | Task 5 — Web, wallet, transaction, and browser security | [08-task-5-web-frontend.md](08-task-5-web-frontend.md) | 6 validated findings; 4 rejected and 1 deferred candidate out of 11 considered; 2 runtime-verification gates deferred. |
 | Task 6 — Code quality, architecture, and performance | [09-task-6-quality-performance.md](09-task-6-quality-performance.md) | 2 validated findings; 1 unvalidated correctness/availability candidate and 1 unmeasured optimization candidate; 0 rejected hypotheses and 0 measured performance findings. |
 | Task 7 — Supply chain, CI, release, and operations | [10-task-7-supply-chain-release.md](10-task-7-supply-chain-release.md) | 0 new validated findings; 2 rejected hypotheses; 3 deferred candidates/boundaries (2 inherited, 1 license-scope question). Registry, advisory-log, and selected tool/provenance evidence remain incomplete. |
+| Task 8 — Finding validation, remediation, independent review, and closeout | [11-task-8-remediation-closeout.md](11-task-8-remediation-closeout.md) | Repository fixes and available deterministic gates complete; findings/candidates reconciled; fresh Slither output, archive-RPC fork, production/live and some provider/provenance evidence remain unavailable or external. |
 
-Tasks 5–7 did not establish production readiness. External deployment, production configuration,
+Tasks 5–8 do not establish production readiness. External deployment, production configuration,
 governance, legal, operational, and independent-audit evidence remains in exactly 2 Active backlog
 items: “Robinhood testnet deployment manifest” and “Production release, governance, and audit
 inputs.”

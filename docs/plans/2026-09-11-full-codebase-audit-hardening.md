@@ -4,8 +4,10 @@
 > review. This plan audits the immutable completed implementation before authorizing changes.
 > Audit hypotheses are not findings, and green tests are not proof of production safety.
 
-**Status:** Tasks 1–7 complete. Task 8 remediation is next, but is not authorized and has not
-started.
+**Status:** Tasks 1–8 complete on `dev` through commit `995e5c9`. Task 8 remediation and
+available deterministic verification are complete; the closeout report records unavailable
+fresh Slither/fork evidence and remaining external production boundaries. Plan 5 does not declare
+production readiness.
 
 **Audit baseline:** `6184bc5febd43de99ab6cc2b6f71f7f90c878bb6` (`main` milestone merge)
 
@@ -317,6 +319,24 @@ Acceptance criteria:
 - GitHub CI passes on the reviewed head. Conditional live/fork/production checks are reported as
   conditional and are never converted into deterministic local evidence.
 - The final report states the two existing external backlog items plus any newly deferred item.
+
+### Task 8 completion accounting
+
+Task 8 is complete for repository-side remediation and the deterministic gates available in the
+recorded environment. The final report is
+[`docs/audits/plan-5/11-task-8-remediation-closeout.md`](../audits/plan-5/11-task-8-remediation-closeout.md).
+It maps validated findings and candidates to remediation commits, regression tests, measured
+optimization evidence, independent clean reviews, and final CI runs. Acceptance is bounded as
+follows:
+
+| Task 8 criterion | Result |
+| --- | --- |
+| Every validated finding and candidate has an explicit disposition and evidence trail. | Complete; fixed, rejected, accepted, and deferred states are recorded in the closeout report. |
+| Security/correctness fixes have focused regression coverage and the available post-fix gates pass. | Complete for the implemented fixes; repository and GitHub evidence is enumerated in the report. |
+| The protocol aggregation optimization preserves output and is supported by before/after measurements. | Complete for the recorded 200,000-row / 32-dirty-token PostgreSQL fixture; production workload cardinality and SLO remain unknown. |
+| Full contract/backend/web/browser/Anvil and generated-artifact checks pass. | Available deterministic gates pass; fresh Slither detector output and the archive-RPC fork gate were unavailable and remain explicitly unclaimed. |
+| GitHub CI passes on the reviewed head. | Backend passed on `995e5c9`; web passed on `2949c66` with no subsequent web-path change through `995e5c9`. |
+| External deployment, production, and operational evidence is reported without implying readiness. | Complete; the repository backlog remains exactly two Active items. |
 
 ## Dependency graph
 
