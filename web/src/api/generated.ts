@@ -574,7 +574,7 @@ export interface components {
             name: string;
             pair: string;
             phase: string;
-            /** Format: int32 */
+            /** Format: int64 */
             price_change_24h_bps: number;
             /** Format: int32 */
             protocol_share_bps: number;

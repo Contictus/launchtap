@@ -75,7 +75,7 @@ SELECT t.token_address, t.curve_address, t.lp_pair, t.weth, t.creator,
        COALESCE(s.ath_price_eth_wad, 0::numeric) AS ath_price_eth_wad,
        COALESCE(s.ath_at, t.launch_block_time) AS ath_at,
        COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
-       COALESCE(s.price_change_24h_bps, 0)::integer AS price_change_24h_bps,
+       COALESCE(s.price_change_24h_bps, 0)::bigint AS price_change_24h_bps,
        COALESCE(s.holder_count, 0)::bigint AS holder_count
 FROM tokens AS t
 LEFT JOIN token_reserves AS r USING (chain_id, token_address)
@@ -132,7 +132,7 @@ type GetTokenDetailRow struct {
 	AthPriceEthWad        Uint256
 	AthAt                 pgtype.Timestamptz
 	Volume24hEthWad       Uint256
-	PriceChange24hBps     int32
+	PriceChange24hBps     int64
 	HolderCount           int64
 }
 

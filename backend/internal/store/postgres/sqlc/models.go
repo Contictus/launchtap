@@ -416,7 +416,7 @@ type TokenStat struct {
 	AthPriceEthWad    Uint256
 	AthAt             pgtype.Timestamptz
 	Volume24hEthWad   Uint256
-	PriceChange24hBps int32
+	PriceChange24hBps int64
 	HolderCount       int32
 	SpotPriceUsd      pgtype.Numeric
 	MarketCapUsd      pgtype.Numeric

@@ -519,7 +519,7 @@ SELECT chain_id, token_address,
  volume_24h,
  CASE
    WHEN baseline_price > 0 AND latest_price IS NOT NULL
-     THEN trunc((latest_price - baseline_price) * 10000 / baseline_price)::INTEGER
+     THEN trunc((latest_price - baseline_price) * 10000 / baseline_price)::BIGINT
    ELSE 0
  END,
  holder_count,

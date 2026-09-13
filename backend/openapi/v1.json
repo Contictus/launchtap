@@ -921,7 +921,9 @@
             "type": "string"
           },
           "price_change_24h_bps": {
-            "format": "int32",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
             "type": "integer"
           },
           "protocol_share_bps": {

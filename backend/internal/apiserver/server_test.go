@@ -106,10 +106,36 @@ func TestOpenAPIContractIncludesPlan3Endpoints(t *testing.T) {
 		}
 	}
 	var document struct {
-		Paths map[string]map[string]json.RawMessage `json:"paths"`
+		Paths      map[string]map[string]json.RawMessage `json:"paths"`
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]json.RawMessage `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
 	}
 	if err := json.Unmarshal(generated, &document); err != nil {
 		t.Fatal(err)
+	}
+	priceChangeSchemaFound := false
+	for _, schema := range document.Components.Schemas {
+		if rawProperty, ok := schema.Properties["price_change_24h_bps"]; ok {
+			priceChangeSchemaFound = true
+			var property struct {
+				Type    string `json:"type"`
+				Format  string `json:"format"`
+				Minimum int64  `json:"minimum"`
+				Maximum int64  `json:"maximum"`
+			}
+			if err := json.Unmarshal(rawProperty, &property); err != nil {
+				t.Fatalf("decode price_change_24h_bps OpenAPI schema: %v", err)
+			}
+			if property.Type != "integer" || property.Format != "int64" || property.Minimum != -9007199254740991 || property.Maximum != 9007199254740991 {
+				t.Fatalf("price_change_24h_bps OpenAPI schema = %s/%s [%d, %d], want integer/int64 [%d, %d]", property.Type, property.Format, property.Minimum, property.Maximum, -9007199254740991, 9007199254740991)
+			}
+		}
+	}
+	if !priceChangeSchemaFound {
+		t.Fatal("generated OpenAPI has no price_change_24h_bps property")
 	}
 	type parameter struct {
 		Name     string `json:"name"`

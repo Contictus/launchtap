@@ -69,7 +69,8 @@ func TestPublicReadWireContracts(t *testing.T) {
 		Curve:   tokenAddress, Pair: tokenAddress, WETH: tokenAddress, Creator: tokenAddress, ProtocolTreasury: tokenAddress,
 		InitialVirtualETH: big.NewInt(10), InitialVirtualToken: big.NewInt(11), CurveTokens: big.NewInt(12), LPTokens: big.NewInt(13), GraduationETH: big.NewInt(14),
 		ETHReserve: big.NewInt(15), TokenReserve: big.NewInt(16), SpotPriceETH: big.NewInt(17), FDVETH: big.NewInt(18), LiquidityETH: big.NewInt(19), ATHPriceETH: big.NewInt(21), ATHAt: now,
-		ReserveHash: common.HexToHash("0x02"), Snapshot: snapshot, Finality: "safe",
+		PriceChange24hBPS: 2_147_490_000,
+		ReserveHash:       common.HexToHash("0x02"), Snapshot: snapshot, Finality: "safe",
 	}}
 	market := publicMarketStub{
 		trades:  trading.Page{Items: []trading.Trade{{Source: "curve", Trader: &trader, Buy: true, ExecutionPrice: big.NewInt(5), SpotPrice: big.NewInt(6), ETHVolume: big.NewInt(7), TokenVolume: big.NewInt(8), BlockNumber: 42, TxHash: common.HexToHash("0x03"), Time: now, Finality: "safe"}}, Snapshot: snapshot, Finality: "safe", NextCursor: "next-trade"},
@@ -83,7 +84,7 @@ func TestPublicReadWireContracts(t *testing.T) {
 		path string
 		want []string
 	}{
-		{"/v1/tokens/" + tokenAddress.Hex(), []string{`"total_supply":"1000"`, `"address":"` + tokenAddress.Hex() + `"`, `"finality":"safe"`}},
+		{"/v1/tokens/" + tokenAddress.Hex(), []string{`"total_supply":"1000"`, `"address":"` + tokenAddress.Hex() + `"`, `"finality":"safe"`, `"price_change_24h_bps":2147490000`}},
 		{"/v1/tokens/" + tokenAddress.Hex() + "/trades", []string{`"execution_price":"5"`, `"trader":"` + trader.Hex() + `"`, `"next_cursor":"next-trade"`}},
 		{"/v1/tokens/" + tokenAddress.Hex() + "/holders", []string{`"balance":"9"`, `"address":"` + trader.Hex() + `"`, `"next_cursor":"next-holder"`}},
 		{"/v1/stats/protocol", []string{`"volume_24h_eth":"22"`, `"trades_all_time":24`, `"as_of_block":42`}},
