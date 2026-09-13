@@ -2,6 +2,8 @@
 package stats
 
 import (
+	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -13,6 +15,28 @@ var (
 	zeroAddress common.Address
 	deadAddress = common.HexToAddress("0x000000000000000000000000000000000000dEaD")
 )
+
+const (
+	// MaxSafePriceChange24hBPS is the largest integer JavaScript Number represents exactly.
+	MaxSafePriceChange24hBPS int64 = 1<<53 - 1
+	// MinSafePriceChange24hBPS is the smallest integer JavaScript Number represents exactly.
+	MinSafePriceChange24hBPS int64 = -MaxSafePriceChange24hBPS
+)
+
+// ErrPriceChangeOutsideSafeIntegerRange marks values that JSON/JavaScript clients cannot represent exactly.
+var ErrPriceChangeOutsideSafeIntegerRange = errors.New("24-hour price change is outside the JavaScript safe-integer range")
+
+// PriceChangeRangeError records the computed basis-point value that exceeded the public numeric contract.
+type PriceChangeRangeError struct {
+	// Value is the exact decimal basis-point result.
+	Value string
+}
+
+func (e *PriceChangeRangeError) Error() string {
+	return fmt.Sprintf("%s: computed %s bps; supported range is [%d, %d]", ErrPriceChangeOutsideSafeIntegerRange, e.Value, MinSafePriceChange24hBPS, MaxSafePriceChange24hBPS)
+}
+
+func (e *PriceChangeRangeError) Unwrap() error { return ErrPriceChangeOutsideSafeIntegerRange }
 
 type Holder struct {
 	Address common.Address
@@ -44,8 +68,9 @@ type TokenStats struct {
 
 // ComputeTokenStats mirrors RecomputeTokenStats. PreviousATH is supplied for
 // ordinary aggregation so ATH remains monotonic; rollback callers omit it
-// after deleting the invalidated token_stats row.
-func ComputeTokenStats(input TokenInput, now time.Time) TokenStats {
+// after deleting the invalidated token_stats row. It returns an error when the
+// computed price change cannot be represented exactly by API clients.
+func ComputeTokenStats(input TokenInput, now time.Time) (TokenStats, error) {
 	result := TokenStats{Token: input.Token, SpotPrice: new(big.Int), MarketCap: new(big.Int), FDV: new(big.Int), Liquidity: new(big.Int), ATH: nonNegativeCopy(input.LaunchPrice), ATHAt: input.LaunchAt, Volume24H: new(big.Int)}
 	if input.PreviousATH != nil && input.PreviousATH.Sign() >= 0 {
 		result.ATH.Set(input.PreviousATH)
@@ -102,9 +127,21 @@ func ComputeTokenStats(input TokenInput, now time.Time) TokenStats {
 	if baseline != nil && positive(baseline.Close) && latest != nil {
 		delta := new(big.Int).Sub(latest.Close, baseline.Close)
 		delta.Mul(delta, big.NewInt(10_000))
-		result.PriceChange24hBPS = delta.Div(delta, baseline.Close).Int64()
+		priceChange := delta.Quo(delta, baseline.Close)
+		priceChangeBPS, err := checkedPriceChange24hBPS(priceChange)
+		if err != nil {
+			return TokenStats{}, err
+		}
+		result.PriceChange24hBPS = priceChangeBPS
 	}
-	return result
+	return result, nil
+}
+
+func checkedPriceChange24hBPS(value *big.Int) (int64, error) {
+	if value.Cmp(big.NewInt(MinSafePriceChange24hBPS)) < 0 || value.Cmp(big.NewInt(MaxSafePriceChange24hBPS)) > 0 {
+		return 0, &PriceChangeRangeError{Value: value.String()}
+	}
+	return value.Int64(), nil
 }
 
 func positive(value *big.Int) bool { return value != nil && value.Sign() > 0 }

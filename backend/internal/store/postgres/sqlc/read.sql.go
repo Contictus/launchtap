@@ -75,12 +75,14 @@ SELECT t.token_address, t.curve_address, t.lp_pair, t.weth, t.creator,
        COALESCE(s.ath_price_eth_wad, 0::numeric) AS ath_price_eth_wad,
        COALESCE(s.ath_at, t.launch_block_time) AS ath_at,
        COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
-       COALESCE(s.price_change_24h_bps, 0)::integer AS price_change_24h_bps,
+       COALESCE(s.price_change_24h_bps, 0)::bigint AS price_change_24h_bps,
        COALESCE(s.holder_count, 0)::bigint AS holder_count
 FROM tokens AS t
 LEFT JOIN token_reserves AS r USING (chain_id, token_address)
-LEFT JOIN token_metadata AS m USING (chain_id, token_address)
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_metadata AS m
+  ON m.chain_id = t.chain_id AND m.token_address = t.token_address
+ AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1
   AND t.token_address = $2
 `
@@ -130,7 +132,7 @@ type GetTokenDetailRow struct {
 	AthPriceEthWad        Uint256
 	AthAt                 pgtype.Timestamptz
 	Volume24hEthWad       Uint256
-	PriceChange24hBps     int32
+	PriceChange24hBps     int64
 	HolderCount           int64
 }
 
@@ -546,7 +548,10 @@ const listTokenCardsMarketCap = `-- name: ListTokenCardsMarketCap :many
 SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.launch_block_time, t.total_supply,
        COALESCE(s.market_cap_eth_wad, 0::numeric) AS market_cap_eth_wad, COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
        COALESCE(s.holder_count, 0)::BIGINT AS holder_count, m.description, m.image_url, m.x_url, m.telegram_url, t.launch_block_hash
-FROM tokens AS t LEFT JOIN token_metadata AS m USING (chain_id, token_address) LEFT JOIN token_stats AS s USING (chain_id, token_address)
+FROM tokens AS t
+LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
+    AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1 AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left($3::text,2)='0x' THEN substr($3::text,3) ELSE $3::text END))
   AND ($4::numeric IS NULL OR (COALESCE(s.market_cap_eth_wad,0::numeric), t.token_address) < ($4::numeric, $5::bytea))
@@ -632,8 +637,11 @@ SELECT t.token_address, t.name, t.symbol, t.phase,
        m.description, m.image_url, m.x_url, m.telegram_url,
        t.launch_block_hash
 FROM tokens AS t
-LEFT JOIN token_metadata AS m USING (chain_id, token_address)
-LEFT JOIN token_stats AS s USING (chain_id, token_address)
+LEFT JOIN token_metadata AS m
+  ON m.chain_id = t.chain_id AND m.token_address = t.token_address
+ AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
+LEFT JOIN token_stats AS s
+  ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1
   AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%'
@@ -719,7 +727,10 @@ const listTokenCardsOldest = `-- name: ListTokenCardsOldest :many
 SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.launch_block_time, t.total_supply,
        COALESCE(s.market_cap_eth_wad, 0::numeric) AS market_cap_eth_wad, COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
        COALESCE(s.holder_count, 0)::BIGINT AS holder_count, m.description, m.image_url, m.x_url, m.telegram_url, t.launch_block_hash
-FROM tokens AS t LEFT JOIN token_metadata AS m USING (chain_id, token_address) LEFT JOIN token_stats AS s USING (chain_id, token_address)
+FROM tokens AS t
+LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
+    AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1 AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left($3::text,2)='0x' THEN substr($3::text,3) ELSE $3::text END))
   AND ($4::bigint IS NULL OR (t.launch_block_number, t.token_address) > ($4::bigint, $5::bytea))
@@ -800,7 +811,10 @@ const listTokenCardsVolume = `-- name: ListTokenCardsVolume :many
 SELECT t.token_address, t.name, t.symbol, t.phase, t.launch_block_number, t.launch_block_time, t.total_supply,
        COALESCE(s.market_cap_eth_wad, 0::numeric) AS market_cap_eth_wad, COALESCE(s.volume_24h_eth_wad, 0::numeric) AS volume_24h_eth_wad,
        COALESCE(s.holder_count, 0)::BIGINT AS holder_count, m.description, m.image_url, m.x_url, m.telegram_url, t.launch_block_hash
-FROM tokens AS t LEFT JOIN token_metadata AS m USING (chain_id, token_address) LEFT JOIN token_stats AS s USING (chain_id, token_address)
+FROM tokens AS t
+LEFT JOIN token_metadata AS m ON m.chain_id = t.chain_id AND m.token_address = t.token_address
+    AND m.launch_tx_hash = t.launch_tx_hash AND m.launch_log_index = t.launch_log_index
+LEFT JOIN token_stats AS s ON s.chain_id = t.chain_id AND s.token_address = t.token_address
 WHERE t.chain_id = $1 AND t.phase = $2
   AND ($3::text = '' OR lower(t.name) LIKE lower($3::text) || '%' OR lower(t.symbol) LIKE lower($3::text) || '%' OR encode(t.token_address, 'hex') = lower(CASE WHEN left($3::text,2)='0x' THEN substr($3::text,3) ELSE $3::text END))
   AND ($4::numeric IS NULL OR (COALESCE(s.volume_24h_eth_wad,0::numeric), t.token_address) < ($4::numeric, $5::bytea))

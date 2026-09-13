@@ -3,7 +3,9 @@ package apiserver
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,6 +86,55 @@ func TestSSEOutlivesServerWriteTimeout(t *testing.T) {
 	}
 	cancel()
 	_ = response.Body.Close()
+}
+
+func TestServerShutdownCancelsActiveSSEHandler(t *testing.T) {
+	hub := realtime.NewHub(2, 2)
+	server := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), nil)
+	server.RegisterEventRoutes(EventRoutes{Hub: hub, ChainID: 46630, DeploymentID: "testnet", Heartbeat: time.Hour})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.HTTP.Serve(listener) }()
+
+	response, err := http.Get("http://" + listener.Addr().String() + "/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(response.Body)
+	readUntil(t, reader, "refresh-only", time.Second)
+	for deadline := time.Now().Add(time.Second); hub.Active() != 1 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
+	if hub.Active() != 1 {
+		_ = response.Body.Close()
+		t.Fatalf("active subscriptions before shutdown=%d, want 1", hub.Active())
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		_ = response.Body.Close()
+		t.Fatalf("shutdown with active stream: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		_ = response.Body.Close()
+		t.Fatalf("read stream after shutdown: %v", err)
+	}
+	_ = response.Body.Close()
+	if hub.Active() != 0 {
+		t.Fatalf("active subscriptions after shutdown=%d, want 0", hub.Active())
+	}
+	select {
+	case err := <-serveErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			t.Fatalf("Serve error=%v, want http.ErrServerClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HTTP Serve did not return after shutdown")
+	}
 }
 
 func readUntil(t *testing.T, reader *bufio.Reader, wanted string, timeout time.Duration) string {

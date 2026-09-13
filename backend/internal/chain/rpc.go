@@ -122,6 +122,16 @@ func (c *Client) CodeAt(ctx context.Context, address common.Address) ([]byte, er
 	return result, err
 }
 
+func (c *Client) ChainID(ctx context.Context) (*big.Int, error) {
+	var result *big.Int
+	err := c.retry(ctx, false, func(callContext context.Context) error {
+		var callErr error
+		result, callErr = c.eth.ChainID(callContext)
+		return callErr
+	})
+	return result, err
+}
+
 func (c *Client) FilterLogs(ctx context.Context, query ethereum.FilterQuery) ([]types.Log, error) {
 	var result []types.Log
 	err := c.retry(ctx, true, func(callContext context.Context) error {

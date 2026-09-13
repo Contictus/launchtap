@@ -15,6 +15,7 @@ type EventRoutes struct {
 	ChainID      int64
 	DeploymentID string
 	Heartbeat    time.Duration
+	shutdown     <-chan struct{}
 }
 
 type eventInput struct {
@@ -73,6 +74,8 @@ func (r EventRoutes) stream(ctx context.Context, _ *eventInput, send sse.Sender)
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-r.shutdown:
 			return
 		case <-ticker.C:
 			if err := send(sse.Message{Comment: "heartbeat"}); err != nil {

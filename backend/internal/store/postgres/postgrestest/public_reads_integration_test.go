@@ -47,12 +47,14 @@ func TestPublicReadsUseOneCanonicalSnapshot(t *testing.T) {
 	if detail.Snapshot.BlockNumber != 100 || detail.Finality != "safe" || detail.ETHReserve.String() != "110" {
 		t.Fatalf("detail=%+v", detail)
 	}
-	page, err := tokens.List(ctx, token.ListQuery{ChainID: chainID, Phase: "curve", Sort: "newest", Limit: 20})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(page.Items) != 1 || page.Finality != "safe" {
-		t.Fatalf("page=%+v", page)
+	for _, sort := range []string{"newest", "oldest", "market_cap", "volume_24h"} {
+		page, err := tokens.List(ctx, token.ListQuery{ChainID: chainID, Phase: "curve", Sort: sort, Limit: 20})
+		if err != nil {
+			t.Fatalf("list tokens sorted by %s: %v", sort, err)
+		}
+		if len(page.Items) != 1 || page.Items[0].Address != common.BytesToAddress(tokenBytes) || page.Finality != "safe" {
+			t.Fatalf("page sorted by %s = %+v", sort, page)
+		}
 	}
 	one, err := tokens.List(ctx, token.ListQuery{ChainID: chainID, Phase: "curve", Sort: "newest", Limit: 1})
 	if err != nil || one.NextCursor == "" {

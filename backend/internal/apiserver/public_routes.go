@@ -75,7 +75,7 @@ type tokenDetailDTO struct {
 	ATHPriceETH           string      `json:"ath_price_eth"`
 	Volume24hETH          string      `json:"volume_24h_eth"`
 	ATHAt                 string      `json:"ath_at"`
-	PriceChange24hBPS     int32       `json:"price_change_24h_bps"`
+	PriceChange24hBPS     int64       `json:"price_change_24h_bps" minimum:"-9007199254740991" maximum:"9007199254740991"`
 	HolderCount           int64       `json:"holder_count"`
 }
 type detailOutput struct{ Body tokenDetailDTO }
@@ -161,6 +161,9 @@ func address(value string) (common.Address, error) {
 	return common.HexToAddress(value), nil
 }
 func mapReadError(ctx context.Context, err error) error {
+	if errors.Is(err, pagination.ErrSnapshotUnavailable) {
+		return apiProblem(http.StatusServiceUnavailable, "snapshot_unavailable", "Canonical read snapshot is not available yet")
+	}
 	if errors.Is(err, token.ErrNotFound) {
 		return apiProblem(http.StatusNotFound, "token_not_found", "Token not found")
 	}

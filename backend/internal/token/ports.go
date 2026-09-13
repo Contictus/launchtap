@@ -63,7 +63,7 @@ type Detail struct {
 	Description, ImageURL, XURL, TelegramURL                                     string
 	SpotPriceETH, FDVETH, LiquidityETH, ATHPriceETH                              *big.Int
 	ATHAt                                                                        time.Time
-	PriceChange24hBPS                                                            int32
+	PriceChange24hBPS                                                            int64
 	Snapshot                                                                     pagination.Snapshot
 	Finality                                                                     string
 }

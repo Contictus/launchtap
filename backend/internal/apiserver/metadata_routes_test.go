@@ -71,7 +71,9 @@ func (s *fakeMetadataStore) GetMetadata(context.Context, int64, common.Address) 
 func TestMetadataAndImageHTTPContracts(t *testing.T) {
 	store := &fakeMetadataStore{}
 	creator := common.HexToAddress("0x00000000000000000000000000000000000000aa")
-	server := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), nil)
+	cfg := DefaultConfig()
+	cfg.AllowedOrigins = []string{"https://web.example"}
+	server := New(cfg, ReadyFunc(func(context.Context) error { return nil }), nil)
 	server.RegisterMetadataRoutes(MetadataRoutes{Store: store, Verifier: fakeVerifier{principal: privyauth.Principal{PrivyDID: "did:privy:test", Wallets: []common.Address{creator}}}, ChainID: 46630})
 	token := "0x00000000000000000000000000000000000000bb"
 
@@ -103,14 +105,19 @@ func TestMetadataAndImageHTTPContracts(t *testing.T) {
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/v1/tokens/"+token+"/image", nil)
+	request.Header.Set("Origin", "https://web.example")
 	response = httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" || response.Header().Get("Content-Length") != strconv.Itoa(len(png)) || response.Header().Get("X-Content-Type-Options") != "nosniff" || response.Header().Get("X-Revision") != "0" || !bytes.Equal(response.Body.Bytes(), png) {
 		t.Fatalf("image read status=%d headers=%v body=%x", response.Code, response.Header(), response.Body.Bytes())
 	}
+	if response.Header().Get("Access-Control-Expose-Headers") != "ETag, X-Revision" {
+		t.Fatalf("allowed-origin image response does not expose validators: %v", response.Header())
+	}
 	etag := response.Header().Get("ETag")
 	request = httptest.NewRequest(http.MethodGet, "/v1/tokens/"+token+"/image", nil)
 	request.Header.Set("If-None-Match", etag)
+	request.Header.Set("Origin", "https://web.example")
 	response = httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
@@ -198,7 +205,7 @@ func TestMetadataAuthenticationAuthorizationAndValidationProblems(t *testing.T) 
 	}
 }
 
-func TestMetadataMissingCredentialsIsUnauthorized(t *testing.T) {
+func TestMetadataMissingCredentialsAreRejected(t *testing.T) {
 	server := New(DefaultConfig(), ReadyFunc(func(context.Context) error { return nil }), nil)
 	server.RegisterMetadataRoutes(MetadataRoutes{Store: &fakeMetadataStore{}, Verifier: fakeVerifier{}, ChainID: 1})
 	request := httptest.NewRequest(http.MethodPut, "/v1/tokens/0x00000000000000000000000000000000000000bb/metadata", strings.NewReader(`{}`))
@@ -206,8 +213,8 @@ func TestMetadataMissingCredentialsIsUnauthorized(t *testing.T) {
 	request.Header.Set("If-Match", "0")
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("status=%d want=%d body=%s", response.Code, http.StatusUnauthorized, response.Body.String())
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d want=%d body=%s", response.Code, http.StatusUnprocessableEntity, response.Body.String())
 	}
 }
 

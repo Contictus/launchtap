@@ -5,10 +5,13 @@ import (
 	"errors"
 	"math/big"
 	"slices"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -144,5 +147,68 @@ func TestDiscovererReturnsCapacityErrorForSingleBlock(t *testing.T) {
 	_, err := discoverer.Discover(context.Background(), 10, 10, emptyEmitters(emitters.Factory))
 	if !errors.Is(err, ErrRPCCapacity) {
 		t.Fatalf("Discover() error = %v, want ErrRPCCapacity", err)
+	}
+}
+
+func TestDiscovererRejectsLaunchPairBeforeReturningCanonicalEvents(t *testing.T) {
+	t.Parallel()
+	_, fixtures, emitters := loadFixtureLogs(t)
+	decoder, err := NewDecoder(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var launchLog types.Log
+	var launch TokenLaunched
+	for _, log := range fixtures {
+		decoded, decodeErr := decoder.Decode(log, emitters)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		if value, ok := decoded.Value.(TokenLaunched); ok {
+			launchLog, launch = log, value
+			break
+		}
+	}
+	if launchLog.Address == (common.Address{}) {
+		t.Fatal("TokenLaunched fixture missing")
+	}
+	launchLog.BlockNumber = 10
+
+	wrongPair := common.HexToAddress("0xdead")
+	var pairCalls atomic.Int32
+	server := fakeRPCServer(t, func(request rpcRequest) any {
+		if request.Method != "eth_call" {
+			return rpcFailure{Code: -32601, Message: "unexpected method"}
+		}
+		pairCalls.Add(1)
+		result := make([]byte, 32)
+		copy(result[12:], wrongPair[:])
+		return hexutil.Encode(result)
+	})
+	defer server.Close()
+	client, err := Dial(context.Background(), server.URL, RPCConfig{Timeout: time.Second, RetryBackoff: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	factory, initCodeHash := common.HexToAddress("0xfac7"), common.HexToHash("0x1234")
+	discoverer, err := NewDiscovererWithPairVerification(&fixtureLogSource{logs: []types.Log{launchLog}}, decoder, emitters.Factory, 10,
+		func(ctx context.Context, found TokenLaunched) error {
+			return VerifyLaunchPair(ctx, client, factory, launch.WETH, initCodeHash, found)
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := discoverer.Discover(context.Background(), 10, 10, emptyEmitters(emitters.Factory))
+	if !errors.Is(err, ErrPairMismatch) {
+		t.Fatalf("Discover() error = %v, want ErrPairMismatch", err)
+	}
+	if got := pairCalls.Load(); got != 1 {
+		t.Fatalf("factory pair calls = %d, want 1", got)
+	}
+	if len(result.Logs) != 0 || len(result.Launches) != 0 {
+		t.Fatalf("failed discovery returned canonical events: logs=%d launches=%d", len(result.Logs), len(result.Launches))
 	}
 }

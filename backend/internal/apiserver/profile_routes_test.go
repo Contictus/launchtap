@@ -42,7 +42,7 @@ func TestProfileRouteRequiresCredentialsAndReturnsSnapshotBoundActions(t *testin
 
 	unauthorized := httptest.NewRecorder()
 	server.Handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/v1/profile", nil))
-	if unauthorized.Code != http.StatusUnauthorized {
+	if unauthorized.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status=%d body=%s", unauthorized.Code, unauthorized.Body.String())
 	}
 

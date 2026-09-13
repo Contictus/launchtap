@@ -7,11 +7,13 @@ import {
   decodeTransactionError,
   minimumOutput,
   observeCanonicalTransaction,
+  reconcileCanonicalFetch,
   parseSlippageBps,
   parseQuoteQuantity,
   parseRuntimeQuantity,
   reviewedRouterAddress,
   sameWriteIntent,
+  sameReviewedWriteIntent,
   transactionDeadline,
   validateLaunchInput,
 } from "./transactions";
@@ -84,6 +86,28 @@ describe("task 6 transaction math and safety", () => {
     };
     expect(sameWriteIntent(intent, { ...intent, account: "0xab" })).toBe(true);
     expect(sameWriteIntent(intent, { ...intent, value: 2n })).toBe(false);
+  });
+
+  it("requires a fresh explicit review when any wallet write intent field changes", () => {
+    const reviewed = {
+      account: "0xAb",
+      target: "0xCd",
+      value: 1n,
+      args: [2n, 3n],
+      deadline: 10n,
+      minimumOutput: 3n,
+      chainId: 46630,
+      functionName: "buy",
+    };
+    expect(sameReviewedWriteIntent(reviewed, { ...reviewed, account: "0xab" })).toBe(true);
+    for (const changed of [
+      { minimumOutput: 2n },
+      { deadline: 11n },
+      { value: 2n },
+      { chainId: 1 },
+      { functionName: "sell" },
+    ])
+      expect(sameReviewedWriteIntent(reviewed, { ...reviewed, ...changed })).toBe(false);
   });
 
   it("maps known custom errors and redacts unknown provider payloads", () => {
@@ -176,6 +200,39 @@ describe("task 6 transaction math and safety", () => {
         records: [{ tx_hash: "0xabc" }],
       }).status,
     ).toBe("indexed");
+  });
+
+  it("preserves canonical state on API failure but treats authoritative absence as reorg", () => {
+    const safe = { status: "safe" as const, hash: "0xabc" as `0x${string}` };
+    const unavailable = reconcileCanonicalFetch({
+      state: safe,
+      submittedHash: safe.hash,
+      action: "trade",
+      outcome: "unavailable",
+    });
+    expect(unavailable).toMatchObject({
+      status: "safe",
+      hash: safe.hash,
+      canonicalRefreshUnavailable: true,
+    });
+
+    const missing = reconcileCanonicalFetch({
+      state: safe,
+      submittedHash: safe.hash,
+      action: "trade",
+      outcome: "not-found",
+    });
+    expect(missing.status).toBe("indexing");
+    expect(missing.canonicalRefreshUnavailable).toBe(false);
+
+    const restored = reconcileCanonicalFetch({
+      state: unavailable,
+      submittedHash: safe.hash,
+      action: "trade",
+      outcome: "success",
+      records: [{ tx_hash: safe.hash, finality: "safe" }],
+    });
+    expect(restored).toMatchObject({ status: "safe", canonicalRefreshUnavailable: false });
   });
 
   it("classifies wallet rejection, provider failure, and contract/receipt reverts separately", () => {

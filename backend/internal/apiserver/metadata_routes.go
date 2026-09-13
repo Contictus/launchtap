@@ -38,9 +38,9 @@ type metadataBody struct {
 
 type metadataWriteInput struct {
 	Token         string       `path:"token"`
-	Authorization string       `header:"Authorization"`
-	IdentityToken string       `header:"privy-id-token"`
-	IfMatch       string       `header:"If-Match"`
+	Authorization string       `header:"Authorization" required:"true"`
+	IdentityToken string       `header:"privy-id-token" required:"true"`
+	IfMatch       string       `header:"If-Match" required:"true"`
 	Body          metadataBody `json:"body"`
 }
 
@@ -50,11 +50,11 @@ type metadataReadInput struct {
 
 type imageWriteInput struct {
 	Token         string `path:"token"`
-	Authorization string `header:"Authorization"`
-	IdentityToken string `header:"privy-id-token"`
-	IfMatch       string `header:"If-Match"`
+	Authorization string `header:"Authorization" required:"true"`
+	IdentityToken string `header:"privy-id-token" required:"true"`
+	IfMatch       string `header:"If-Match" required:"true"`
 	ContentType   string `header:"Content-Type" required:"true"`
-	RawBody       []byte
+	RawBody       []byte `contentType:"image/png"`
 }
 
 type imageReadInput struct {
@@ -104,9 +104,25 @@ func (r MetadataRoutes) Register(api huma.API) {
 	}, r.replaceImage)
 	huma.Register(api, huma.Operation{
 		OperationID: "getTokenImage", Method: http.MethodGet, Path: "/tokens/{token}/image", Tags: []string{"metadata"},
-		Responses: map[string]*huma.Response{"200": {Description: "Token image", Content: map[string]*huma.MediaType{
-			"image/png": {Schema: &huma.Schema{Type: "string", Format: "binary"}}, "image/jpeg": {Schema: &huma.Schema{Type: "string", Format: "binary"}}, "image/webp": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-		}}},
+		Responses: map[string]*huma.Response{
+			"200": {Description: "Token image", Content: map[string]*huma.MediaType{
+				"image/png": {Schema: &huma.Schema{Type: "string", Format: "binary"}}, "image/jpeg": {Schema: &huma.Schema{Type: "string", Format: "binary"}}, "image/webp": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+			}},
+			"304": {
+				Description: "Not modified when If-None-Match matches; the response has no body.",
+				Headers: map[string]*huma.Param{
+					"ETag":                   {Description: "Image content hash validator.", Schema: &huma.Schema{Type: "string"}},
+					"X-Revision":             {Description: "Image revision.", Schema: &huma.Schema{Type: "integer", Format: "int64"}},
+					"X-Content-Type-Options": {Description: "Image response security policy.", Schema: &huma.Schema{Type: "string"}},
+				},
+			},
+			"default": {
+				Description: "Error",
+				Content: map[string]*huma.MediaType{
+					"application/problem+json": {Schema: &huma.Schema{Ref: "#/components/schemas/ErrorModel"}},
+				},
+			},
+		},
 	}, r.getImage)
 }
 

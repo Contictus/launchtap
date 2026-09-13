@@ -16,8 +16,8 @@ type ProfileRoutes struct {
 }
 
 type profileInput struct {
-	Authorization string `header:"Authorization"`
-	IdentityToken string `header:"privy-id-token"`
+	Authorization string `header:"Authorization" required:"true"`
+	IdentityToken string `header:"privy-id-token" required:"true"`
 }
 
 type profileActionDTO struct {

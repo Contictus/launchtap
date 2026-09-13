@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Contictus/launchtap/backend/internal/observation"
+	"github.com/Contictus/launchtap/backend/internal/pagination"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -57,6 +58,9 @@ func (r ObservationRoutes) get(ctx context.Context, in *observationInput) (*cano
 	hash := common.HexToHash(in.TxHash)
 	v, err := r.Reader.Get(ctx, r.ChainID, r.DeploymentID, hash)
 	if err != nil {
+		if errors.Is(err, pagination.ErrSnapshotUnavailable) {
+			return nil, apiProblem(http.StatusServiceUnavailable, "snapshot_unavailable", "Canonical read snapshot is not available yet")
+		}
 		if errors.Is(err, observation.ErrNotFound) {
 			return nil, apiProblem(http.StatusNotFound, "transaction_not_indexed", "Transaction has no canonical indexed event at the current snapshot")
 		}

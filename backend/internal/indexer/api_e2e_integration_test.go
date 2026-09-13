@@ -30,6 +30,7 @@ import (
 	"github.com/Contictus/launchtap/backend/internal/realtime"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
 	"github.com/Contictus/launchtap/backend/internal/store/postgres/postgrestest"
+	"github.com/Contictus/launchtap/backend/internal/token"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -77,7 +78,18 @@ func exercisePlan3API(t *testing.T, ctx context.Context, database *postgrestest.
 	httpServer := httptest.NewServer(server.Handler)
 	defer httpServer.Close()
 
+	assertStatus(t, http.MethodGet, httpServer.URL+"/v1/tokens?phase=curve&sort=newest", nil, nil, http.StatusOK)
 	assertStatus(t, http.MethodGet, httpServer.URL+"/v1/tokens/"+tokenAddress.Hex(), nil, nil, http.StatusOK)
+	page, err := tokens.List(ctx, token.ListQuery{ChainID: chainID, Phase: "curve", Sort: "newest", Limit: 20})
+	if err != nil {
+		t.Fatalf("read indexed token list directly: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Address != tokenAddress {
+		t.Fatalf("indexed token list = %+v; want exactly %s", page.Items, tokenAddress.Hex())
+	}
+	if _, err := tokens.Get(ctx, chainID, tokenAddress); err != nil {
+		t.Fatalf("read indexed token detail directly: %v", err)
+	}
 	quoteResponse := assertStatus(t, http.MethodPost, httpServer.URL+"/v1/tokens/"+tokenAddress.Hex()+"/quote", strings.NewReader(`{"side":"buy","amount":"1000000000000"}`), map[string]string{"Content-Type": "application/json"}, http.StatusOK)
 	if !bytes.Contains(quoteResponse, []byte(`"informational":true`)) {
 		t.Fatalf("quote=%s", quoteResponse)

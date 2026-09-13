@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { parseEventLogs } from "viem";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAccount, useConnect, usePublicClient, useWalletClient } from "wagmi";
 import { formatBaseUnits, parseDecimal } from "@/amounts";
 import { ApiClient } from "@/api/client";
+import { ApiProblem } from "@/api/problems";
 import { browserAbis, type ReviewedDeployment } from "@/contracts/generated";
 import { publicConfiguration } from "@/config/public";
 import { addressExplorerUrl } from "@/wallet/explorer";
@@ -14,18 +14,31 @@ import {
   classifyTransactionFailure,
   decodeTransactionError,
   minimumOutput,
-  observeCanonicalTransaction,
+  reconcileCanonicalFetch,
   parseRuntimeQuantity,
   parseSlippageBps,
   parseQuoteQuantity,
   reviewedRouterAddress,
   sameWriteIntent,
+  sameReviewedWriteIntent,
   transactionDeadline,
   validateLaunchInput,
   type TransactionState,
+  type ReviewedWriteIntent,
   createTransactionState,
   transitionTransaction,
 } from "@/transactions";
+import {
+  readPersistedTransaction,
+  writePersistedTransaction,
+  type PersistedTransactionAction,
+  type TransactionStorageContext,
+} from "@/transaction-storage";
+import {
+  createScopeBoundCommitter,
+  transactionStateForScope,
+  type ScopedTransactionSnapshot,
+} from "@/transaction-scope";
 import {
   Badge,
   Button,
@@ -37,6 +50,7 @@ import {
 
 const DEFAULT_TTL = 900n;
 type Address = `0x${string}`;
+const useCommitEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function eth(value: bigint) {
   return `${formatBaseUnits(value, 18, 6)} ETH`;
@@ -52,6 +66,12 @@ function statusLabel(status: TransactionState["status"]) {
     : status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function hasUnresolvedSubmission(state: TransactionState) {
+  return Boolean(
+    state.hash && ["submitted", "mined", "indexing", "rpc-failure"].includes(state.status),
+  );
+}
+
 function currentUnixSeconds() {
   return BigInt(Math.floor(Date.now() / 1000));
 }
@@ -65,18 +85,18 @@ function ErrorCopy({ error }: { error: unknown }) {
   );
 }
 
-async function observeFreshSnapshot(
+function observeFreshSnapshot(
   baseUrl: string | null,
-  tokenAddress: string,
+  tokenAddress: string | null,
   action: import("@/transactions").CanonicalObservationAction,
-  state: TransactionState,
+  state: Pick<TransactionState, "hash" | "status">,
   setState: (next: TransactionState) => void,
-) {
-  if (!baseUrl) return;
+  isCurrent: () => boolean,
+): () => void {
+  if (!baseUrl) return () => undefined;
   const client = new ApiClient({ baseUrl });
-  const delays = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
-  const monitorDurationMs = 60_000;
-  const startedAt = Date.now();
+  const delays = [500, 1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000];
+  const abortController = new AbortController();
   let observedState = state;
   let attempt = 0;
   let inFlight = false;
@@ -86,6 +106,7 @@ async function observeFreshSnapshot(
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    abortController.abort();
     if (timer !== undefined) window.clearTimeout(timer);
     window.removeEventListener("launchpad:canonical-reorg", refreshOnSignal);
     window.removeEventListener("focus", refreshOnSignal);
@@ -95,36 +116,41 @@ async function observeFreshSnapshot(
   };
   const schedule = () => {
     if (stopped) return;
-    const remaining = monitorDurationMs - (Date.now() - startedAt);
-    if (remaining <= 0) {
+    if (!isCurrent()) {
       stop();
       return;
     }
-    const delay = Math.min(delays[Math.min(attempt++, delays.length - 1)] ?? 15_000, remaining);
+    if (observedState.status === "finalized") {
+      stop();
+      return;
+    }
+    const delay = delays[Math.min(attempt++, delays.length - 1)] ?? 60_000;
     timer = window.setTimeout(() => {
       timer = undefined;
       void refresh();
     }, delay);
   };
   const refresh = async () => {
-    if (stopped || inFlight || Date.now() - startedAt >= monitorDurationMs) {
-      if (!inFlight) stop();
-      return;
-    }
+    if (stopped || !isCurrent() || inFlight) return;
     inFlight = true;
     try {
-      const fresh = await client.getCanonicalTransaction(observedState.hash ?? "");
+      const fresh = await client.getCanonicalTransaction(
+        observedState.hash ?? "",
+        abortController.signal,
+      );
+      if (stopped || !isCurrent()) return;
       const records = (fresh.events ?? []).map((event) => ({
         tx_hash: event.tx_hash,
         launch_tx_hash: event.kind === "token_launch" ? event.tx_hash : undefined,
         finality: event.finality,
       }));
-      const next = observeCanonicalTransaction({
+      const next = reconcileCanonicalFetch({
         state: observedState,
         submittedHash: observedState.hash ?? "",
         action,
         records,
         snapshotFinality: fresh.finality,
+        outcome: "success",
       });
       const wasCanonical = ["indexed", "safe", "finalized"].includes(observedState.status);
       setState(next);
@@ -133,16 +159,18 @@ async function observeFreshSnapshot(
         window.dispatchEvent(
           new CustomEvent("launchpad:canonical-reorg", { detail: { tokenAddress } }),
         );
-    } catch {
+    } catch (cause) {
+      if (stopped || !isCurrent()) return;
+      const authoritativeAbsence = cause instanceof ApiProblem && cause.status === 404;
       const wasCanonical = ["indexed", "safe", "finalized"].includes(observedState.status);
-      const next = observeCanonicalTransaction({
+      const next = reconcileCanonicalFetch({
         state: observedState,
         submittedHash: observedState.hash ?? "",
         action,
-        records: [],
+        outcome: authoritativeAbsence ? "not-found" : "unavailable",
       });
       setState(next);
-      if (next.status === "indexing" && wasCanonical) {
+      if (next.status === "indexing" && wasCanonical && authoritativeAbsence) {
         window.dispatchEvent(
           new CustomEvent("launchpad:canonical-reorg", { detail: { tokenAddress } }),
         );
@@ -162,7 +190,177 @@ async function observeFreshSnapshot(
   window.addEventListener("online", refreshOnSignal);
   window.addEventListener("pageshow", refreshOnSignal);
   document.addEventListener("visibilitychange", refreshOnSignal);
-  await refresh();
+  void refresh();
+  return stop;
+}
+
+function usePersistedTransactionState(
+  action: PersistedTransactionAction,
+  chainId: number | null,
+  accountAddress: string | undefined,
+  tokenAddress: string | null,
+  apiBaseUrl: string | null,
+  enabled = true,
+) {
+  const [snapshot, setSnapshot] = useState<ScopedTransactionSnapshot>(() => ({
+    scope: "",
+    state: createTransactionState("disconnected"),
+  }));
+  const [restoredScope, setRestoredScope] = useState("");
+  const scope = `${chainId ?? "unknown"}:${accountAddress?.toLowerCase() ?? "disconnected"}:${tokenAddress?.toLowerCase() ?? "no-token"}:${action}`;
+  const activeScopeRef = useRef(scope);
+  useCommitEffect(() => {
+    activeScopeRef.current = scope;
+  }, [scope]);
+  const state = transactionStateForScope(snapshot, scope);
+  const ready = Boolean(enabled && chainId && accountAddress && restoredScope === scope);
+
+  const setState = useCallback(
+    (next: TransactionState) => {
+      const commit = createScopeBoundCommitter<TransactionState>(
+        scope,
+        () => activeScopeRef.current,
+        (value) => {
+          setSnapshot({ scope, state: value });
+          if (!chainId || !accountAddress || !value.hash) return;
+          const context: TransactionStorageContext = {
+            chainId,
+            account: accountAddress as `0x${string}`,
+            tokenAddress: tokenAddress as `0x${string}` | null,
+            action,
+          };
+          try {
+            writePersistedTransaction(
+              context,
+              { hash: value.hash, status: value.status },
+              window.localStorage,
+            );
+          } catch {
+            // Browser storage can be disabled; transaction execution remains available.
+          }
+        },
+      );
+      commit(next);
+    },
+    [action, accountAddress, chainId, scope, tokenAddress],
+  );
+
+  useEffect(() => {
+    if (!enabled || !chainId || !accountAddress) return;
+    const context: TransactionStorageContext = {
+      chainId,
+      account: accountAddress as `0x${string}`,
+      tokenAddress: tokenAddress as `0x${string}` | null,
+      action,
+    };
+    let restored: ReturnType<typeof readPersistedTransaction> = null;
+    try {
+      restored = readPersistedTransaction(context, window.localStorage);
+    } catch {
+      restored = null;
+    }
+    if (activeScopeRef.current !== scope) return;
+    // Restore after mount so server rendering never reads browser storage.
+    setSnapshot({
+      scope,
+      state: restored ? { status: restored.status, hash: restored.hash } : createTransactionState(),
+    });
+    setRestoredScope(scope);
+  }, [action, accountAddress, chainId, enabled, scope, tokenAddress]);
+
+  useEffect(() => {
+    if (
+      !ready ||
+      !state.hash ||
+      !apiBaseUrl ||
+      action === "approval" ||
+      state.status === "finalized" ||
+      state.status === "receipt-reverted" ||
+      state.status === "reverted"
+    )
+      return;
+    return observeFreshSnapshot(
+      apiBaseUrl,
+      tokenAddress,
+      action,
+      { hash: state.hash, status: state.status },
+      setState,
+      () => activeScopeRef.current === scope,
+    );
+  }, [action, apiBaseUrl, ready, scope, setState, state.hash, state.status, tokenAddress]);
+
+  return { state, setState, ready };
+}
+
+function TradeSideTabs({
+  side,
+  label,
+  disabled,
+  onChange,
+  children,
+}: {
+  side: "buy" | "sell";
+  label: string;
+  disabled: boolean;
+  onChange: (side: "buy" | "sell") => void;
+  children: React.ReactNode;
+}) {
+  const baseId = useId();
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tabId = (value: "buy" | "sell") => `${baseId}-${value}-tab`;
+  const panelId = `${baseId}-panel`;
+  const selectSide = (next: "buy" | "sell") => {
+    onChange(next);
+    tabRefs.current[next === "buy" ? 0 : 1]?.focus();
+  };
+  return (
+    <>
+      <div className="trade-tabs" role="tablist" aria-label={label}>
+        {(["buy", "sell"] as const).map((value, index) => (
+          <button
+            key={value}
+            ref={(element) => {
+              tabRefs.current[index] = element;
+            }}
+            id={tabId(value)}
+            type="button"
+            role="tab"
+            disabled={disabled}
+            aria-selected={side === value}
+            aria-controls={panelId}
+            tabIndex={side === value ? 0 : -1}
+            className={side === value ? "is-active" : ""}
+            onClick={() => selectSide(value)}
+            onKeyDown={(event) => {
+              const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+              if (!keys.includes(event.key)) return;
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? "buy"
+                  : event.key === "End"
+                    ? "sell"
+                    : value === "buy"
+                      ? "sell"
+                      : "buy";
+              selectSide(next);
+            }}
+          >
+            {value === "buy" ? "Buy" : "Sell"}
+          </button>
+        ))}
+      </div>
+      <div
+        id={panelId}
+        role="tabpanel"
+        aria-labelledby={tabId(side)}
+        tabIndex={0}
+        className="trade-side-panel"
+      >
+        {children}
+      </div>
+    </>
+  );
 }
 
 function ReadinessGate({ children }: { children: React.ReactNode }) {
@@ -214,9 +412,11 @@ function TradingPanelReady({
     tokenAddress ?? ("0x0000000000000000000000000000000000000000" as Address);
   const safeCurveAddress =
     curveAddress ?? ("0x0000000000000000000000000000000000000000" as Address);
+  const graduated = token.phase.toLowerCase() === "graduated";
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [input, setInput] = useState("");
   const [slippage, setSlippage] = useState("5");
+  const [executionBusy, setExecutionBusy] = useState(false);
   const [quote, setQuote] = useState<{
     output: bigint;
     fee: bigint;
@@ -224,18 +424,17 @@ function TradingPanelReady({
   } | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [state, setState] = useState<TransactionState>(createTransactionState("disconnected"));
-  const [approvalHash, setApprovalHash] = useState<Address | undefined>();
   const [creatorClaimable, setCreatorClaimable] = useState<bigint | null>(null);
   const [refundClaimable, setRefundClaimable] = useState<bigint | null>(null);
-  const [creatorClaimState, setCreatorClaimState] = useState<TransactionState>(
-    createTransactionState("disconnected"),
-  );
-  const [refundClaimState, setRefundClaimState] = useState<TransactionState>(
-    createTransactionState("disconnected"),
-  );
   const [claimBusy, setClaimBusy] = useState(false);
-  const intentRef = useRef<import("@/transactions").ExactWrite | null>(null);
+  const [reviewIntent, setReviewIntent] = useState<ReviewedWriteIntent | null>(null);
+  const [reviewDetails, setReviewDetails] = useState<{
+    side: "buy" | "sell";
+    inputUnits: bigint;
+    output: bigint;
+    fee: bigint;
+  } | null>(null);
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null);
   const executionLockRef = useRef(false);
   const claimLockRef = useRef(false);
   const configuration = publicConfiguration();
@@ -243,11 +442,51 @@ function TradingPanelReady({
   const readiness = useWalletReadiness();
   const account = useAccount();
   const chainId = readiness.chainId;
+  const transaction = usePersistedTransactionState(
+    "trade",
+    configuration.chainId,
+    account.address,
+    tokenAddress,
+    configuration.apiBaseUrl,
+    !graduated,
+  );
+  const { state, setState } = transaction;
+  const approvalTransaction = usePersistedTransactionState(
+    "approval",
+    configuration.chainId,
+    account.address,
+    tokenAddress,
+    configuration.apiBaseUrl,
+    !graduated,
+  );
+  const setApprovalTransactionState = approvalTransaction.setState;
+  const approvalHash = approvalTransaction.ready
+    ? (approvalTransaction.state.hash as Address | undefined)
+    : undefined;
+  const creatorClaimTransaction = usePersistedTransactionState(
+    "claim",
+    configuration.chainId,
+    account.address,
+    tokenAddress,
+    configuration.apiBaseUrl,
+    !graduated,
+  );
+  const refundClaimTransaction = usePersistedTransactionState(
+    "refund",
+    configuration.chainId,
+    account.address,
+    tokenAddress,
+    configuration.apiBaseUrl,
+    !graduated,
+  );
+  const creatorClaimState = creatorClaimTransaction.state;
+  const setCreatorClaimState = creatorClaimTransaction.setState;
+  const refundClaimState = refundClaimTransaction.state;
+  const setRefundClaimState = refundClaimTransaction.setState;
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const reviewedRouter = reviewedRouterAddress(configuration.deployment!, configuration.chainId);
   const reviewedWeth = safeAddress(configuration.deployment?.weth);
-  const graduated = token.phase.toLowerCase() === "graduated";
   const decimals = 18;
   const inputUnits = useMemo(() => {
     try {
@@ -347,46 +586,140 @@ function TradingPanelReady({
   const minimum =
     activeQuote && slippageBps !== null ? minimumOutput(activeQuote.output, slippageBps) : null;
   const switchNetwork = () => void readiness.switchNetwork();
+  const readCurveIntent = async (
+    accountAddress: Address,
+    quoteSide: "buy" | "sell",
+    quantity: bigint,
+    toleranceBps: bigint,
+    deadline: bigint,
+  ) => {
+    const intentChainId = configuration.chainId;
+    if (intentChainId === null) throw new Error("ChainUnavailable");
+    const contractQuote = await publicClient!.readContract({
+      address: safeCurveAddress,
+      abi: browserAbis.curve,
+      functionName: quoteSide === "buy" ? "quoteBuy" : "quoteSell",
+      args: [quantity],
+    });
+    const output =
+      quoteSide === "buy"
+        ? parseRuntimeQuantity((contractQuote as readonly unknown[])[1], "contract output")
+        : parseRuntimeQuantity((contractQuote as readonly unknown[])[0], "contract output");
+    const fee =
+      parseRuntimeQuantity((contractQuote as readonly unknown[])[2], "protocol fee") +
+      parseRuntimeQuantity((contractQuote as readonly unknown[])[3], "creator fee");
+    const exactMinimum = minimumOutput(output, toleranceBps);
+    const args =
+      quoteSide === "buy"
+        ? ([accountAddress, accountAddress, exactMinimum, deadline] as const)
+        : ([quantity, accountAddress, exactMinimum, deadline] as const);
+    return {
+      intent: {
+        account: accountAddress,
+        target: safeCurveAddress,
+        value: quoteSide === "buy" ? quantity : 0n,
+        args,
+        deadline,
+        minimumOutput: exactMinimum,
+        chainId: intentChainId,
+        functionName: quoteSide,
+      } satisfies ReviewedWriteIntent,
+      output,
+      fee,
+    };
+  };
+  const prepareTradeReview = async () => {
+    if (
+      !account.address ||
+      !publicClient ||
+      !walletClient ||
+      !inputUnits ||
+      slippageBps === null ||
+      chainId !== configuration.chainId ||
+      !readiness.selectedAccountVerified ||
+      !transaction.ready ||
+      (side === "sell" && !approvalTransaction.ready) ||
+      hasUnresolvedSubmission(state)
+    )
+      return;
+    try {
+      const [walletAccounts, currentChainId] = await Promise.all([
+        walletClient.getAddresses(),
+        publicClient.getChainId(),
+      ]);
+      if (
+        currentChainId !== configuration.chainId ||
+        walletAccounts[0]?.toLowerCase() !== account.address.toLowerCase()
+      )
+        throw new Error("Wallet or network changed. Review again after reconnecting.");
+      const phase = await publicClient.readContract({
+        address: safeCurveAddress,
+        abi: browserAbis.curve,
+        functionName: "phase",
+      });
+      if (Number(phase) !== 0) throw new Error("WrongPhase");
+      const deadline = transactionDeadline(currentUnixSeconds(), DEFAULT_TTL);
+      const fresh = await readCurveIntent(
+        account.address as Address,
+        side,
+        inputUnits,
+        slippageBps,
+        deadline,
+      );
+      setQuote({ output: fresh.output, fee: fresh.fee, source: "contract" });
+      setReviewIntent(fresh.intent);
+      setReviewDetails({ side, inputUnits, output: fresh.output, fee: fresh.fee });
+      setReviewNotice(null);
+      setQuoteError(null);
+      setConfirming(true);
+    } catch (cause) {
+      setReviewIntent(null);
+      setConfirming(false);
+      setQuoteError(decodeTransactionError(cause).message);
+    }
+  };
+  const replaceTradeReview = (
+    intent: ReviewedWriteIntent,
+    details: { side: "buy" | "sell"; inputUnits: bigint; output: bigint; fee: bigint },
+  ) => {
+    setReviewIntent(intent);
+    setReviewDetails(details);
+    setQuote({ output: details.output, fee: details.fee, source: "contract" });
+    setReviewNotice(
+      "The wallet write details changed. Review the updated values, then confirm again.",
+    );
+  };
   const execute = async () => {
     if (graduated) return;
     if (executionLockRef.current) return;
     const resumingApproval = side === "sell" && approvalHash !== undefined;
     if (
-      !resumingApproval &&
-      state.status !== "disconnected" &&
-      state.status !== "reverted" &&
-      state.status !== "rejected-signature" &&
-      state.status !== "rpc-failure"
-    )
-      return;
-    if (
       !account.address ||
       !publicClient ||
       !walletClient ||
-      minimum === null ||
       !inputUnits ||
       slippageBps === null ||
+      !reviewIntent ||
+      !reviewDetails ||
+      !transaction.ready ||
+      (reviewDetails.side === "sell" && !approvalTransaction.ready) ||
+      (!resumingApproval && hasUnresolvedSubmission(state)) ||
       chainId !== configuration.chainId ||
       !readiness.selectedAccountVerified
     ) {
-      setState({ status: chainId !== configuration.chainId ? "wrong-chain" : "disconnected" });
+      setReviewNotice("Wallet, network, or review changed. Refresh the review before signing.");
       return;
     }
-    setConfirming(false);
     executionLockRef.current = true;
-    const accountAddress = account.address;
-    const now = currentUnixSeconds();
-    const deadline = transactionDeadline(now, DEFAULT_TTL);
+    setExecutionBusy(true);
+    const reviewed = reviewIntent;
+    const reviewedSide = reviewDetails.side;
+    const reviewedInput = reviewDetails.inputUnits;
+    const stateBeforeReview = state;
     let submittedHash: Address | undefined;
+    let approvalWrite = false;
     let failurePhase: "preflight" | "simulation" | "write" | "receipt" = "preflight";
     try {
-      setState(
-        transitionTransaction(
-          createTransactionState("disconnected"),
-          { type: "validate" },
-          readiness.transactionReadiness,
-        ),
-      );
       const phase = await publicClient.readContract({
         address: safeCurveAddress,
         abi: browserAbis.curve,
@@ -397,206 +730,198 @@ function TradingPanelReady({
         address: safeTokenAddress,
         abi: browserAbis.token,
         functionName: "balanceOf",
-        args: [accountAddress],
+        args: [reviewed.account as Address],
       });
-      if (side === "sell" && tokenBalance < inputUnits) throw new Error("ERC20InsufficientBalance");
-      if (side === "buy") {
-        const nativeBalance = await publicClient.getBalance({ address: accountAddress });
-        if (nativeBalance < inputUnits) throw new Error("InsufficientETHBalance");
+      if (reviewedSide === "sell" && tokenBalance < reviewedInput)
+        throw new Error("ERC20InsufficientBalance");
+      if (reviewedSide === "buy") {
+        const nativeBalance = await publicClient.getBalance({
+          address: reviewed.account as Address,
+        });
+        if (nativeBalance < reviewedInput) throw new Error("InsufficientETHBalance");
       }
-      const contractQuote =
-        side === "buy"
-          ? await publicClient.readContract({
-              address: safeCurveAddress,
-              abi: browserAbis.curve,
-              functionName: "quoteBuy",
-              args: [inputUnits],
-            })
-          : await publicClient.readContract({
-              address: safeCurveAddress,
-              abi: browserAbis.curve,
-              functionName: "quoteSell",
-              args: [inputUnits],
-            });
-      const contractOutput =
-        side === "buy"
-          ? parseRuntimeQuantity((contractQuote as readonly unknown[])[1], "contract output")
-          : parseRuntimeQuantity((contractQuote as readonly unknown[])[0], "contract output");
-      const contractFee =
-        parseRuntimeQuantity((contractQuote as readonly unknown[])[2], "protocol fee") +
-        parseRuntimeQuantity((contractQuote as readonly unknown[])[3], "creator fee");
-      const exactMinimum = minimumOutput(contractOutput, slippageBps);
-      const target = safeCurveAddress;
-      const args =
-        side === "buy"
-          ? ([accountAddress, accountAddress, exactMinimum, deadline] as const)
-          : ([inputUnits, accountAddress, exactMinimum, deadline] as const);
-      const value = side === "buy" ? inputUnits : 0n;
-      const intent = {
-        account: accountAddress,
-        target,
-        value,
-        args,
-        deadline,
-        minimumOutput: exactMinimum,
-      };
-      intentRef.current = intent;
-      setQuote({ output: contractOutput, fee: contractFee, source: "contract" });
-      if (side === "sell") {
+      const [walletAccounts, latestChainId] = await Promise.all([
+        walletClient.getAddresses(),
+        publicClient.getChainId(),
+      ]);
+      if (
+        latestChainId !== reviewed.chainId ||
+        walletAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase() ||
+        account.address?.toLowerCase() !== reviewed.account.toLowerCase()
+      ) {
+        setReviewNotice("The selected wallet or network changed. Return to review before signing.");
+        return;
+      }
+      const fresh = await readCurveIntent(
+        reviewed.account as Address,
+        reviewedSide,
+        reviewedInput,
+        slippageBps,
+        reviewed.deadline!,
+      );
+      if (!sameReviewedWriteIntent(reviewed, fresh.intent)) {
+        replaceTradeReview(fresh.intent, {
+          side: reviewedSide,
+          inputUnits: reviewedInput,
+          output: fresh.output,
+          fee: fresh.fee,
+        });
+        return;
+      }
+      if (reviewedSide === "sell") {
         const allowance = await publicClient.readContract({
           address: safeTokenAddress,
           abi: browserAbis.token,
           functionName: "allowance",
-          args: [accountAddress, safeCurveAddress],
+          args: [reviewed.account as Address, safeCurveAddress],
         });
-        if (allowance < inputUnits) {
+        if (allowance < reviewedInput) {
+          approvalWrite = true;
           const [approvalAccounts, approvalChainId] = await Promise.all([
             walletClient.getAddresses(),
             publicClient.getChainId(),
           ]);
           if (
-            approvalChainId !== configuration.chainId ||
-            approvalAccounts[0]?.toLowerCase() !== accountAddress.toLowerCase()
-          )
-            throw new Error("Wallet or network changed; review the approval again.");
+            approvalChainId !== reviewed.chainId ||
+            approvalAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase()
+          ) {
+            setReviewNotice(
+              "The selected wallet or network changed. Return to review before signing.",
+            );
+            return;
+          }
           failurePhase = "simulation";
-          setState({ status: "simulating" });
-          const approvalArgs = [safeCurveAddress, inputUnits] as const;
+          setApprovalTransactionState({ status: "simulating" });
+          const approvalArgs = [safeCurveAddress, reviewedInput] as const;
           await publicClient.simulateContract({
             address: safeTokenAddress,
             abi: browserAbis.token,
             functionName: "approve",
-            account: accountAddress,
+            account: reviewed.account as Address,
             args: approvalArgs,
           } as never);
-          setState({ status: "awaiting-signature" });
+          setApprovalTransactionState({ status: "awaiting-signature" });
           failurePhase = "write";
           const hash = await walletClient.writeContract({
             address: safeTokenAddress,
             abi: browserAbis.token,
             functionName: "approve",
-            account: accountAddress,
+            account: reviewed.account as Address,
             args: approvalArgs,
           } as never);
           submittedHash = hash as Address;
-          setApprovalHash(hash as Address);
-          setState({ status: "submitted", hash: hash as Address });
+          setApprovalTransactionState({ status: "submitted", hash: hash as Address });
           failurePhase = "receipt";
           const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash });
           if (approvalReceipt.status !== "success") throw new Error("ReceiptReverted");
-          setState({ status: "mined", hash: hash as Address });
+          setApprovalTransactionState({ status: "mined", hash: hash as Address });
+          setConfirming(false);
           return;
         }
       }
-      setState(
-        transitionTransaction(
-          createTransactionState("validating"),
-          { type: "simulate" },
-          readiness.transactionReadiness,
-        ),
-      );
-      // Final account, chain, phase, and quote reads precede the exact simulation used for signing.
+      setState({ status: "simulating" });
       const phaseBeforeSign = await publicClient.readContract({
         address: safeCurveAddress,
         abi: browserAbis.curve,
         functionName: "phase",
       });
       if (Number(phaseBeforeSign) !== 0) throw new Error("WrongPhase");
-      const latestQuote =
-        side === "buy"
-          ? await publicClient.readContract({
-              address: safeCurveAddress,
-              abi: browserAbis.curve,
-              functionName: "quoteBuy",
-              args: [inputUnits],
-            })
-          : await publicClient.readContract({
-              address: safeCurveAddress,
-              abi: browserAbis.curve,
-              functionName: "quoteSell",
-              args: [inputUnits],
-            });
-      const latestOutput =
-        side === "buy"
-          ? parseRuntimeQuantity((latestQuote as readonly unknown[])[1], "contract output")
-          : parseRuntimeQuantity((latestQuote as readonly unknown[])[0], "contract output");
-      const latestMinimum = minimumOutput(latestOutput, slippageBps);
-      const [walletAccounts, latestChainId] = await Promise.all([
+      failurePhase = "simulation";
+      await publicClient.simulateContract({
+        address: reviewed.target as Address,
+        abi: browserAbis.curve,
+        functionName: reviewed.functionName as "buy" | "sell",
+        account: reviewed.account as Address,
+        args: reviewed.args as never,
+        value: reviewed.value,
+      } as never);
+      const [finalAccounts, finalChainId] = await Promise.all([
         walletClient.getAddresses(),
         publicClient.getChainId(),
       ]);
       if (
-        latestChainId !== configuration.chainId ||
-        walletAccounts[0]?.toLowerCase() !== accountAddress.toLowerCase() ||
+        finalChainId !== reviewed.chainId ||
+        finalAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase() ||
         !readiness.selectedAccountVerified
-      )
-        throw new Error("Wallet or network changed; review the transaction again.");
-      const latestArgs =
-        side === "buy"
-          ? ([accountAddress, accountAddress, latestMinimum, deadline] as const)
-          : ([inputUnits, accountAddress, latestMinimum, deadline] as const);
-      const latestIntent = {
-        account: accountAddress,
-        target,
-        value,
-        args: latestArgs,
-        deadline,
-        minimumOutput: latestMinimum,
-      };
-      if (!sameWriteIntent(intent, latestIntent)) throw new Error("QuoteChanged");
-      failurePhase = "simulation";
-      await publicClient.simulateContract({
-        address: target,
-        abi: browserAbis.curve,
-        functionName: side,
-        account: accountAddress,
-        args: latestArgs,
-        value,
-      } as never);
-      setState(
-        transitionTransaction(
-          createTransactionState("simulating"),
-          { type: "await-signature" },
-          readiness.transactionReadiness,
-        ),
+      ) {
+        setReviewNotice("The selected wallet or network changed during simulation. Review again.");
+        setState(stateBeforeReview);
+        return;
+      }
+      const finalQuote = await readCurveIntent(
+        reviewed.account as Address,
+        reviewedSide,
+        reviewedInput,
+        slippageBps,
+        reviewed.deadline!,
       );
+      if (!sameReviewedWriteIntent(reviewed, finalQuote.intent)) {
+        replaceTradeReview(finalQuote.intent, {
+          side: reviewedSide,
+          inputUnits: reviewedInput,
+          output: finalQuote.output,
+          fee: finalQuote.fee,
+        });
+        setState(stateBeforeReview);
+        return;
+      }
+      const [writeAccounts, writeChainId] = await Promise.all([
+        walletClient.getAddresses(),
+        publicClient.getChainId(),
+      ]);
+      if (
+        writeChainId !== reviewed.chainId ||
+        writeAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase() ||
+        !readiness.selectedAccountVerified
+      ) {
+        setReviewNotice("The selected wallet or network changed before signing. Review again.");
+        setState(stateBeforeReview);
+        return;
+      }
+      setState({ status: "awaiting-signature" });
       failurePhase = "write";
       const hash = await walletClient.writeContract({
-        address: target,
+        address: reviewed.target as Address,
         abi: browserAbis.curve,
-        functionName: side,
-        account: accountAddress,
-        args: latestArgs,
-        value,
+        functionName: reviewed.functionName as "buy" | "sell",
+        account: reviewed.account as Address,
+        args: reviewed.args as never,
+        value: reviewed.value,
       } as never);
       submittedHash = hash as Address;
+      setConfirming(false);
+      setReviewIntent(null);
       setState({ status: "submitted", hash: hash as Address });
       failurePhase = "receipt";
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("ReceiptReverted");
       setState({ status: "mined", hash: hash as Address });
       setState({ status: "indexing", hash: hash as Address });
-      void observeFreshSnapshot(
-        configuration.apiBaseUrl,
-        token.address,
-        "trade",
-        { status: "indexing", hash: hash as Address },
-        setState,
-      );
     } catch (error) {
+      if (error instanceof Error && /wallet or network changed/i.test(error.message)) {
+        setReviewNotice("The selected wallet or network changed. Return to review before signing.");
+        return;
+      }
       const message = classifyTransactionFailure(error, failurePhase);
-      setState({
+      const failure = {
         status: message,
         hash: submittedHash ?? state.hash,
         error: decodeTransactionError(error).message,
-      });
+      } satisfies TransactionState;
+      if (approvalWrite) setApprovalTransactionState(failure);
+      else setState(failure);
     } finally {
       executionLockRef.current = false;
+      setExecutionBusy(false);
     }
   };
   const executeClaim = async (kind: "creator" | "refund") => {
+    const claimTransaction = kind === "creator" ? creatorClaimTransaction : refundClaimTransaction;
+    const claimState = claimTransaction.state;
     if (
       claimLockRef.current ||
+      !claimTransaction.ready ||
+      hasUnresolvedSubmission(claimState) ||
       !publicClient ||
       !walletClient ||
       !account.address ||
@@ -670,13 +995,6 @@ function TradingPanelReady({
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("ReceiptReverted");
       setClaimState({ status: "indexing", hash: submittedHash });
-      void observeFreshSnapshot(
-        configuration.apiBaseUrl,
-        token.address,
-        kind === "creator" ? "claim" : "refund",
-        { status: "indexing", hash: submittedHash },
-        setClaimState,
-      );
     } catch (cause) {
       setClaimState({
         status: classifyTransactionFailure(cause, failurePhase),
@@ -695,7 +1013,7 @@ function TradingPanelReady({
     readiness.selectedAccountVerified &&
     chainId === configuration.chainId,
   );
-  const canSubmit = canTrade && confirming;
+  const canSubmit = canTrade && confirming && (side !== "sell" || approvalTransaction.ready);
   if (!tokenAddress || !curveAddress)
     return (
       <UnavailableState
@@ -744,169 +1062,201 @@ function TradingPanelReady({
           </Button>
         </div>
       ) : null}
-      <div className="trade-tabs" role="tablist" aria-label="Trade side">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={side === "buy"}
-          className={side === "buy" ? "is-active" : ""}
-          onClick={() => {
-            setSide("buy");
-            setApprovalHash(undefined);
-            setInput("");
-            setConfirming(false);
-          }}
-        >
-          Buy
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={side === "sell"}
-          className={side === "sell" ? "is-active" : ""}
-          onClick={() => {
-            setSide("sell");
-            setApprovalHash(undefined);
-            setInput("");
-            setConfirming(false);
-          }}
-        >
-          Sell
-        </button>
-      </div>
-      <div className="transaction-form">
-        <Input
-          label={side === "buy" ? "ETH input" : `${token.symbol} input`}
-          value={input}
-          onChange={(event) => {
-            setInput(event.target.value);
-            setConfirming(false);
-          }}
-          inputMode="decimal"
-          placeholder="0.00"
-          hint="Integer base units are used for signing; decimals are presentation only."
-        />
-        <Input
-          label="Slippage tolerance (%)"
-          value={slippage}
-          onChange={(event) => setSlippage(event.target.value)}
-          inputMode="decimal"
-          hint="Minimum output is rounded down on-chain."
-        />
-        {quoteError ? (
-          <p className="transaction-error" role="alert">
-            {quoteError}
-          </p>
-        ) : null}
-        {quote ? (
-          <div className="quote-summary">
-            <span>
-              Estimated output{" "}
-              <strong className="mono">{formatBaseUnits(quote.output, 18, 6)}</strong>
-            </span>
-            <span>
-              Fees <strong className="mono">{eth(quote.fee)}</strong>
-            </span>
-            <span>
-              Minimum output{" "}
-              <strong className="mono">
-                {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
-              </strong>
-            </span>
-            <small>
-              {quote.source === "backend"
-                ? "Informational API quote; contract quote is authoritative before signing."
-                : "Authoritative contract quote, read immediately before simulation."}
-            </small>
-          </div>
-        ) : null}
-      </div>
-      <p className="transaction-risk">
-        Non-custodial: your selected wallet signs directly. Transactions are irreversible and may
-        lose value. Contract{" "}
-        {curveExplorer ? (
-          <a href={curveExplorer} target="_blank" rel="noreferrer" className="mono">
-            {token.curve}
-          </a>
-        ) : (
-          <span className="mono">{token.curve}</span>
-        )}
-        .
-      </p>
-      {confirming ? (
-        <div className="transaction-confirmation" role="region" aria-label="Trade confirmation">
-          <h3>Confirm {side}</h3>
-          <dl>
-            <dt>Token</dt>
-            <dd>
-              {token.name} ({token.symbol})
-            </dd>
-            <dt>Input</dt>
-            <dd className="mono">
-              {input} · {side === "buy" ? "ETH" : token.symbol}
-            </dd>
-            <dt>Minimum output</dt>
-            <dd className="mono">{minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}</dd>
-            <dt>Fee</dt>
-            <dd className="mono">{quote ? eth(quote.fee) : "—"}</dd>
-            <dt>Slippage</dt>
-            <dd className="mono">{slippageBps === null ? "Invalid" : `${slippage}%`}</dd>
-            <dt>Deadline</dt>
-            <dd className="mono">
-              {transactionDeadline(currentUnixSeconds(), DEFAULT_TTL).toString()} (Unix seconds)
-            </dd>
-            <dt>Network</dt>
-            <dd>{configuration.deployment?.name}</dd>
-            <dt>Contract</dt>
-            <dd className="mono">
-              {curveExplorer ? (
-                <a href={curveExplorer} target="_blank" rel="noreferrer">
-                  {token.curve}
-                </a>
-              ) : (
-                token.curve
-              )}
-            </dd>
-            {side === "sell" ? (
-              <>
-                <dt>Approval spender</dt>
-                <dd className="mono">
-                  {curveExplorer ? (
-                    <a href={curveExplorer} target="_blank" rel="noreferrer">
-                      {token.curve}
-                    </a>
-                  ) : (
-                    token.curve
-                  )}{" "}
-                  (exact sell amount only)
-                </dd>
-              </>
-            ) : null}
-          </dl>
-          <div className="transaction-actions">
-            <Button variant="quiet" onClick={() => setConfirming(false)}>
-              Back
-            </Button>
-            <Button
-              variant="primary"
-              loading={state.status === "simulating" || state.status === "awaiting-signature"}
-              disabled={!canSubmit}
-              onClick={() => void execute()}
-            >
-              Sign {side}
-            </Button>
-          </div>
+      <TradeSideTabs
+        side={side}
+        label="Trade side"
+        disabled={executionBusy}
+        onChange={(next) => {
+          setSide(next);
+          setInput("");
+          setConfirming(false);
+          setReviewIntent(null);
+          setReviewNotice(null);
+        }}
+      >
+        <div className="transaction-form">
+          <Input
+            label={side === "buy" ? "ETH input" : `${token.symbol} input`}
+            value={input}
+            disabled={executionBusy}
+            onChange={(event) => {
+              setInput(event.target.value);
+              setConfirming(false);
+              setReviewIntent(null);
+            }}
+            inputMode="decimal"
+            placeholder="0.00"
+            hint="Integer base units are used for signing; decimals are presentation only."
+          />
+          <Input
+            label="Slippage tolerance (%)"
+            value={slippage}
+            disabled={executionBusy}
+            onChange={(event) => {
+              setSlippage(event.target.value);
+              setConfirming(false);
+              setReviewIntent(null);
+            }}
+            inputMode="decimal"
+            hint="Minimum output is rounded down on-chain."
+          />
+          {quoteError ? (
+            <p className="transaction-error" role="alert">
+              {quoteError}
+            </p>
+          ) : null}
+          {quote ? (
+            <div className="quote-summary">
+              <span>
+                Estimated output{" "}
+                <strong className="mono">{formatBaseUnits(quote.output, 18, 6)}</strong>
+              </span>
+              <span>
+                Fees <strong className="mono">{eth(quote.fee)}</strong>
+              </span>
+              <span>
+                Minimum output{" "}
+                <strong className="mono">
+                  {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
+                </strong>
+              </span>
+              <small>
+                {quote.source === "backend"
+                  ? "Informational API quote; contract quote is authoritative before signing."
+                  : "Authoritative contract quote, read immediately before simulation."}
+              </small>
+            </div>
+          ) : null}
         </div>
-      ) : (
-        <Button
-          variant="primary"
-          size="lg"
-          disabled={!canTrade}
-          onClick={() => setConfirming(true)}
-        >
-          {side === "sell" && approvalHash ? "Resume sell" : `Review ${side}`}
-        </Button>
-      )}
+        <p className="transaction-risk">
+          Non-custodial: your selected wallet signs directly. Transactions are irreversible and may
+          lose value. Contract{" "}
+          {curveExplorer ? (
+            <a href={curveExplorer} target="_blank" rel="noreferrer" className="mono">
+              {token.curve}
+            </a>
+          ) : (
+            <span className="mono">{token.curve}</span>
+          )}
+          .
+        </p>
+        {confirming ? (
+          <div className="transaction-confirmation" role="region" aria-label="Trade confirmation">
+            <h3>Confirm {reviewDetails?.side ?? side}</h3>
+            {reviewNotice ? (
+              <p className="transaction-warning" role="status">
+                {reviewNotice}
+              </p>
+            ) : null}
+            <dl>
+              <dt>Token</dt>
+              <dd>
+                {token.name} ({token.symbol})
+              </dd>
+              <dt>Input</dt>
+              <dd className="mono">
+                {reviewDetails ? formatBaseUnits(reviewDetails.inputUnits, 18, 6) : input} ·{" "}
+                {side === "buy" ? "ETH" : token.symbol}
+              </dd>
+              <dt>Wallet</dt>
+              <dd className="mono">{reviewIntent?.account ?? "Unavailable"}</dd>
+              <dt>Chain ID</dt>
+              <dd className="mono">{reviewIntent?.chainId ?? "Unavailable"}</dd>
+              <dt>Minimum output</dt>
+              <dd className="mono">
+                {reviewIntent?.minimumOutput === undefined
+                  ? "—"
+                  : formatBaseUnits(reviewIntent.minimumOutput, 18, 6)}
+              </dd>
+              <dt>Fee</dt>
+              <dd className="mono">{reviewDetails ? eth(reviewDetails.fee) : "—"}</dd>
+              <dt>Target</dt>
+              <dd className="mono">{reviewIntent?.target ?? "Unavailable"}</dd>
+              <dt>Function and arguments</dt>
+              <dd className="mono">
+                {reviewIntent
+                  ? `${reviewIntent.functionName}(${reviewIntent.args.map(String).join(", ")})`
+                  : "Unavailable"}
+              </dd>
+              <dt>Native value</dt>
+              <dd className="mono">
+                {reviewIntent
+                  ? `${eth(reviewIntent.value)} (${reviewIntent.value.toString()} wei)`
+                  : "Unavailable"}
+              </dd>
+              <dt>Slippage</dt>
+              <dd className="mono">{slippageBps === null ? "Invalid" : `${slippage}%`}</dd>
+              <dt>Deadline</dt>
+              <dd className="mono">
+                {reviewIntent?.deadline?.toString() ?? "Unavailable"} (Unix seconds)
+              </dd>
+              <dt>Network</dt>
+              <dd>{configuration.deployment?.name}</dd>
+              <dt>Contract</dt>
+              <dd className="mono">
+                {curveExplorer ? (
+                  <a href={curveExplorer} target="_blank" rel="noreferrer">
+                    {token.curve}
+                  </a>
+                ) : (
+                  token.curve
+                )}
+              </dd>
+              {side === "sell" ? (
+                <>
+                  <dt>Approval spender</dt>
+                  <dd className="mono">
+                    {curveExplorer ? (
+                      <a href={curveExplorer} target="_blank" rel="noreferrer">
+                        {token.curve}
+                      </a>
+                    ) : (
+                      token.curve
+                    )}{" "}
+                    (exact sell amount only)
+                  </dd>
+                </>
+              ) : null}
+            </dl>
+            <div className="transaction-actions">
+              <Button
+                variant="quiet"
+                disabled={executionBusy}
+                onClick={() => {
+                  setConfirming(false);
+                  setReviewIntent(null);
+                  setReviewNotice(null);
+                }}
+              >
+                Back
+              </Button>
+              <Button
+                variant="primary"
+                loading={state.status === "simulating" || state.status === "awaiting-signature"}
+                disabled={executionBusy || !canSubmit || !reviewIntent || !transaction.ready}
+                onClick={() => void execute()}
+              >
+                Sign {side}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={
+              executionBusy ||
+              !canTrade ||
+              !transaction.ready ||
+              (side === "sell" && !approvalTransaction.ready) ||
+              hasUnresolvedSubmission(state)
+            }
+            onClick={() => void prepareTradeReview()}
+          >
+            {side === "sell" && approvalHash ? "Resume sell" : `Review ${side}`}
+          </Button>
+        )}
+      </TradeSideTabs>
       {state.status !== "disconnected" ? (
         <div className="transaction-progress" role="status">
           <Badge
@@ -922,6 +1272,22 @@ function TradingPanelReady({
           </Badge>
           {state.hash ? <span className="mono">{state.hash}</span> : null}
           {state.error ? <ErrorCopy error={new Error(state.error)} /> : null}
+          {state.canonicalRefreshUnavailable ? (
+            <span className="transaction-error" role="alert">
+              Canonical status refresh unavailable. Showing the last known status.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {approvalTransaction.state.status !== "disconnected" ? (
+        <div className="transaction-progress" role="status">
+          <Badge tone="warning">Approval {statusLabel(approvalTransaction.state.status)}</Badge>
+          {approvalTransaction.state.hash ? (
+            <span className="mono">{approvalTransaction.state.hash}</span>
+          ) : null}
+          {approvalTransaction.state.error ? (
+            <ErrorCopy error={new Error(approvalTransaction.state.error)} />
+          ) : null}
         </div>
       ) : null}
       <div className="claim-row">
@@ -934,7 +1300,13 @@ function TradingPanelReady({
         <div className="transaction-actions">
           <Button
             size="sm"
-            disabled={creatorClaimable === null || creatorClaimable === 0n || claimBusy}
+            disabled={
+              creatorClaimable === null ||
+              creatorClaimable === 0n ||
+              claimBusy ||
+              !creatorClaimTransaction.ready ||
+              hasUnresolvedSubmission(creatorClaimState)
+            }
             loading={
               creatorClaimState.status === "simulating" ||
               creatorClaimState.status === "awaiting-signature"
@@ -945,7 +1317,13 @@ function TradingPanelReady({
           </Button>
           <Button
             size="sm"
-            disabled={refundClaimable === null || refundClaimable === 0n || claimBusy}
+            disabled={
+              refundClaimable === null ||
+              refundClaimable === 0n ||
+              claimBusy ||
+              !refundClaimTransaction.ready ||
+              hasUnresolvedSubmission(refundClaimState)
+            }
             loading={
               refundClaimState.status === "simulating" ||
               refundClaimState.status === "awaiting-signature"
@@ -970,6 +1348,11 @@ function TradingPanelReady({
             </Badge>
             {claim.hash ? <span className="mono">{claim.hash}</span> : null}
             {claim.error ? <ErrorCopy error={new Error(claim.error)} /> : null}
+            {claim.canonicalRefreshUnavailable ? (
+              <span className="transaction-error" role="alert">
+                Canonical status refresh unavailable. Showing the last known status.
+              </span>
+            ) : null}
           </div>
         ) : null,
       )}
@@ -994,13 +1377,34 @@ function GraduatedSwapPanel({
   const { data: walletClient } = useWalletClient();
   const configuration = publicConfiguration();
   const routerExplorer = addressExplorerUrl(configuration, router);
+  const transaction = usePersistedTransactionState(
+    "trade",
+    configuration.chainId,
+    account.address,
+    tokenAddress,
+    configuration.apiBaseUrl,
+  );
+  const { state, setState } = transaction;
+  const approvalTransaction = usePersistedTransactionState(
+    "approval",
+    configuration.chainId,
+    account.address,
+    tokenAddress,
+    configuration.apiBaseUrl,
+  );
+  const setApprovalTransactionState = approvalTransaction.setState;
+  const approvalHash = approvalTransaction.ready
+    ? (approvalTransaction.state.hash as Address | undefined)
+    : undefined;
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [input, setInput] = useState("");
   const [slippage, setSlippage] = useState("5");
+  const [executionBusy, setExecutionBusy] = useState(false);
   const [output, setOutput] = useState<bigint | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [state, setState] = useState<TransactionState>(createTransactionState("disconnected"));
-  const [approvalHash, setApprovalHash] = useState<Address | undefined>();
+  const [reviewIntent, setReviewIntent] = useState<ReviewedWriteIntent | null>(null);
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null);
+  const [reviewInput, setReviewInput] = useState<bigint | null>(null);
   const lockRef = useRef(false);
   const inputUnits = useMemo(() => {
     try {
@@ -1037,6 +1441,100 @@ function GraduatedSwapPanel({
   }, [inputUnits, publicClient, router, side, tokenAddress, weth]);
   const minimum =
     output !== null && slippageBps !== null ? minimumOutput(output, slippageBps) : null;
+  const readRouterIntent = async (
+    accountAddress: Address,
+    quoteSide: "buy" | "sell",
+    quantity: bigint,
+    toleranceBps: bigint,
+    deadline: bigint,
+  ) => {
+    const intentChainId = configuration.chainId;
+    if (intentChainId === null) throw new Error("ChainUnavailable");
+    const path =
+      quoteSide === "buy" ? ([weth, tokenAddress!] as const) : ([tokenAddress!, weth] as const);
+    const amounts = await publicClient!.readContract({
+      address: router,
+      abi: browserAbis.router,
+      functionName: "getAmountsOut",
+      args: [quantity, path],
+    } as never);
+    const outputAmount = parseQuoteQuantity(
+      String((amounts as readonly unknown[]).at(-1)),
+      "router output",
+    );
+    const minimumAmount = minimumOutput(outputAmount, toleranceBps);
+    const functionName = quoteSide === "buy" ? "swapExactETHForTokens" : "swapExactTokensForETH";
+    const args =
+      quoteSide === "buy"
+        ? ([minimumAmount, path, accountAddress, deadline] as const)
+        : ([quantity, minimumAmount, path, accountAddress, deadline] as const);
+    return {
+      intent: {
+        account: accountAddress,
+        target: router,
+        value: quoteSide === "buy" ? quantity : 0n,
+        args,
+        deadline,
+        minimumOutput: minimumAmount,
+        chainId: intentChainId,
+        functionName,
+      } satisfies ReviewedWriteIntent,
+      output: outputAmount,
+      path,
+    };
+  };
+  const prepareRouterReview = async () => {
+    if (
+      !tokenAddress ||
+      !publicClient ||
+      !walletClient ||
+      !account.address ||
+      !inputUnits ||
+      slippageBps === null ||
+      chainId !== configuration.chainId ||
+      !readiness.selectedAccountVerified ||
+      !transaction.ready ||
+      (side === "sell" && !approvalTransaction.ready) ||
+      hasUnresolvedSubmission(state)
+    )
+      return;
+    try {
+      const [walletAccounts, currentChainId] = await Promise.all([
+        walletClient.getAddresses(),
+        publicClient.getChainId(),
+      ]);
+      if (
+        currentChainId !== configuration.chainId ||
+        walletAccounts[0]?.toLowerCase() !== account.address.toLowerCase()
+      )
+        throw new Error("Wallet or network changed. Review again after reconnecting.");
+      const deadline = transactionDeadline(currentUnixSeconds(), DEFAULT_TTL);
+      const fresh = await readRouterIntent(
+        account.address as Address,
+        side,
+        inputUnits,
+        slippageBps,
+        deadline,
+      );
+      setOutput(fresh.output);
+      setReviewInput(inputUnits);
+      setReviewIntent(fresh.intent);
+      setReviewNotice(null);
+      setConfirming(true);
+    } catch (cause) {
+      setReviewIntent(null);
+      setConfirming(false);
+      setReviewNotice(decodeTransactionError(cause).message);
+    }
+  };
+  const replaceRouterReview = (intent: ReviewedWriteIntent, refreshedOutput: bigint) => {
+    setOutput(refreshedOutput);
+    setReviewInput(inputUnits);
+    setReviewIntent(intent);
+    setReviewNotice(
+      "The wallet write details changed. Review the updated values, then confirm again.",
+    );
+  };
   const execute = async () => {
     if (
       lockRef.current ||
@@ -1045,163 +1543,203 @@ function GraduatedSwapPanel({
       !walletClient ||
       !account.address ||
       inputUnits === null ||
-      minimum === null ||
+      !reviewIntent ||
+      reviewInput === null ||
+      !transaction.ready ||
+      (side === "sell" && !approvalTransaction.ready) ||
+      hasUnresolvedSubmission(state) ||
       chainId !== configuration.chainId ||
       !readiness.selectedAccountVerified
     )
       return;
-    setConfirming(false);
     lockRef.current = true;
+    setExecutionBusy(true);
+    const reviewed = reviewIntent;
+    const reviewedSide = side;
+    const reviewedInput = reviewInput;
+    const priorState = state;
     let submittedHash: Address | undefined;
+    let approvalWrite = false;
     let failurePhase: "preflight" | "simulation" | "write" | "receipt" = "preflight";
     try {
-      const deadline = transactionDeadline(currentUnixSeconds(), DEFAULT_TTL);
-      const path =
-        side === "buy" ? ([weth, tokenAddress] as const) : ([tokenAddress, weth] as const);
-      if (side === "buy") {
-        const balance = await publicClient.getBalance({ address: account.address });
-        if (balance < inputUnits) throw new Error("InsufficientETHBalance");
-      }
-      if (side === "sell") {
-        const balance = await publicClient.readContract({
-          address: tokenAddress,
-          abi: browserAbis.token,
-          functionName: "balanceOf",
-          args: [account.address],
-        });
-        if (balance < inputUnits) throw new Error("ERC20InsufficientBalance");
-        const allowance = await publicClient.readContract({
-          address: tokenAddress,
-          abi: browserAbis.token,
-          functionName: "allowance",
-          args: [account.address, router],
-        });
-        if (allowance < inputUnits) {
-          const [approvalAccounts, approvalChainId] = await Promise.all([
-            walletClient.getAddresses(),
-            publicClient.getChainId(),
-          ]);
-          if (
-            approvalChainId !== configuration.chainId ||
-            approvalAccounts[0]?.toLowerCase() !== account.address.toLowerCase()
-          )
-            throw new Error("Wallet or network changed; review the approval again.");
-          const approvalArgs = [router, inputUnits] as const;
-          failurePhase = "simulation";
-          await publicClient.simulateContract({
-            address: tokenAddress,
-            abi: browserAbis.token,
-            functionName: "approve",
-            account: account.address,
-            args: approvalArgs,
-          } as never);
-          failurePhase = "write";
-          const approvalTxHash = await walletClient.writeContract({
-            address: tokenAddress,
-            abi: browserAbis.token,
-            functionName: "approve",
-            account: account.address,
-            args: approvalArgs,
-          } as never);
-          submittedHash = approvalTxHash as Address;
-          setApprovalHash(approvalTxHash as Address);
-          setState({ status: "submitted", hash: submittedHash });
-          failurePhase = "receipt";
-          const approvalReceipt = await publicClient.waitForTransactionReceipt({
-            hash: approvalTxHash,
-          });
-          if (approvalReceipt.status !== "success") throw new Error("ReceiptReverted");
-          setState({ status: "mined", hash: submittedHash });
-          return;
-        }
-      }
-      const initialArgs =
-        side === "buy"
-          ? ([minimum, path, account.address, deadline] as const)
-          : ([inputUnits, minimum, path, account.address, deadline] as const);
-      const value = side === "buy" ? inputUnits : 0n;
-      const initialIntent = {
-        account: account.address,
-        target: router,
-        value,
-        args: initialArgs,
-        deadline,
-        minimumOutput: minimum,
-      };
-      const freshAmounts = await publicClient.readContract({
-        address: router,
-        abi: browserAbis.router,
-        functionName: "getAmountsOut",
-        args: [inputUnits, path],
-      } as never);
-      const freshOutput = parseQuoteQuantity(
-        String((freshAmounts as readonly unknown[]).at(-1)),
-        "router output",
-      );
-      const freshMinimum = minimumOutput(freshOutput, slippageBps!);
       const [walletAccounts, latestChainId] = await Promise.all([
         walletClient.getAddresses(),
         publicClient.getChainId(),
       ]);
       if (
-        latestChainId !== configuration.chainId ||
-        walletAccounts[0]?.toLowerCase() !== account.address.toLowerCase() ||
-        !readiness.selectedAccountVerified
-      )
-        throw new Error("Wallet or network changed; review the transaction again.");
-      const args =
-        side === "buy"
-          ? ([freshMinimum, path, account.address, deadline] as const)
-          : ([inputUnits, freshMinimum, path, account.address, deadline] as const);
-      const finalIntent = {
-        account: account.address,
-        target: router,
-        value,
-        args,
-        deadline,
-        minimumOutput: freshMinimum,
-      };
-      if (!sameWriteIntent(initialIntent, finalIntent)) throw new Error("QuoteChanged");
+        latestChainId !== reviewed.chainId ||
+        walletAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase() ||
+        account.address.toLowerCase() !== reviewed.account.toLowerCase()
+      ) {
+        setReviewNotice("The selected wallet or network changed. Return to review before signing.");
+        return;
+      }
+      const fresh = await readRouterIntent(
+        reviewed.account as Address,
+        reviewedSide,
+        reviewedInput,
+        slippageBps!,
+        reviewed.deadline!,
+      );
+      if (!sameReviewedWriteIntent(reviewed, fresh.intent)) {
+        replaceRouterReview(fresh.intent, fresh.output);
+        return;
+      }
+      if (reviewedSide === "buy") {
+        const balance = await publicClient.getBalance({ address: reviewed.account as Address });
+        if (balance < reviewedInput) throw new Error("InsufficientETHBalance");
+      }
+      if (reviewedSide === "sell") {
+        const balance = await publicClient.readContract({
+          address: tokenAddress,
+          abi: browserAbis.token,
+          functionName: "balanceOf",
+          args: [reviewed.account as Address],
+        });
+        if (balance < reviewedInput) throw new Error("ERC20InsufficientBalance");
+        const allowance = await publicClient.readContract({
+          address: tokenAddress,
+          abi: browserAbis.token,
+          functionName: "allowance",
+          args: [reviewed.account as Address, router],
+        });
+        if (allowance < reviewedInput) {
+          approvalWrite = true;
+          const [approvalAccounts, approvalChainId] = await Promise.all([
+            walletClient.getAddresses(),
+            publicClient.getChainId(),
+          ]);
+          if (
+            approvalChainId !== reviewed.chainId ||
+            approvalAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase()
+          ) {
+            setReviewNotice(
+              "The selected wallet or network changed. Return to review before signing.",
+            );
+            return;
+          }
+          const approvalArgs = [router, reviewedInput] as const;
+          failurePhase = "simulation";
+          setApprovalTransactionState({ status: "simulating" });
+          await publicClient.simulateContract({
+            address: tokenAddress,
+            abi: browserAbis.token,
+            functionName: "approve",
+            account: reviewed.account as Address,
+            args: approvalArgs,
+          } as never);
+          const [finalApprovalAccounts, finalApprovalChainId] = await Promise.all([
+            walletClient.getAddresses(),
+            publicClient.getChainId(),
+          ]);
+          if (
+            finalApprovalChainId !== reviewed.chainId ||
+            finalApprovalAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase()
+          ) {
+            setReviewNotice(
+              "The selected wallet or network changed during simulation. Review again.",
+            );
+            return;
+          }
+          failurePhase = "write";
+          setApprovalTransactionState({ status: "awaiting-signature" });
+          const approvalTxHash = await walletClient.writeContract({
+            address: tokenAddress,
+            abi: browserAbis.token,
+            functionName: "approve",
+            account: reviewed.account as Address,
+            args: approvalArgs,
+          } as never);
+          submittedHash = approvalTxHash as Address;
+          setApprovalTransactionState({ status: "submitted", hash: submittedHash });
+          failurePhase = "receipt";
+          const approvalReceipt = await publicClient.waitForTransactionReceipt({
+            hash: approvalTxHash,
+          });
+          if (approvalReceipt.status !== "success") throw new Error("ReceiptReverted");
+          setApprovalTransactionState({ status: "mined", hash: submittedHash });
+          setConfirming(false);
+          return;
+        }
+      }
+      setState({ status: "simulating" });
       failurePhase = "simulation";
       await publicClient.simulateContract({
         address: router,
         abi: browserAbis.router,
-        functionName: side === "buy" ? "swapExactETHForTokens" : "swapExactTokensForETH",
-        account: account.address,
-        args,
-        value,
+        functionName: reviewed.functionName,
+        account: reviewed.account as Address,
+        args: reviewed.args as never,
+        value: reviewed.value,
       } as never);
+      const finalQuote = await readRouterIntent(
+        reviewed.account as Address,
+        reviewedSide,
+        reviewedInput,
+        slippageBps!,
+        reviewed.deadline!,
+      );
+      const [finalAccounts, finalChainId] = await Promise.all([
+        walletClient.getAddresses(),
+        publicClient.getChainId(),
+      ]);
+      if (
+        finalChainId !== reviewed.chainId ||
+        finalAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase() ||
+        !readiness.selectedAccountVerified
+      ) {
+        setReviewNotice("The selected wallet or network changed during simulation. Review again.");
+        setState(priorState);
+        return;
+      }
+      if (!sameReviewedWriteIntent(reviewed, finalQuote.intent)) {
+        replaceRouterReview(finalQuote.intent, finalQuote.output);
+        setState(priorState);
+        return;
+      }
+      const [writeAccounts, writeChainId] = await Promise.all([
+        walletClient.getAddresses(),
+        publicClient.getChainId(),
+      ]);
+      if (
+        writeChainId !== reviewed.chainId ||
+        writeAccounts[0]?.toLowerCase() !== reviewed.account.toLowerCase() ||
+        !readiness.selectedAccountVerified
+      ) {
+        setReviewNotice("The selected wallet or network changed before signing. Review again.");
+        setState(priorState);
+        return;
+      }
+      setState({ status: "awaiting-signature" });
       failurePhase = "write";
       const hash = await walletClient.writeContract({
         address: router,
         abi: browserAbis.router,
-        functionName: side === "buy" ? "swapExactETHForTokens" : "swapExactTokensForETH",
-        account: account.address,
-        args,
-        value,
+        functionName: reviewed.functionName,
+        account: reviewed.account as Address,
+        args: reviewed.args as never,
+        value: reviewed.value,
       } as never);
       submittedHash = hash as Address;
+      setConfirming(false);
+      setReviewIntent(null);
       setState({ status: "submitted", hash: submittedHash });
       failurePhase = "receipt";
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("ReceiptReverted");
       const indexing = { status: "indexing" as const, hash: submittedHash };
       setState(indexing);
-      void observeFreshSnapshot(
-        configuration.apiBaseUrl,
-        token.address,
-        "trade",
-        indexing,
-        setState,
-      );
     } catch (cause) {
-      setState({
+      const failure = {
         status: classifyTransactionFailure(cause, failurePhase),
         hash: submittedHash,
         error: decodeTransactionError(cause).message,
-      });
+      } satisfies TransactionState;
+      if (approvalWrite) setApprovalTransactionState(failure);
+      else setState(failure);
     } finally {
       lockRef.current = false;
+      setExecutionBusy(false);
     }
   };
   if (!tokenAddress)
@@ -1216,7 +1754,10 @@ function GraduatedSwapPanel({
     inputUnits > 0n &&
     minimum !== null &&
     readiness.selectedAccountVerified &&
-    chainId === configuration.chainId,
+    chainId === configuration.chainId &&
+    transaction.ready &&
+    (side !== "sell" || approvalTransaction.ready) &&
+    !hasUnresolvedSubmission(state),
   );
   return (
     <div className="graduated-swap">
@@ -1239,129 +1780,167 @@ function GraduatedSwapPanel({
         )}
         . Approval, if needed, is limited to this router and this sell amount.
       </p>
-      <div className="trade-tabs" role="tablist" aria-label="Graduated trade side">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={side === "buy"}
-          className={side === "buy" ? "is-active" : ""}
-          onClick={() => {
-            setSide("buy");
-            setApprovalHash(undefined);
-            setInput("");
-            setOutput(null);
-            setConfirming(false);
-          }}
-        >
-          Buy
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={side === "sell"}
-          className={side === "sell" ? "is-active" : ""}
-          onClick={() => {
-            setSide("sell");
-            setApprovalHash(undefined);
-            setInput("");
-            setOutput(null);
-            setConfirming(false);
-          }}
-        >
-          Sell
-        </button>
-      </div>
-      <div className="transaction-form">
-        <Input
-          label={side === "buy" ? "ETH input" : `${token.symbol} input`}
-          value={input}
-          onChange={(event) => {
-            setInput(event.target.value);
-            setConfirming(false);
-          }}
-          inputMode="decimal"
-        />
-        <Input
-          label="Slippage tolerance (%)"
-          value={slippage}
-          onChange={(event) => setSlippage(event.target.value)}
-          inputMode="decimal"
-        />
-        {output !== null ? (
-          <div className="quote-summary">
-            <span>
-              Router output <strong className="mono">{formatBaseUnits(output, 18, 6)}</strong>
-            </span>
-            <span>
-              Minimum output{" "}
-              <strong className="mono">
-                {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
-              </strong>
-            </span>
-          </div>
-        ) : null}
-      </div>
-      {confirming ? (
-        <div className="transaction-confirmation">
-          <h3>Confirm {side}</h3>
-          <dl>
-            <dt>Network</dt>
-            <dd>{configuration.deployment?.name}</dd>
-            <dt>Contract</dt>
-            <dd className="mono">
-              {routerExplorer ? (
-                <a href={routerExplorer} target="_blank" rel="noreferrer">
-                  {router}
-                </a>
-              ) : (
-                router
-              )}
-            </dd>
-            <dt>Input / minimum</dt>
-            <dd className="mono">
-              {input} / {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
-            </dd>
-            <dt>Slippage</dt>
-            <dd className="mono">{slippageBps === null ? "Invalid" : `${slippage}%`}</dd>
-            <dt>Fee</dt>
-            <dd className="mono">
-              0 ETH router fee (Uniswap V2 has no protocol fee). Pool price impact is reflected in
-              the quoted output.
-            </dd>
-            <dt>Deadline</dt>
-            <dd className="mono">
-              {transactionDeadline(currentUnixSeconds(), DEFAULT_TTL).toString()} (Unix seconds)
-            </dd>
-            {side === "sell" ? (
-              <>
-                <dt>Approval spender</dt>
-                <dd className="mono">
-                  {routerExplorer ? (
-                    <a href={routerExplorer} target="_blank" rel="noreferrer">
-                      {router}
-                    </a>
-                  ) : (
-                    router
-                  )}{" "}
-                  (exact sell amount only)
-                </dd>
-              </>
-            ) : null}
-          </dl>
-          <div className="transaction-actions">
-            <Button variant="quiet" onClick={() => setConfirming(false)}>
-              Back
-            </Button>
-            <Button variant="primary" disabled={!ready} onClick={() => void execute()}>
-              Sign {side}
-            </Button>
-          </div>
+      <TradeSideTabs
+        side={side}
+        label="Graduated trade side"
+        disabled={executionBusy}
+        onChange={(next) => {
+          setSide(next);
+          setInput("");
+          setOutput(null);
+          setConfirming(false);
+          setReviewIntent(null);
+          setReviewNotice(null);
+        }}
+      >
+        <div className="transaction-form">
+          <Input
+            label={side === "buy" ? "ETH input" : `${token.symbol} input`}
+            value={input}
+            disabled={executionBusy}
+            onChange={(event) => {
+              setInput(event.target.value);
+              setConfirming(false);
+              setReviewIntent(null);
+            }}
+            inputMode="decimal"
+          />
+          <Input
+            label="Slippage tolerance (%)"
+            value={slippage}
+            disabled={executionBusy}
+            onChange={(event) => {
+              setSlippage(event.target.value);
+              setConfirming(false);
+              setReviewIntent(null);
+            }}
+            inputMode="decimal"
+          />
+          {output !== null ? (
+            <div className="quote-summary">
+              <span>
+                Router output <strong className="mono">{formatBaseUnits(output, 18, 6)}</strong>
+              </span>
+              <span>
+                Minimum output{" "}
+                <strong className="mono">
+                  {minimum === null ? "—" : formatBaseUnits(minimum, 18, 6)}
+                </strong>
+              </span>
+            </div>
+          ) : null}
         </div>
-      ) : (
-        <Button variant="primary" size="lg" disabled={!ready} onClick={() => setConfirming(true)}>
-          {side === "sell" && approvalHash ? "Resume sell" : `Review ${side}`}
-        </Button>
-      )}
+        {confirming ? (
+          <div className="transaction-confirmation">
+            <h3>Confirm {side}</h3>
+            {reviewNotice ? (
+              <p className="transaction-warning" role="status">
+                {reviewNotice}
+              </p>
+            ) : null}
+            <dl>
+              <dt>Network</dt>
+              <dd>{configuration.deployment?.name}</dd>
+              <dt>Contract</dt>
+              <dd className="mono">
+                {routerExplorer ? (
+                  <a href={routerExplorer} target="_blank" rel="noreferrer">
+                    {router}
+                  </a>
+                ) : (
+                  router
+                )}
+              </dd>
+              <dt>Input / minimum</dt>
+              <dd className="mono">
+                {reviewInput === null ? "—" : formatBaseUnits(reviewInput, 18, 6)} /{" "}
+                {reviewIntent?.minimumOutput === undefined
+                  ? "—"
+                  : formatBaseUnits(reviewIntent.minimumOutput, 18, 6)}
+              </dd>
+              <dt>Wallet</dt>
+              <dd className="mono">{reviewIntent?.account ?? "Unavailable"}</dd>
+              <dt>Chain ID</dt>
+              <dd className="mono">{reviewIntent?.chainId ?? "Unavailable"}</dd>
+              <dt>Target</dt>
+              <dd className="mono">{reviewIntent?.target ?? "Unavailable"}</dd>
+              <dt>Function and arguments</dt>
+              <dd className="mono">
+                {reviewIntent
+                  ? `${reviewIntent.functionName}(${reviewIntent.args.map(String).join(", ")})`
+                  : "Unavailable"}
+              </dd>
+              <dt>Native value</dt>
+              <dd className="mono">
+                {reviewIntent
+                  ? `${eth(reviewIntent.value)} (${reviewIntent.value.toString()} wei)`
+                  : "Unavailable"}
+              </dd>
+              <dt>Slippage</dt>
+              <dd className="mono">{slippageBps === null ? "Invalid" : `${slippage}%`}</dd>
+              <dt>Fee</dt>
+              <dd className="mono">
+                0 ETH router fee (Uniswap V2 has no protocol fee). Pool price impact is reflected in
+                the quoted output.
+              </dd>
+              <dt>Deadline</dt>
+              <dd className="mono">
+                {reviewIntent?.deadline?.toString() ?? "Unavailable"} (Unix seconds)
+              </dd>
+              {side === "sell" ? (
+                <>
+                  <dt>Approval spender</dt>
+                  <dd className="mono">
+                    {routerExplorer ? (
+                      <a href={routerExplorer} target="_blank" rel="noreferrer">
+                        {router}
+                      </a>
+                    ) : (
+                      router
+                    )}{" "}
+                    (exact sell amount only)
+                  </dd>
+                  <dt>Approval call</dt>
+                  <dd className="mono">
+                    approve({router}, {reviewInput?.toString() ?? "Unavailable"}); target{" "}
+                    {tokenAddress}; 0 ETH
+                  </dd>
+                </>
+              ) : null}
+            </dl>
+            <div className="transaction-actions">
+              <Button
+                variant="quiet"
+                disabled={executionBusy}
+                onClick={() => {
+                  setConfirming(false);
+                  setReviewIntent(null);
+                  setReviewNotice(null);
+                }}
+              >
+                Back
+              </Button>
+              <Button
+                variant="primary"
+                loading={state.status === "simulating" || state.status === "awaiting-signature"}
+                disabled={executionBusy || !ready || !reviewIntent || !transaction.ready}
+                onClick={() => void execute()}
+              >
+                Sign {side}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={executionBusy || !ready}
+            onClick={() => void prepareRouterReview()}
+          >
+            {side === "sell" && approvalHash ? "Resume sell" : `Review ${side}`}
+          </Button>
+        )}
+      </TradeSideTabs>
       {state.status !== "disconnected" ? (
         <div className="transaction-progress" role="status">
           <Badge tone={state.status === "reverted" ? "danger" : "warning"}>
@@ -1369,6 +1948,22 @@ function GraduatedSwapPanel({
           </Badge>
           {state.hash ? <span className="mono">{state.hash}</span> : null}
           {state.error ? <ErrorCopy error={new Error(state.error)} /> : null}
+          {state.canonicalRefreshUnavailable ? (
+            <span className="transaction-error" role="alert">
+              Canonical status refresh unavailable. Showing the last known status.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {approvalTransaction.state.status !== "disconnected" ? (
+        <div className="transaction-progress" role="status">
+          <Badge tone="warning">Approval {statusLabel(approvalTransaction.state.status)}</Badge>
+          {approvalTransaction.state.hash ? (
+            <span className="mono">{approvalTransaction.state.hash}</span>
+          ) : null}
+          {approvalTransaction.state.error ? (
+            <ErrorCopy error={new Error(approvalTransaction.state.error)} />
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -1391,6 +1986,14 @@ function LaunchPanelReady() {
   const launchChainId = readiness.chainId;
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const transaction = usePersistedTransactionState(
+    "launch",
+    configuration.chainId,
+    account.address,
+    null,
+    configuration.apiBaseUrl,
+  );
+  const { state, setState } = transaction;
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -1399,7 +2002,6 @@ function LaunchPanelReady() {
   const [buy, setBuy] = useState("0");
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [state, setState] = useState<TransactionState>(createTransactionState("disconnected"));
   const [launchFee, setLaunchFee] = useState<bigint | null>(null);
   const [defaultsRead, setDefaultsRead] = useState(false);
   const [launchesPaused, setLaunchesPaused] = useState<boolean | null>(null);
@@ -1477,7 +2079,9 @@ function LaunchPanelReady() {
       !deployment.factory ||
       value === null ||
       launchFee === null ||
-      !readiness.selectedAccountVerified
+      !readiness.selectedAccountVerified ||
+      !transaction.ready ||
+      hasUnresolvedSubmission(state)
     )
       return;
     setConfirming(false);
@@ -1609,20 +2213,6 @@ function LaunchPanelReady() {
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("ReceiptReverted");
       setState({ status: "indexing", hash: hash as Address });
-      const launched = parseEventLogs({
-        abi: browserAbis.factory,
-        eventName: "TokenLaunched",
-        logs: receipt.logs,
-        strict: false,
-      }).find((event) => typeof event.args.token === "string");
-      if (launched && typeof launched.args.token === "string")
-        void observeFreshSnapshot(
-          configuration.apiBaseUrl,
-          launched.args.token,
-          "launch",
-          { status: "indexing", hash: hash as Address },
-          setState,
-        );
     } catch (cause) {
       setState({
         status: classifyTransactionFailure(cause, failurePhase),
@@ -1817,7 +2407,9 @@ function LaunchPanelReady() {
                 !defaultsRead ||
                 launchesPaused !== false ||
                 engineEnabled !== true ||
-                !readiness.selectedAccountVerified
+                !readiness.selectedAccountVerified ||
+                !transaction.ready ||
+                hasUnresolvedSubmission(state)
               }
               onClick={() => setConfirming(true)}
             >
@@ -1833,6 +2425,11 @@ function LaunchPanelReady() {
           </Badge>
           {state.hash ? <span className="mono">{state.hash}</span> : null}
           {state.error ? <ErrorCopy error={new Error(state.error)} /> : null}
+          {state.canonicalRefreshUnavailable ? (
+            <span className="transaction-error" role="alert">
+              Canonical status refresh unavailable. Showing the last known status.
+            </span>
+          ) : null}
         </div>
       ) : null}
     </section>

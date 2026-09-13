@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/Contictus/launchtap/backend/deployments"
 	"github.com/ethereum/go-ethereum"
@@ -13,6 +14,37 @@ import (
 
 type CodeReader interface {
 	CodeAt(context.Context, common.Address) ([]byte, error)
+}
+
+type ChainIDReader interface {
+	ChainID(context.Context) (*big.Int, error)
+}
+
+type RuntimeVerifier interface {
+	ChainIDReader
+	CodeReader
+	ContractCaller
+}
+
+func VerifyRPCChainID(ctx context.Context, reader ChainIDReader, configuredChainID uint64, deployment deployments.Deployment) error {
+	if reader == nil {
+		return fmt.Errorf("read RPC chain ID for deployment %q: chain ID reader is nil", deployment.DeploymentID)
+	}
+	if configuredChainID != deployment.ChainID {
+		return &ChainIDMismatchError{ConfiguredChainID: configuredChainID, DeploymentChainID: deployment.ChainID, ActualChainID: "not queried"}
+	}
+	actual, err := reader.ChainID(ctx)
+	if err != nil {
+		return fmt.Errorf("read eth_chainId for deployment %q (configured chain %d): %w", deployment.DeploymentID, configuredChainID, err)
+	}
+	if actual == nil || actual.Sign() <= 0 || actual.Cmp(new(big.Int).SetUint64(configuredChainID)) != 0 {
+		actualValue := "nil"
+		if actual != nil {
+			actualValue = actual.String()
+		}
+		return &ChainIDMismatchError{ConfiguredChainID: configuredChainID, DeploymentChainID: deployment.ChainID, ActualChainID: actualValue}
+	}
+	return nil
 }
 
 func VerifyDeploymentBytecode(ctx context.Context, reader CodeReader, deployment deployments.Deployment) error {
@@ -77,4 +109,18 @@ func VerifyPairAddress(ctx context.Context, caller ContractCaller, factory, toke
 		return common.Address{}, fmt.Errorf("%w: got %s, want %s", ErrPairMismatch, actual.Hex(), expected.Hex())
 	}
 	return actual, nil
+}
+
+func VerifyLaunchPair(ctx context.Context, caller ContractCaller, factory, weth common.Address, initCodeHash common.Hash, launch TokenLaunched) error {
+	if launch.WETH != weth {
+		return fmt.Errorf("%w: TokenLaunched WETH for token %s is %s, want %s", ErrPairMismatch, launch.Token.Hex(), launch.WETH.Hex(), weth.Hex())
+	}
+	pair, err := VerifyPairAddress(ctx, caller, factory, launch.Token, weth, initCodeHash)
+	if err != nil {
+		return fmt.Errorf("verify factory pair for token %s: %w", launch.Token.Hex(), err)
+	}
+	if launch.LPPair != pair {
+		return fmt.Errorf("%w: TokenLaunched lpPair for token %s is %s, want %s", ErrPairMismatch, launch.Token.Hex(), launch.LPPair.Hex(), pair.Hex())
+	}
+	return nil
 }

@@ -12,8 +12,9 @@ import (
 const CurrentVersion = 1
 
 var (
-	ErrInvalidCursor     = errors.New("invalid cursor")
-	ErrCursorInvalidated = errors.New("cursor snapshot is no longer canonical")
+	ErrInvalidCursor       = errors.New("invalid cursor")
+	ErrCursorInvalidated   = errors.New("cursor snapshot is no longer canonical")
+	ErrSnapshotUnavailable = errors.New("canonical read snapshot is not available")
 )
 
 type Snapshot struct {
