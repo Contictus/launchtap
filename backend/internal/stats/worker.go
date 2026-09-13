@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -16,6 +17,12 @@ type DirtySource interface {
 	Claim(context.Context, string, int32) ([]Claim, error)
 	Compute(context.Context, Claim) error
 	Complete(context.Context, Claim, string) (bool, error)
+}
+
+// BatchComputer can coalesce work shared by multiple claims while preserving
+// one result per claim. A failed result leaves that claim dirty for retry.
+type BatchComputer interface {
+	ComputeBatch(context.Context, []Claim) []error
 }
 
 // Worker treats notifications as hints and polls the durable dirty table on a
@@ -56,6 +63,24 @@ func (w Worker) drain(ctx context.Context, batch int32) error {
 	claims, err := w.Source.Claim(ctx, w.WorkerID, batch)
 	if err != nil {
 		return err
+	}
+	if batchComputer, ok := w.Source.(BatchComputer); ok {
+		batchErrors := batchComputer.ComputeBatch(ctx, claims)
+		if len(batchErrors) != len(claims) {
+			return fmt.Errorf("batch compute returned %d results for %d claims", len(batchErrors), len(claims))
+		}
+		for i, claim := range claims {
+			if err := batchErrors[i]; err != nil {
+				if w.OnError != nil {
+					w.OnError(claim, err)
+				}
+				continue
+			}
+			if _, err := w.Source.Complete(ctx, claim, w.WorkerID); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	for _, claim := range claims {
 		if err := w.Source.Compute(ctx, claim); err != nil {

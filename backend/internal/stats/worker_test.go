@@ -49,7 +49,44 @@ func TestWorkerRetriesFailedClaimAndHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestWorkerBatchComputerKeepsFailedClaimsDirty(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	claims := []Claim{
+		{ChainID: 4663, Token: [20]byte{1}, Generation: 1},
+		{ChainID: 4663, Token: [20]byte{2}, Generation: 1},
+		{ChainID: 4663, Token: [20]byte{3}, Generation: 1},
+	}
+	source := &batchWorkerTestSource{claims: claims, cancel: cancel}
+	var reported []Claim
+	worker := Worker{
+		Source:   source,
+		WorkerID: "worker-batch-test",
+		OnError: func(claim Claim, err error) {
+			if !errors.Is(err, errTestBatchCompute) {
+				t.Errorf("OnError received %v, want %v", err, errTestBatchCompute)
+			}
+			reported = append(reported, claim)
+		},
+	}
+
+	err := worker.Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run returned %v, want context cancellation", err)
+	}
+	if source.batchCalls != 1 || source.computeCalls != 0 {
+		t.Fatalf("batch/individual compute calls = %d/%d; want 1/0", source.batchCalls, source.computeCalls)
+	}
+	if len(reported) != 1 || reported[0] != claims[1] {
+		t.Fatalf("reported claims = %#v, want only %#v", reported, claims[1])
+	}
+	if len(source.completed) != 2 || source.completed[0] != claims[0] || source.completed[1] != claims[2] {
+		t.Fatalf("completed claims = %#v, want first and third only", source.completed)
+	}
+}
+
 var errTestCompute = errors.New("test compute failure")
+var errTestBatchCompute = errors.New("test batch compute failure")
 
 type workerTestSource struct {
 	claim         Claim
@@ -75,5 +112,38 @@ func (source *workerTestSource) Compute(context.Context, Claim) error {
 func (source *workerTestSource) Complete(context.Context, Claim, string) (bool, error) {
 	source.completeCalls++
 	source.cancel()
+	return true, nil
+}
+
+type batchWorkerTestSource struct {
+	claims       []Claim
+	cancel       context.CancelFunc
+	batchCalls   int
+	computeCalls int
+	completed    []Claim
+}
+
+func (source *batchWorkerTestSource) Claim(context.Context, string, int32) ([]Claim, error) {
+	return source.claims, nil
+}
+
+func (source *batchWorkerTestSource) Compute(context.Context, Claim) error {
+	source.computeCalls++
+	return nil
+}
+
+func (source *batchWorkerTestSource) ComputeBatch(_ context.Context, claims []Claim) []error {
+	source.batchCalls++
+	if len(claims) != 3 {
+		return nil
+	}
+	return []error{nil, errTestBatchCompute, nil}
+}
+
+func (source *batchWorkerTestSource) Complete(_ context.Context, claim Claim, _ string) (bool, error) {
+	source.completed = append(source.completed, claim)
+	if len(source.completed) == 2 {
+		source.cancel()
+	}
 	return true, nil
 }

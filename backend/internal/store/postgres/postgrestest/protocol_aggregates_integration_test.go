@@ -5,12 +5,15 @@ package postgrestest
 import (
 	"context"
 	"database/sql"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Contictus/launchtap/backend/internal/stats"
 	storepostgres "github.com/Contictus/launchtap/backend/internal/store/postgres"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -80,6 +83,150 @@ func TestRecomputeProtocolAggregatesRollsBackOnSummaryFailure(t *testing.T) {
 		t.Fatal("recompute succeeded with an injected protocol summary failure")
 	}
 	assertProtocolAggregateState(t, ctx, database.DB, chainID, oldDay, 1, 9, 19, 1)
+}
+
+func TestAggregationSourceBatchMatchesPerClaimRefresh(t *testing.T) {
+	database := NewMigrated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := openPool(t, ctx, database.URL)
+	const chainID int64 = 48008
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	claims := make([]stats.Claim, 32)
+	for i := range claims {
+		ordinal := byte(i + 1)
+		blockHash := hashBytes(ordinal)
+		blockTime := now.Add(time.Duration(i) * time.Second)
+		mustInsertBlock(t, ctx, database.DB, chainID, int64(i+1), blockHash, hashBytes(ordinal+32), blockTime, "observed")
+		token, curve := addressBytes(ordinal+64), addressBytes(ordinal+96)
+		pair, weth := addressBytes(ordinal+128), addressBytes(0xf0)
+		insertProjectionLaunch(t, ctx, database.DB, chainID, int64(i+1), blockHash, blockTime, hashBytes(ordinal+160), projectionLaunchFixture{
+			token: token, curve: curve, pair: pair, weth: weth,
+		})
+		callRebuild(t, ctx, database.DB, chainID, token)
+		claims[i] = stats.Claim{ChainID: chainID, Token: [20]byte(token), Generation: int64(i + 1)}
+	}
+
+	countingDB := &protocolAggregateCountingDB{pool: pool}
+	adapter := storepostgres.NewAdapter(countingDB)
+	for _, claim := range claims {
+		if err := adapter.RecomputeTokenStats(ctx, claim.ChainID, common.Address(claim.Token)); err != nil {
+			t.Fatalf("recompute token stats for baseline claim: %v", err)
+		}
+		if err := adapter.RecomputeProtocolAggregates(ctx, claim.ChainID); err != nil {
+			t.Fatalf("recompute protocol aggregates for baseline claim: %v", err)
+		}
+	}
+	baseline := snapshotProtocolAggregates(t, ctx, database.DB, chainID)
+	if countingDB.tokenStatsCalls != len(claims) || countingDB.clearDailyCalls != len(claims) || countingDB.dailyCalls != len(claims) || countingDB.protocolStatsCalls != len(claims) || countingDB.transactions != len(claims) {
+		t.Fatalf("baseline calls: token=%d clear=%d daily=%d stats=%d tx=%d; want %d each", countingDB.tokenStatsCalls, countingDB.clearDailyCalls, countingDB.dailyCalls, countingDB.protocolStatsCalls, countingDB.transactions, len(claims))
+	}
+
+	countingDB.reset()
+	results := (storepostgres.AggregationSource{Adapter: adapter}).ComputeBatch(ctx, claims)
+	for i, err := range results {
+		if err != nil {
+			t.Fatalf("batch compute claim %d: %v", i, err)
+		}
+	}
+	after := snapshotProtocolAggregates(t, ctx, database.DB, chainID)
+	if !reflect.DeepEqual(after, baseline) {
+		t.Fatalf("batched aggregate output differs from per-claim baseline:\nbaseline: %#v\nafter:   %#v", baseline, after)
+	}
+	if countingDB.tokenStatsCalls != len(claims) || countingDB.clearDailyCalls != 1 || countingDB.dailyCalls != 1 || countingDB.protocolStatsCalls != 1 || countingDB.transactions != 1 {
+		t.Fatalf("batch calls: token=%d clear=%d daily=%d stats=%d tx=%d; want token=%d and one aggregate transaction", countingDB.tokenStatsCalls, countingDB.clearDailyCalls, countingDB.dailyCalls, countingDB.protocolStatsCalls, countingDB.transactions, len(claims))
+	}
+}
+
+type protocolAggregateSnapshot struct {
+	daily   string
+	summary string
+}
+
+func snapshotProtocolAggregates(t testing.TB, ctx context.Context, database *sql.DB, chainID int64) protocolAggregateSnapshot {
+	t.Helper()
+	var snapshot protocolAggregateSnapshot
+	if err := database.QueryRowContext(ctx, `
+		SELECT COALESCE(json_agg(json_build_array(day::text, volume_eth_wad::text, COALESCE(volume_usd::text, ''), launches_count, trades_count, graduations_count) ORDER BY day)::text, '[]')
+		FROM protocol_daily WHERE chain_id = $1
+	`, chainID).Scan(&snapshot.daily); err != nil {
+		t.Fatalf("snapshot protocol daily output: %v", err)
+	}
+	if err := database.QueryRowContext(ctx, `
+		SELECT json_build_array(volume_24h_eth_wad::text, COALESCE(volume_24h_usd::text, ''), volume_all_time_eth_wad::text, COALESCE(volume_all_time_usd::text, ''), launches_24h, launches_all_time, trades_24h, trades_all_time, graduations_24h, graduations_all_time)::text
+		FROM protocol_stats WHERE chain_id = $1
+	`, chainID).Scan(&snapshot.summary); err != nil {
+		t.Fatalf("snapshot protocol summary output: %v", err)
+	}
+	return snapshot
+}
+
+type protocolAggregateCountingDB struct {
+	pool               *pgxpool.Pool
+	tokenStatsCalls    int
+	clearDailyCalls    int
+	dailyCalls         int
+	protocolStatsCalls int
+	statementCalls     int
+	transactions       int
+}
+
+func (database *protocolAggregateCountingDB) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+	database.record(query)
+	return database.pool.Exec(ctx, query, args...)
+}
+
+func (database *protocolAggregateCountingDB) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+	return database.pool.Query(ctx, query, args...)
+}
+
+func (database *protocolAggregateCountingDB) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
+	return database.pool.QueryRow(ctx, query, args...)
+}
+
+func (database *protocolAggregateCountingDB) BeginTx(ctx context.Context, options pgx.TxOptions) (pgx.Tx, error) {
+	database.transactions++
+	tx, err := database.pool.BeginTx(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	return &protocolAggregateCountingTx{Tx: tx, database: database}, nil
+}
+
+func (database *protocolAggregateCountingDB) record(query string) {
+	switch {
+	case strings.Contains(query, "INSERT INTO token_stats"):
+		database.tokenStatsCalls++
+		database.statementCalls++
+	case strings.Contains(query, "DELETE FROM protocol_daily"):
+		database.clearDailyCalls++
+		database.statementCalls++
+	case strings.Contains(query, "INSERT INTO protocol_daily"):
+		database.dailyCalls++
+		database.statementCalls++
+	case strings.Contains(query, "INSERT INTO protocol_stats"):
+		database.protocolStatsCalls++
+		database.statementCalls++
+	}
+}
+
+func (database *protocolAggregateCountingDB) reset() {
+	database.tokenStatsCalls = 0
+	database.clearDailyCalls = 0
+	database.dailyCalls = 0
+	database.protocolStatsCalls = 0
+	database.statementCalls = 0
+	database.transactions = 0
+}
+
+type protocolAggregateCountingTx struct {
+	pgx.Tx
+	database *protocolAggregateCountingDB
+}
+
+func (tx *protocolAggregateCountingTx) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+	tx.database.record(query)
+	return tx.Tx.Exec(ctx, query, args...)
 }
 
 func seedProtocolAggregateFixture(t *testing.T, ctx context.Context, database *Database, chainID int64) string {

@@ -29,10 +29,31 @@ func (s AggregationSource) Claim(ctx context.Context, worker string, batch int32
 	return result, nil
 }
 func (s AggregationSource) Compute(ctx context.Context, claim stats.Claim) error {
-	if err := s.Adapter.RecomputeTokenStats(ctx, claim.ChainID, common.Address(claim.Token)); err != nil {
-		return err
+	return s.ComputeBatch(ctx, []stats.Claim{claim})[0]
+}
+
+func (s AggregationSource) ComputeBatch(ctx context.Context, claims []stats.Claim) []error {
+	results := make([]error, len(claims))
+	chains := make([]int64, 0, len(claims))
+	computedByChain := make(map[int64][]int, len(claims))
+	for i, claim := range claims {
+		if err := s.Adapter.RecomputeTokenStats(ctx, claim.ChainID, common.Address(claim.Token)); err != nil {
+			results[i] = err
+			continue
+		}
+		if _, exists := computedByChain[claim.ChainID]; !exists {
+			chains = append(chains, claim.ChainID)
+		}
+		computedByChain[claim.ChainID] = append(computedByChain[claim.ChainID], i)
 	}
-	return s.Adapter.RecomputeProtocolAggregates(ctx, claim.ChainID)
+	for _, chainID := range chains {
+		if err := s.Adapter.RecomputeProtocolAggregates(ctx, chainID); err != nil {
+			for _, i := range computedByChain[chainID] {
+				results[i] = err
+			}
+		}
+	}
+	return results
 }
 func (s AggregationSource) Complete(ctx context.Context, claim stats.Claim, worker string) (bool, error) {
 	var completed bool
