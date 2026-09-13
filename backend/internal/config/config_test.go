@@ -18,6 +18,8 @@ func TestLoadParsesCompleteConfiguration(t *testing.T) {
 	env["API_ADDR"] = "127.0.0.1:9090"
 	env["INDEXER_HEALTH_ADDR"] = "127.0.0.1:9091"
 	env["INDEXER_CHUNK_SIZE"] = "2500"
+	env["INDEXER_REORG_SEARCH_DEPTH"] = "512"
+	env["INDEXER_REORG_RECOVERY_MODE"] = "true"
 	env["INDEXER_LOG_ADDRESS_BATCH_SIZE"] = "750"
 	env["INDEXER_POLL_INTERVAL"] = "2s"
 	env["RPC_TIMEOUT"] = "15s"
@@ -44,6 +46,8 @@ func TestLoadParsesCompleteConfiguration(t *testing.T) {
 		APIAddr:                    "127.0.0.1:9090",
 		IndexerHealthAddr:          "127.0.0.1:9091",
 		IndexerChunkSize:           2500,
+		IndexerReorgSearchDepth:    512,
+		IndexerReorgRecoveryMode:   true,
 		IndexerLogAddressBatchSize: 750,
 		IndexerPollInterval:        2 * time.Second,
 		RPCTimeout:                 15 * time.Second,
@@ -73,6 +77,8 @@ func TestConfigEnvironmentMapping(t *testing.T) {
 		"APIAllowedOrigins":          "API_ALLOWED_ORIGINS",
 		"IndexerHealthAddr":          "INDEXER_HEALTH_ADDR",
 		"IndexerChunkSize":           "INDEXER_CHUNK_SIZE",
+		"IndexerReorgSearchDepth":    "INDEXER_REORG_SEARCH_DEPTH",
+		"IndexerReorgRecoveryMode":   "INDEXER_REORG_RECOVERY_MODE",
 		"IndexerLogAddressBatchSize": "INDEXER_LOG_ADDRESS_BATCH_SIZE",
 		"IndexerPollInterval":        "INDEXER_POLL_INTERVAL",
 		"RPCTimeout":                 "RPC_TIMEOUT",
@@ -127,6 +133,9 @@ func TestLoadUsesBoundedDefaults(t *testing.T) {
 	}
 	if got.IndexerChunkSize != 100 {
 		t.Errorf("IndexerChunkSize = %d, want 100", got.IndexerChunkSize)
+	}
+	if got.IndexerReorgSearchDepth != 128 || got.IndexerReorgRecoveryMode {
+		t.Errorf("reorg search settings = %d/%v, want 128/false", got.IndexerReorgSearchDepth, got.IndexerReorgRecoveryMode)
 	}
 	if got.IndexerLogAddressBatchSize != 500 {
 		t.Errorf("IndexerLogAddressBatchSize = %d, want 500", got.IndexerLogAddressBatchSize)
@@ -269,6 +278,9 @@ func TestLoadRejectsInvalidBoundedSettings(t *testing.T) {
 		{name: "indexer health zero port", field: "INDEXER_HEALTH_ADDR", value: ":0"},
 		{name: "zero chunk", field: "INDEXER_CHUNK_SIZE", value: "0"},
 		{name: "chunk above provisional maximum", field: "INDEXER_CHUNK_SIZE", value: "10001"},
+		{name: "zero reorg search depth", field: "INDEXER_REORG_SEARCH_DEPTH", value: "0"},
+		{name: "reorg search depth above maximum", field: "INDEXER_REORG_SEARCH_DEPTH", value: "100001"},
+		{name: "invalid reorg recovery mode", field: "INDEXER_REORG_RECOVERY_MODE", value: "yes"},
 		{name: "zero address batch", field: "INDEXER_LOG_ADDRESS_BATCH_SIZE", value: "0"},
 		{name: "address batch above provider maximum", field: "INDEXER_LOG_ADDRESS_BATCH_SIZE", value: "2001"},
 		{name: "zero poll interval", field: "INDEXER_POLL_INTERVAL", value: "0s"},
@@ -288,6 +300,26 @@ func TestLoadRejectsInvalidBoundedSettings(t *testing.T) {
 			assertFieldError(t, Load, env, test.field, ErrInvalid)
 		})
 	}
+}
+
+func TestLoadRequiresExplicitModeForExpandedReorgSearch(t *testing.T) {
+	t.Parallel()
+
+	env := validEnvironment()
+	env["INDEXER_REORG_SEARCH_DEPTH"] = "129"
+	assertFieldError(t, Load, env, "INDEXER_REORG_RECOVERY_MODE", ErrInvalid)
+
+	env["INDEXER_REORG_RECOVERY_MODE"] = "true"
+	got, err := Load(mapGetenv(env))
+	if err != nil {
+		t.Fatalf("Load() with acknowledged expanded search: %v", err)
+	}
+	if got.IndexerReorgSearchDepth != 129 || !got.IndexerReorgRecoveryMode {
+		t.Fatalf("expanded reorg settings = %d/%v, want 129/true", got.IndexerReorgSearchDepth, got.IndexerReorgRecoveryMode)
+	}
+
+	env["INDEXER_REORG_SEARCH_DEPTH"] = "128"
+	assertFieldError(t, Load, env, "INDEXER_REORG_SEARCH_DEPTH", ErrInvalid)
 }
 
 func TestLoadAcceptsChunkAndConfirmationBoundaries(t *testing.T) {

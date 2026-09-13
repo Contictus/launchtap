@@ -16,6 +16,12 @@ var ErrCanonicalMismatch = errors.New("canonical chain mismatch")
 var ErrSafeViolation = errors.New("canonical mismatch at or below safe head")
 var ErrRPCUnhealthy = errors.New("indexer RPC unavailable")
 
+// Keep these bounds aligned with the stdlib-only configuration package.
+const (
+	defaultReorgSearchDepth uint64 = 128
+	maxReorgSearchDepth     uint64 = 100000
+)
+
 type Engine struct {
 	settings  Settings
 	store     Store
@@ -26,7 +32,10 @@ type Engine struct {
 }
 
 func New(settings Settings, store Store, source Source, discovery Discovery, decoder *chain.Decoder, router Router) (*Engine, error) {
-	if settings.ChainID <= 0 || settings.DeploymentID == "" || settings.StartBlock < 0 || settings.ChunkSize <= 0 || settings.PollInterval <= 0 || store == nil || source == nil || discovery == nil || decoder == nil || router == nil {
+	if settings.ReorgSearchDepth == 0 {
+		settings.ReorgSearchDepth = defaultReorgSearchDepth
+	}
+	if settings.ChainID <= 0 || settings.DeploymentID == "" || settings.StartBlock < 0 || settings.ChunkSize <= 0 || settings.PollInterval <= 0 || settings.ReorgSearchDepth > maxReorgSearchDepth || (settings.ReorgSearchDepth > defaultReorgSearchDepth && !settings.ReorgRecoveryMode) || (settings.ReorgRecoveryMode && settings.ReorgSearchDepth <= defaultReorgSearchDepth) || store == nil || source == nil || discovery == nil || decoder == nil || router == nil {
 		return nil, errors.New("invalid indexer dependencies or settings")
 	}
 	return &Engine{settings: settings, store: store, source: source, discovery: discovery, decoder: decoder, router: router}, nil

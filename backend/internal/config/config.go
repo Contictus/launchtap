@@ -17,12 +17,15 @@ const (
 	defaultIndexerHealthAddr = ":8081"
 	defaultIndexerChunkSize  = uint64(100)
 	maxIndexerChunkSize      = uint64(10000)
-	defaultLogAddressBatch   = uint64(500)
-	maxLogAddressBatch       = uint64(2000)
-	defaultPollInterval      = time.Second
-	defaultRPCTimeout        = 10 * time.Second
-	defaultRPCMaxRetries     = uint64(3)
-	defaultRPCRetryBackoff   = 250 * time.Millisecond
+	// Keep these bounds aligned with the indexer engine's reorg-search policy.
+	defaultIndexerReorgSearchDepth = uint64(128)
+	maxIndexerReorgSearchDepth     = uint64(100000)
+	defaultLogAddressBatch         = uint64(500)
+	maxLogAddressBatch             = uint64(2000)
+	defaultPollInterval            = time.Second
+	defaultRPCTimeout              = 10 * time.Second
+	defaultRPCMaxRetries           = uint64(3)
+	defaultRPCRetryBackoff         = 250 * time.Millisecond
 )
 
 var (
@@ -61,6 +64,8 @@ type Config struct {
 	APIAllowedOrigins          []string      `env:"API_ALLOWED_ORIGINS"`
 	IndexerHealthAddr          string        `env:"INDEXER_HEALTH_ADDR"`
 	IndexerChunkSize           uint64        `env:"INDEXER_CHUNK_SIZE"`
+	IndexerReorgSearchDepth    uint64        `env:"INDEXER_REORG_SEARCH_DEPTH"`
+	IndexerReorgRecoveryMode   bool          `env:"INDEXER_REORG_RECOVERY_MODE"`
 	IndexerLogAddressBatchSize uint64        `env:"INDEXER_LOG_ADDRESS_BATCH_SIZE"`
 	IndexerPollInterval        time.Duration `env:"INDEXER_POLL_INTERVAL"`
 	RPCTimeout                 time.Duration `env:"RPC_TIMEOUT"`
@@ -149,6 +154,23 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	reorgSearchDepth, err := optionalBoundedUint64(
+		"INDEXER_REORG_SEARCH_DEPTH", values.indexerReorgSearchDepth,
+		defaultIndexerReorgSearchDepth, 1, maxIndexerReorgSearchDepth,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	reorgRecoveryMode, err := optionalRecoveryMode(values.indexerReorgRecoveryMode)
+	if err != nil {
+		return Config{}, err
+	}
+	if reorgSearchDepth > defaultIndexerReorgSearchDepth && !reorgRecoveryMode {
+		return Config{}, &FieldError{Field: "INDEXER_REORG_RECOVERY_MODE", Err: ErrInvalid}
+	}
+	if reorgRecoveryMode && reorgSearchDepth <= defaultIndexerReorgSearchDepth {
+		return Config{}, &FieldError{Field: "INDEXER_REORG_SEARCH_DEPTH", Err: ErrInvalid}
+	}
 	confirmations, err := optionalUint64("INDEXER_CONFIRMATIONS", values.indexerConfirmations)
 	if err != nil {
 		return Config{}, err
@@ -166,6 +188,8 @@ func Load(getenv func(string) string) (Config, error) {
 		APIAllowedOrigins:          apiOrigins,
 		IndexerHealthAddr:          indexerHealthAddr,
 		IndexerChunkSize:           chunkSize,
+		IndexerReorgSearchDepth:    reorgSearchDepth,
+		IndexerReorgRecoveryMode:   reorgRecoveryMode,
 		IndexerLogAddressBatchSize: addressBatchSize,
 		IndexerPollInterval:        pollInterval,
 		RPCTimeout:                 rpcTimeout,
@@ -223,6 +247,8 @@ type environmentValues struct {
 	apiAllowedOrigins          string
 	indexerHealthAddr          string
 	indexerChunkSize           string
+	indexerReorgSearchDepth    string
+	indexerReorgRecoveryMode   string
 	indexerLogAddressBatchSize string
 	indexerPollInterval        string
 	rpcTimeout                 string
@@ -246,6 +272,8 @@ func readEnvironment(getenv func(string) string) environmentValues {
 		apiAllowedOrigins:          strings.TrimSpace(getenv("API_ALLOWED_ORIGINS")),
 		indexerHealthAddr:          strings.TrimSpace(getenv("INDEXER_HEALTH_ADDR")),
 		indexerChunkSize:           strings.TrimSpace(getenv("INDEXER_CHUNK_SIZE")),
+		indexerReorgSearchDepth:    strings.TrimSpace(getenv("INDEXER_REORG_SEARCH_DEPTH")),
+		indexerReorgRecoveryMode:   strings.TrimSpace(getenv("INDEXER_REORG_RECOVERY_MODE")),
 		indexerLogAddressBatchSize: strings.TrimSpace(getenv("INDEXER_LOG_ADDRESS_BATCH_SIZE")),
 		indexerPollInterval:        strings.TrimSpace(getenv("INDEXER_POLL_INTERVAL")),
 		rpcTimeout:                 strings.TrimSpace(getenv("RPC_TIMEOUT")),
@@ -333,6 +361,17 @@ func optionalBoundedUint64(field, value string, defaultValue, minValue, maxValue
 	}
 
 	return parsed, nil
+}
+
+func optionalRecoveryMode(value string) (bool, error) {
+	switch value {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, &FieldError{Field: "INDEXER_REORG_RECOVERY_MODE", Err: ErrInvalid}
+	}
 }
 
 func validateURL(field, value string, allowedSchemes ...string) error {

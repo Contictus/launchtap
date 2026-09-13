@@ -49,14 +49,16 @@ type Router interface {
 }
 
 type Settings struct {
-	ChainID      int64
-	DeploymentID string
-	Factory      common.Address
-	StartBlock   int64
-	ChunkSize    int64
-	PollInterval time.Duration
-	OnCommitted  func(State)
-	OnFailure    func(error)
+	ChainID           int64
+	DeploymentID      string
+	Factory           common.Address
+	StartBlock        int64
+	ChunkSize         int64
+	PollInterval      time.Duration
+	ReorgSearchDepth  uint64
+	ReorgRecoveryMode bool
+	OnCommitted       func(State)
+	OnFailure         func(error)
 }
 
 type ReorgRecord struct {

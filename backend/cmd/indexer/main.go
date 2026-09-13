@@ -90,6 +90,7 @@ func run() error {
 	engine, err := indexer.New(indexer.Settings{
 		ChainID: int64(c.ChainID), DeploymentID: c.DeploymentID, Factory: deployment.Factory,
 		StartBlock: int64(deployment.StartBlock), ChunkSize: int64(c.IndexerChunkSize), PollInterval: c.IndexerPollInterval,
+		ReorgSearchDepth: c.IndexerReorgSearchDepth, ReorgRecoveryMode: c.IndexerReorgRecoveryMode,
 		OnCommitted: health.Committed, OnFailure: health.Failed,
 	}, store, source, discovery, decoder, router)
 	if err != nil {
@@ -145,7 +146,8 @@ func run() error {
 			stop()
 		}
 	}()
-	slog.Info("indexer started", "chain_id", c.ChainID, "deployment_id", c.DeploymentID, "start_block", deployment.StartBlock, "started_at", time.Now().UTC())
+	slog.Info("indexer started", "chain_id", c.ChainID, "deployment_id", c.DeploymentID, "start_block", deployment.StartBlock,
+		"reorg_search_depth", c.IndexerReorgSearchDepth, "reorg_recovery_mode", c.IndexerReorgRecoveryMode, "started_at", time.Now().UTC())
 	runErr := engine.Run(ctx)
 	select {
 	case err := <-watchErrors:

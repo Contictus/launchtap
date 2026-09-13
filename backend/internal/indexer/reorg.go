@@ -8,6 +8,7 @@ import (
 
 	"github.com/Contictus/launchtap/backend/internal/ledger"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type RecoveryUnit interface {
@@ -28,13 +29,44 @@ func (e *Engine) recoverReorg(ctx context.Context, state State, tip ledger.Index
 	if state.Observed == nil {
 		return errors.New("cannot recover reorg without observed tip")
 	}
-	candidates := make([]common.Hash, 0, 128)
-	for number := tip.BlockNumber; number >= e.settings.StartBlock && len(candidates) < 128; number-- {
+	candidateFloor := e.settings.StartBlock
+	if state.Safe != nil && state.Safe.BlockNumber > candidateFloor {
+		candidateFloor = state.Safe.BlockNumber
+	}
+	if tip.BlockNumber < candidateFloor {
+		return ErrSafeViolation
+	}
+	candidates := make([]common.Hash, 0, int(e.settings.ReorgSearchDepth))
+	var previous *types.Header
+	for number := tip.BlockNumber; number >= candidateFloor && uint64(len(candidates)) < e.settings.ReorgSearchDepth; number-- {
 		header, err := e.source.HeaderByNumber(ctx, uint64(number))
 		if err != nil {
 			return rpcFailure("read reorg candidate header", err)
 		}
-		candidates = append(candidates, header.Hash())
+		block, err := e.block(header)
+		if err != nil {
+			return fmt.Errorf("invalid reorg candidate header at %d: %w", number, err)
+		}
+		if block.BlockNumber != number {
+			return fmt.Errorf("RPC reorg candidate number %d differs from requested number %d", block.BlockNumber, number)
+		}
+		hash := header.Hash()
+		if len(candidates) == 0 && hash != tip.BlockHash {
+			return fmt.Errorf("RPC reorg candidate at detected tip %d changed: expected %s, got %s", tip.BlockNumber, tip.BlockHash, hash)
+		}
+		if previous != nil {
+			if previous.Number.Int64() != block.BlockNumber+1 || previous.ParentHash != hash {
+				return fmt.Errorf("RPC reorg candidate chain is discontinuous between blocks %d and %d", previous.Number.Int64(), block.BlockNumber)
+			}
+		}
+		candidates = append(candidates, hash)
+		previous = header
+		if number == 0 {
+			break
+		}
+	}
+	if len(candidates) == 0 {
+		return errors.New("no reorg candidates at or above the configured search floor")
 	}
 	var reorgID int64
 	if err := e.store.Transaction(ctx, func(ctx context.Context, u UnitOfWork) error {
@@ -52,6 +84,20 @@ func (e *Engine) recoverReorg(ctx context.Context, state State, tip ledger.Index
 		}
 		if state.Safe != nil && ancestor.BlockNumber < state.Safe.BlockNumber {
 			return ErrSafeViolation
+		}
+		// Revalidate the originally detected tip after candidate and ancestor
+		// discovery, immediately before the first recovery write. This prevents
+		// mixed provider views from creating an incident record or deleting data.
+		recheckedHeader, err := e.source.HeaderByNumber(ctx, uint64(tip.BlockNumber))
+		if err != nil {
+			return rpcFailure("recheck detected reorg tip", err)
+		}
+		recheckedTip, err := e.block(recheckedHeader)
+		if err != nil {
+			return fmt.Errorf("invalid rechecked reorg tip at %d: %w", tip.BlockNumber, err)
+		}
+		if recheckedTip.BlockNumber != tip.BlockNumber || recheckedTip.BlockHash != tip.BlockHash {
+			return fmt.Errorf("RPC reorg tip changed before recovery write at %d: expected %s, got %s", tip.BlockNumber, tip.BlockHash, recheckedTip.BlockHash)
 		}
 		reorgID, err = recovery.RecordReorg(ctx, ReorgRecord{ChainID: e.settings.ChainID, DeploymentID: e.settings.DeploymentID, DetectedTipNumber: tip.BlockNumber, DetectedTipHash: tip.BlockHash, CommonAncestorNumber: ancestor.BlockNumber, CommonAncestorHash: ancestor.BlockHash, Depth: depth, DetectedAt: time.Now().UTC()})
 		return err
