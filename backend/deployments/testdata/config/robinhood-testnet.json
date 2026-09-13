@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "target": "robinhood-testnet",
+  "chainId": 46630,
+  "name": "Robinhood Chain Testnet",
+  "explorerBase": "https://explorer.testnet.chain.robinhood.com",
+  "reviewed": true,
+  "weth": "0xcc02c43352422cc5ce27d8f222302050aeecbd6f",
+  "uniswapV2Factory": "0x76748a790c21335ac0a170504e362b8859c514f5",
+  "uniswapV2Router02": null,
+  "pairInitCodeHash": "0x975956f62f8ffa94b4532cc7c7635d70ec91c5d0c4f198028ee22e92fad32d2b",
+  "bytecodeHashes": {
+    "weth": "0xf59f833f8fabcaf9d8d6959181ad6e25b67ccbdd0cf725dba3ddd7bb2e919a1f",
+    "uniswapV2Factory": "0x57e1094eb3c5206de8e6e5abeb02624e5362d65d6061f6c80ea15e4191b30aaa",
+    "uniswapV2Pair": "0xee915f7f15ebe999182b7eb46eaea4a8f5208d9873b869a9cf012372481a4435"
+  },
+  "forkVerification": {
+    "blockNumber": 118889352,
+    "blockHash": "0xea5a9c92551469f66acd0418d1f8afd996485002fc800e86f0400d551167e4a2",
+    "observedRpcProvider": "Robinhood Public RPC",
+    "archiveRpcProvider": "Robinhood Public RPC",
+    "rpcEnvironmentVariable": "ROBINHOOD_TESTNET_RPC_URL",
+    "archiveRequired": false
+  },
+  "sources": {
+    "chainRpc": "https://docs.robinhood.com/chain/connecting/",
+    "localWeth": "https://github.com/Contictus/launchtap/blob/db759aefcfcada8eaead127f4d1f67c6f9acb442/contracts/script/local/LocalWETH.sol",
+    "localUniswapV2Factory": "https://github.com/Contictus/launchtap/blob/db759aefcfcada8eaead127f4d1f67c6f9acb442/contracts/script/local/LocalUniswapV2Factory.sol",
+    "localUniswapV2Pair": "https://github.com/Contictus/launchtap/blob/db759aefcfcada8eaead127f4d1f67c6f9acb442/contracts/script/local/LocalUniswapV2Pair.sol"
+  }
+}

@@ -63,7 +63,6 @@ $mainnetPath = Join-Path $deploymentsRoot "config/robinhood-mainnet.json"
 $testnetDisabledPath = Join-Path $deploymentsRoot "config/robinhood-testnet.disabled.json"
 
 Assert-JsonSchema $mainnetPath $chainDependenciesSchemaPath "mainnet dependency record"
-Assert-JsonSchema $testnetDisabledPath $chainDisabledSchemaPath "testnet disabled marker"
 
 $mainnet = Get-Content -Raw -LiteralPath $mainnetPath | ConvertFrom-Json
 if ([uint64] $mainnet.chainId -ne 4663) { Fail "mainnet chain id must remain 4663" }
@@ -118,6 +117,7 @@ if (Test-Path -LiteralPath $testnetActivePath) {
     if (Test-Path -LiteralPath $testnetDisabledPath) {
         Fail "active and disabled Robinhood testnet configs cannot coexist"
     }
+    Assert-JsonSchema $testnetActivePath $chainDependenciesSchemaPath "testnet dependency record"
     $testnetActive = Get-Content -Raw -LiteralPath $testnetActivePath | ConvertFrom-Json
     if ([uint64] $testnetActive.chainId -ne 46630 -or $testnetActive.reviewed -ne $true) {
         Fail "active Robinhood testnet dependencies must be explicitly reviewed"
@@ -133,6 +133,7 @@ else {
     if (-not (Test-Path -LiteralPath $testnetDisabledPath)) {
         Fail "Robinhood testnet requires an active reviewed config or an explicit disabled marker"
     }
+    Assert-JsonSchema $testnetDisabledPath $chainDisabledSchemaPath "testnet disabled marker"
     $testnetDisabled = Get-Content -Raw -LiteralPath $testnetDisabledPath | ConvertFrom-Json
     if ([uint64] $testnetDisabled.chainId -ne 46630 -or $testnetDisabled.enabled -ne $false) {
         Fail "Robinhood testnet must remain explicitly disabled until reviewed dependencies exist"
