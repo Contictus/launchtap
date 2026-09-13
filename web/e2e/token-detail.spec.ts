@@ -160,6 +160,10 @@ test("malformed token address has a stable not-found state", async ({ page }) =>
   await expect(page.getByRole("link", { name: "Return to Explore" })).toBeVisible();
 });
 
+test("fractional WAD fixture encodes 1.25 exactly", () => {
+  expect(wadFraction(5n, 4n)).toBe("1250000000000000000");
+});
+
 test("valid token route fails closed when deployment is unavailable", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto("/token/0x0000000000000000000000000000000000000001");
@@ -217,7 +221,7 @@ test("populated token detail renders controls, pages, and responsive captures", 
       start: "2026-09-10T13:00:00Z",
       open: wadFraction(5n, 4n),
       high: wad("3"),
-      low: wad("1.25"),
+      low: wadFraction(5n, 4n),
       close: wadFraction(5n, 2n),
       eth_volume: wad("1"),
       token_volume: wad("25"),

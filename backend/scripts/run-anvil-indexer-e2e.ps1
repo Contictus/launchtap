@@ -1,3 +1,7 @@
+param(
+    [switch] $TestLaunchFeeParser
+)
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
@@ -10,9 +14,62 @@ $sender = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 $pauseAuthority = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 $timelock = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
 $protocolTreasury = "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+$expectedLaunchFeeWei = [System.Numerics.BigInteger]::Parse("500000000000000")
+$developerBuyGrossWei = [System.Numerics.BigInteger]::Parse("1000000000000000")
+$invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
+$uint256Maximum = [System.Numerics.BigInteger]::Pow([System.Numerics.BigInteger]::Parse("2"), 256) - [System.Numerics.BigInteger]::One
 $anvilProcess = $null
 
 function Fail([string] $Message) { throw "Anvil indexer E2E failed: $Message" }
+
+function ConvertTo-LaunchFeeWei([string] $Output) {
+    $match = [System.Text.RegularExpressions.Regex]::Match(
+        $Output,
+        '^(?<wei>0|[1-9][0-9]*)(?: (?<display>\[5e14\]))?$'
+    )
+    if (-not $match.Success) { throw "unsupported cast launch fee output: $Output" }
+
+    $wei = [System.Numerics.BigInteger]::Parse(
+        $match.Groups["wei"].Value,
+        [System.Globalization.NumberStyles]::None,
+        $invariantCulture
+    )
+    if ($wei -gt $uint256Maximum) { throw "cast launch fee output exceeds uint256: $Output" }
+    if ($match.Groups["display"].Success -and $wei -ne $expectedLaunchFeeWei) {
+        throw "cast launch fee display suffix does not match decimal wei: $Output"
+    }
+    return $wei
+}
+
+if ($TestLaunchFeeParser) {
+    $validCases = @(
+        @{ Output = "500000000000000"; Expected = $expectedLaunchFeeWei },
+        @{ Output = "500000000000000 [5e14]"; Expected = $expectedLaunchFeeWei }
+    )
+    foreach ($case in $validCases) {
+        $actual = ConvertTo-LaunchFeeWei $case.Output
+        if ($actual -ne $case.Expected) { throw "launch-fee parser returned $actual for '$($case.Output)'" }
+    }
+
+    $overflow = ($uint256Maximum + [System.Numerics.BigInteger]::One).ToString($invariantCulture)
+    $invalidCases = @(
+        "500000000000000 [5e14x]",
+        "500000000000000 [4e14]",
+        "500000000000001 [5e14]",
+        "500000000000000 [5e14] trailing",
+        $overflow,
+        "-1"
+    )
+    foreach ($case in $invalidCases) {
+        $accepted = $true
+        try { $null = ConvertTo-LaunchFeeWei $case }
+        catch { $accepted = $false }
+        if ($accepted) { throw "launch-fee parser accepted invalid output '$case'" }
+    }
+
+    "PASS launch-fee parser: $($validCases.Count) valid and $($invalidCases.Count) invalid cases"
+    return
+}
 
 function Get-FreeTcpPort {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
@@ -48,7 +105,18 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $manifestPath)) { Fail "deployment did not produce a manifest" }
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     $factory = [string]$manifest.factory
-    & cast send $factory "launch((string,string,uint16,uint256,uint256,uint256))" '("Anvil","ANVL",1,1000000000000000,0,9999999999)' --value 1000000000000000 --from $sender --unlocked --rpc-url $rpcURL | Out-Host
+    $launchFeeRaw = (& cast call $factory "launchFee()(uint256)" --rpc-url $rpcURL | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { Fail "could not read the deployed launch fee" }
+    try { $launchFeeWei = ConvertTo-LaunchFeeWei $launchFeeRaw }
+    catch { Fail "could not parse the deployed launch fee: $($_.Exception.Message)" }
+    if ($launchFeeWei -ne $expectedLaunchFeeWei) {
+        Fail "deployed launch fee was $launchFeeWei wei; expected fixture fee is $expectedLaunchFeeWei wei"
+    }
+    $launchValueWei = $launchFeeWei + $developerBuyGrossWei
+    $developerBuyGrossText = $developerBuyGrossWei.ToString($invariantCulture)
+    $launchValueText = $launchValueWei.ToString($invariantCulture)
+    $launchRequest = '("Anvil","ANVL",1,' + $developerBuyGrossText + ',0,9999999999)'
+    & cast send $factory "launch((string,string,uint16,uint256,uint256,uint256))" $launchRequest --value $launchValueText --from $sender --unlocked --rpc-url $rpcURL | Out-Host
     if ($LASTEXITCODE -ne 0) { Fail "launch transaction failed" }
 
     $env:ANVIL_INDEXER_RPC_URL = $rpcURL
