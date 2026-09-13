@@ -11,6 +11,7 @@ ALTER TABLE token_stats
 ALTER TABLE token_stats
     DROP CONSTRAINT token_stats_price_change_24h_bps_js_safe_range;
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (
@@ -22,6 +23,7 @@ BEGIN
         RAISE EXCEPTION 'cannot narrow token_stats.price_change_24h_bps to INTEGER: values outside signed 32-bit range exist';
     END IF;
 END $$;
+-- +goose StatementEnd
 
 ALTER TABLE token_stats
     ALTER COLUMN price_change_24h_bps TYPE INTEGER

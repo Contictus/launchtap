@@ -31,6 +31,7 @@ CREATE UNIQUE INDEX token_images_launch_identity_key
     WHERE launch_tx_hash IS NOT NULL AND launch_log_index IS NOT NULL;
 
 -- +goose Down
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (
@@ -47,6 +48,7 @@ BEGIN
         RAISE EXCEPTION 'cannot restore address-only metadata keys while multiple metadata or image rows exist for one token address';
     END IF;
 END $$;
+-- +goose StatementEnd
 
 DROP INDEX token_metadata_launch_identity_key;
 ALTER TABLE token_metadata

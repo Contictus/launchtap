@@ -160,7 +160,11 @@ func startupDeployment() (deployments.Deployment, map[string]string) {
 func startupRPCServer(t *testing.T, chainID string, code map[string]string, overrideAddress common.Address, overrideCode string, methods *[]string, methodsMu *sync.Mutex) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		defer request.Body.Close()
+		defer func() {
+			if err := request.Body.Close(); err != nil {
+				t.Errorf("close JSON-RPC request body: %v", err)
+			}
+		}()
 		var call startupRPCRequest
 		if err := json.NewDecoder(request.Body).Decode(&call); err != nil {
 			t.Errorf("decode JSON-RPC request: %v", err)

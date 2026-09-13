@@ -16,7 +16,7 @@ func TestChainProjectionsSchema(t *testing.T) {
 	defer cancel()
 
 	for _, table := range []string{
-		"tokens", "token_reserves", "holder_balances", "aggregation_dirty", "token_metadata",
+		"tokens", "token_reserves", "holder_balances", "aggregation_dirty", "token_metadata", "token_images",
 		"candles", "token_stats", "protocol_daily", "protocol_stats",
 	} {
 		assertTableExists(t, ctx, database.DB, table, true)
@@ -41,7 +41,17 @@ func TestChainProjectionsSchema(t *testing.T) {
 			"aggregation_dirty_pkey", "aggregation_dirty_claim_together",
 			"aggregation_dirty_claim_not_ahead", "aggregation_dirty_token_fk",
 		},
-		"token_metadata": {"token_metadata_pkey"},
+		"token_metadata": {
+			"token_metadata_pkey", "token_metadata_revision_nonnegative",
+			"token_metadata_launch_tx_hash_length", "token_metadata_launch_log_index_nonnegative",
+			"token_metadata_launch_identity_pair",
+		},
+		"token_images": {
+			"token_images_pkey", "token_images_chain_id_positive", "token_images_token_address_length",
+			"token_images_content_type_valid", "token_images_byte_size_valid", "token_images_sha256_length",
+			"token_images_revision_nonnegative", "token_images_launch_tx_hash_length",
+			"token_images_launch_log_index_nonnegative", "token_images_launch_identity_pair",
+		},
 		"candles":        {"candles_pkey", "candles_interval_valid", "candles_token_fk"},
 		"token_stats":    {"token_stats_pkey", "token_stats_token_fk"},
 		"protocol_daily": {"protocol_daily_pkey", "protocol_daily_volume_eth_nonnegative"},
@@ -116,8 +126,8 @@ func assertProjectionColumns(t testing.TB, ctx context.Context, database *sql.DB
 		"token_reserves":    {"chain_id", "token_address", "reserve_source", "eth_reserve", "token_reserve", "source_block_number", "source_block_hash", "source_block_time", "source_tx_hash", "source_log_index"},
 		"holder_balances":   {"chain_id", "token_address", "holder_address", "balance", "first_acquired_block_number"},
 		"aggregation_dirty": {"chain_id", "token_address", "generation", "claimed_generation", "claimed_at", "claimed_by"},
-		"token_metadata":    {"chain_id", "token_address", "description", "image_url", "x_url", "telegram_url", "updated_at", "revision"},
-		"token_images":      {"chain_id", "token_address", "content_type", "content", "byte_size", "sha256", "revision", "updated_at"},
+		"token_metadata":    {"chain_id", "token_address", "description", "image_url", "x_url", "telegram_url", "updated_at", "revision", "content_id", "launch_tx_hash", "launch_log_index"},
+		"token_images":      {"chain_id", "token_address", "content_type", "content", "byte_size", "sha256", "revision", "updated_at", "content_id", "launch_tx_hash", "launch_log_index"},
 		"candles":           {"chain_id", "token_address", "interval", "bucket_start_time", "open_price_wad", "high_price_wad", "low_price_wad", "close_price_wad", "gross_eth_volume", "token_volume", "trade_count"},
 		"token_stats":       {"chain_id", "token_address", "spot_price_eth_wad", "market_cap_eth_wad", "fdv_eth_wad", "liquidity_eth_wad", "ath_price_eth_wad", "ath_at", "volume_24h_eth_wad", "price_change_24h_bps", "holder_count", "spot_price_usd", "market_cap_usd", "fdv_usd", "liquidity_usd", "ath_usd", "volume_24h_usd", "updated_at"},
 		"protocol_daily":    {"chain_id", "day", "volume_eth_wad", "volume_usd", "launches_count", "trades_count", "graduations_count"},

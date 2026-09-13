@@ -61,6 +61,9 @@ func TestMetadataLaunchIdentityMigrationQuarantinesLegacyRowsAndProtectsDown(t *
 	defer cancel()
 
 	if _, err := migrations.Run(ctx, database.DB, migrations.CommandDown); err != nil {
+		t.Fatalf("rollback price-change migration: %v", err)
+	}
+	if _, err := migrations.Run(ctx, database.DB, migrations.CommandDown); err != nil {
 		t.Fatalf("rollback launch identity migration: %v", err)
 	}
 	const chainID int64 = 46630
@@ -121,6 +124,9 @@ func TestMetadataLaunchIdentityMigrationQuarantinesLegacyRowsAndProtectsDown(t *
 		VALUES ($1, $2, $3, 0, 'image/png', $4, $5, $6, 1, $7)
 	`, chainID, token, txHash, imageContent, len(imageContent), imageHash[:], at); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := migrations.Run(ctx, database.DB, migrations.CommandDown); err != nil {
+		t.Fatalf("rollback price-change migration before testing launch-identity guard: %v", err)
 	}
 	if _, err := migrations.Run(ctx, database.DB, migrations.CommandDown); err == nil || !strings.Contains(err.Error(), "multiple metadata or image rows exist") {
 		t.Fatalf("down migration with legacy and scoped rows error=%v", err)
