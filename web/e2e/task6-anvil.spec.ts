@@ -545,16 +545,17 @@ test.describe("Task 6 Anvil transaction gate", () => {
       .poll(
         () =>
           page.evaluate(
-            () => (window as unknown as { __task6WriteRequests: unknown[] }).__task6WriteRequests.length,
+            () =>
+              (window as unknown as { __task6WriteRequests: unknown[] }).__task6WriteRequests
+                .length,
           ),
         { timeout: 10_000 },
       )
       .toBeGreaterThan(writesBeforeResumedSell);
     await expect(tradeStatus).not.toContainText(priorTradeHash!);
-    await expect(tradeStatus).toContainText(
-      /indexing|indexed|safe|finalized/i,
-      { timeout: 30_000 },
-    );
+    await expect(tradeStatus).toContainText(/indexing|indexed|safe|finalized/i, {
+      timeout: 30_000,
+    });
   });
 
   test("regresses to unavailable after the canonical launch disappears in an Anvil reorg", async ({
