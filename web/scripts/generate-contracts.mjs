@@ -157,15 +157,18 @@ const router = routerDocument.filter(
 );
 
 const manifests = [];
-for (const name of ["robinhood-mainnet.json", "robinhood-testnet.disabled.json"]) {
+for (const source of [
+  { name: "config/robinhood-mainnet.json", enabled: false },
+  { name: "robinhood-testnet-v1.json", enabled: true },
+]) {
   const document = JSON.parse(
-    await readFile(join(root, "contracts/deployments/config", name), "utf8"),
+    await readFile(join(root, "contracts/deployments", source.name), "utf8"),
   );
   manifests.push({
-    deploymentId: document.target,
+    deploymentId: document.deploymentId ?? document.target,
     chainId: document.chainId,
     name: document.name ?? document.target,
-    enabled: document.enabled === true && Boolean(document.factory),
+    enabled: source.enabled && Boolean(document.factory),
     factory: document.factory ?? null,
     explorerBase: document.explorerBase ?? null,
     weth: document.weth ?? null,

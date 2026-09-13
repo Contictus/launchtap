@@ -138,7 +138,10 @@ elseif ($Target -eq "robinhood-testnet") {
     $explorerBase = [string] $config.explorerBase
     $weth = [string] $config.weth
     $uniswapFactory = [string] $config.uniswapV2Factory
-    if ($null -ne $config.PSObject.Properties["uniswapV2Router02"]) {
+    if (
+        $null -ne $config.PSObject.Properties["uniswapV2Router02"] -and
+        $null -ne $config.uniswapV2Router02
+    ) {
         $uniswapRouter = [string] $config.uniswapV2Router02
     }
     $pairInitCodeHash = [string] $config.pairInitCodeHash

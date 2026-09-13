@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "robinhood-testnet-v1",
+  "name": "Robinhood Chain Testnet",
+  "environment": "testnet",
+  "chainId": 46630,
+  "factory": "0xedddb61a53226ffdc6ecf7c042b803e769168d55",
+  "startBlock": 118894943,
+  "engineVersion": 1,
+  "curveImplementation": "0x979b9b8172fba6daec305e388fb500b32f740497",
+  "uniswapV2Factory": "0x76748a790c21335ac0a170504e362b8859c514f5",
+  "uniswapV2Router02": null,
+  "weth": "0xcc02c43352422cc5ce27d8f222302050aeecbd6f",
+  "pairInitCodeHash": "0x975956f62f8ffa94b4532cc7c7635d70ec91c5d0c4f198028ee22e92fad32d2b",
+  "lpBurnAddress": "0x000000000000000000000000000000000000dEaD",
+  "explorerBase": "https://explorer.testnet.chain.robinhood.com",
+  "graduationEnabled": true,
+  "deployTransaction": "0xc0c7a41348cf3bbeefb67e535141185447bbbe7bfe4d8d8d0532e739f41e1c9e",
+  "bytecodeHashes": {
+    "launchFactory": "0x3e9a2004917efc73f12e42947f013300e409fad73305c77307ce17fa9234417c",
+    "bondingCurveV1": "0x80df9377481bde7fa7a95c36c627aceaecbedd40eed261d54d1c1b9b542d373b",
+    "uniswapV2Factory": "0x57e1094eb3c5206de8e6e5abeb02624e5362d65d6061f6c80ea15e4191b30aaa",
+    "weth": "0xf59f833f8fabcaf9d8d6959181ad6e25b67ccbdd0cf725dba3ddd7bb2e919a1f"
+  },
+  "compiler": {
+    "solcVersion": "0.8.36",
+    "optimizer": true,
+    "optimizerRuns": 200,
+    "viaIr": false,
+    "evmVersion": "cancun"
+  },
+  "toolchain": {
+    "foundryVersion": "1.8.1"
+  },
+  "governance": {
+    "pauseAuthority": "0xFe3a6b059814B96160a539c570964deC739A003e",
+    "timelock": "0x02baFf7cc315e615CE4E909ECd155ca27FA07460",
+    "protocolTreasury": "0xbd41D8191D2Dd50094D421b58018FA720B035ac7",
+    "deployer": "0x12cB30400339831107589695E5C71455e223Bf02"
+  },
+  "verification": {
+    "dependenciesReviewed": true,
+    "pairInitCodeHashVerified": true,
+    "noResidualDeployerAuthority": true
+  }
+}

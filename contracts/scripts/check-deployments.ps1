@@ -184,8 +184,10 @@ $trackedManifestCandidates = @(
             $_.FullName -notmatch "[\\/]\.generated[\\/]"
         }
 )
-if ($trackedManifestCandidates.Count -ne 0) {
-    Fail "generated deployment manifests must be reviewed before moving outside .generated"
+foreach ($manifestPath in $trackedManifestCandidates) {
+    Assert-JsonSchema $manifestPath.FullName `
+        (Join-Path $deploymentsRoot "deployment.schema.json") `
+        "reviewed deployment manifest $($manifestPath.Name)"
 }
 
 Write-Output "Deployment scripts and manifest boundaries verified."

@@ -55,7 +55,15 @@ const validManifest = `{
   }
 }`
 
-func TestLoadEmbeddedFailsClosedForUnavailableRobinhoodChains(t *testing.T) {
+const testnetDisabledMarker = `{
+  "schemaVersion": 1,
+  "target": "robinhood-testnet",
+  "chainId": 46630,
+  "enabled": false,
+  "reason": "test fixture"
+}`
+
+func TestLoadEmbeddedResolvesReviewedTestnetAndFailsClosedForMainnet(t *testing.T) {
 	registry, err := LoadEmbedded()
 	if err != nil {
 		t.Fatalf("LoadEmbedded() error = %v", err)
@@ -67,18 +75,17 @@ func TestLoadEmbeddedFailsClosedForUnavailableRobinhoodChains(t *testing.T) {
 		t.Fatalf("Lookup(mainnet) error = %v, want ErrDeploymentNotFound", err)
 	}
 
-	_, err = registry.Lookup(46630, "robinhood-testnet-v1")
-	var disabled *ErrDeploymentDisabled
-	if !errors.As(err, &disabled) {
-		t.Fatalf("Lookup(testnet) error = %v, want ErrDeploymentDisabled", err)
+	testnet, err := registry.Lookup(46630, "robinhood-testnet-v1")
+	if err != nil {
+		t.Fatalf("Lookup(testnet) error = %v", err)
 	}
-	if disabled.Reason == "" {
-		t.Fatal("ErrDeploymentDisabled.Reason is empty")
+	if testnet.Factory != common.HexToAddress("0xedddb61a53226ffdc6ecf7c042b803e769168d55") {
+		t.Fatalf("Lookup(testnet).Factory = %s", testnet.Factory)
 	}
 
 	_, err = registry.Lookup(46630, "anvil-v1")
-	if !errors.As(err, &disabled) {
-		t.Fatalf("Lookup(testnet fallback probe) error = %v, want ErrDeploymentDisabled", err)
+	if !errors.As(err, &notFound) {
+		t.Fatalf("Lookup(testnet fallback probe) error = %v, want ErrDeploymentNotFound", err)
 	}
 }
 
@@ -170,17 +177,11 @@ func TestLoadRejectsDeploymentOnDisabledChain(t *testing.T) {
 		value["chainId"] = float64(46630)
 	})
 	files := manifestFS(t, map[string]string{"robinhood-testnet-v1.json": deployment})
-	root, err := fs.Sub(embeddedArtifacts, "testdata")
-	if err != nil {
-		t.Fatalf("fs.Sub() error = %v", err)
+	files["config/robinhood-testnet.disabled.json"] = &fstest.MapFile{
+		Data: []byte(testnetDisabledMarker),
 	}
-	disabled, err := fs.ReadFile(root, "config/robinhood-testnet.disabled.json")
-	if err != nil {
-		t.Fatalf("read disabled marker: %v", err)
-	}
-	files["config/robinhood-testnet.disabled.json"] = &fstest.MapFile{Data: disabled}
 
-	_, err = Load(files)
+	_, err := Load(files)
 	if err == nil {
 		t.Fatal("Load() error = nil for deployment on disabled chain")
 	}
