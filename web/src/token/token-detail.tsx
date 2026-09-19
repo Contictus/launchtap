@@ -663,17 +663,11 @@ function Trades({
     );
   if (error)
     return (
-      <ErrorState
-        title="Trades unavailable"
-        description="Trade history could not be loaded."
-      />
+      <ErrorState title="Trades unavailable" description="Trade history could not be loaded." />
     );
   if (!items.length)
     return (
-      <EmptyState
-        title="No trades yet"
-        description="This token has no recorded trades yet."
-      />
+      <EmptyState title="No trades yet" description="This token has no recorded trades yet." />
     );
   return (
     <div className="history-table" role="table" aria-label="Recent trades">
@@ -723,17 +717,11 @@ function Holders({
     );
   if (error)
     return (
-      <ErrorState
-        title="Holders unavailable"
-        description="Holder data could not be loaded."
-      />
+      <ErrorState title="Holders unavailable" description="Holder data could not be loaded." />
     );
   if (!items.length)
     return (
-      <EmptyState
-        title="No holders yet"
-        description="No holder balances are available yet."
-      />
+      <EmptyState title="No holders yet" description="No holder balances are available yet." />
     );
   return (
     <div className="history-table" role="table" aria-label="Token holders">
