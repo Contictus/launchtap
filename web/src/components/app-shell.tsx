@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   ArrowSquareOut,
@@ -17,14 +18,13 @@ import {
   Wallet,
 } from "./icons";
 import { Button, SafeExternalLink, Sheet } from "./primitives";
-import { publicConfiguration } from "@/config/public";
 
 const navItems = [
   { href: "/", label: "Explore", icon: Compass },
-  { href: "/graduated", label: "Graduated", icon: Trophy },
   { href: "/create", label: "Create", icon: Plus, primary: true },
   { href: "/analytics", label: "Analytics", icon: ChartLineUp },
   { href: "/docs", label: "Docs", icon: BookOpenText },
+  { href: "/graduated", label: "Graduated", icon: Trophy },
   { href: "/profile", label: "Profile", icon: UserCircle },
 ];
 
@@ -32,8 +32,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const configuration = publicConfiguration();
-  const deploymentReady = configuration.status === "ready";
   useEffect(() => {
     const saved = window.localStorage.getItem("launchpad-theme");
     const next = saved === "light" ? "light" : "dark";
@@ -52,26 +50,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-frame">
       <header className="app-navbar" aria-label="Primary navigation">
+        <Link className="navbar-brand" href="/" aria-label="Open home">
+          <span className="brand-orbit" aria-hidden="true" />
+        </Link>
         <nav className="navbar-links" aria-label="Desktop primary navigation">
-          {navItems.map(({ href, label, icon: Icon, primary }) => (
-            <a
-              key={href}
-              href={href}
-              className={`navbar-link ${active(href) ? "is-active" : ""} ${primary ? "is-primary" : ""}`}
-              aria-current={active(href) ? "page" : undefined}
-            >
-              <Icon size={18} weight={active(href) ? "fill" : "regular"} aria-hidden="true" />
-              <span>{label}</span>
-            </a>
-          ))}
+          {navItems
+            .filter(({ href }) => href !== "/profile")
+            .map(({ href, label, icon: Icon, primary }) => (
+              <a
+                key={href}
+                href={href}
+                className={`navbar-link ${active(href) ? "is-active" : ""} ${primary ? "is-primary" : ""}`}
+                aria-current={active(href) ? "page" : undefined}
+              >
+                <Icon size={18} weight={active(href) ? "fill" : "regular"} aria-hidden="true" />
+                <span>{label}</span>
+              </a>
+            ))}
         </nav>
         <div className="navbar-actions">
-          <span className="navbar-network">
-            <span
-              className={`state-dot ${deploymentReady ? "state-dot-success" : "state-dot-warning"}`}
-            />
-            {deploymentReady ? "Testnet ready" : "Read-only mode"}
-          </span>
           <button
             type="button"
             className="theme-toggle"
@@ -79,15 +76,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
             title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
           >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            <Sun size={16} weight={theme === "dark" ? "fill" : "regular"} />
+            <Moon size={16} weight={theme === "light" ? "fill" : "regular"} />
           </button>
+          <a className="navbar-action" href="/profile" aria-label="Open profile">
+            <UserCircle size={19} />
+          </a>
           <Button
             variant="quiet"
             size="sm"
             onClick={() => setMenuOpen(true)}
             className="navbar-wallet"
           >
-            <Wallet size={15} /> <span>Connect wallet</span>
+            <Wallet size={17} /> <span>Connect wallet</span>
           </Button>
           <button
             className="ui-icon-button navbar-menu-button"
@@ -102,7 +103,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {children}
         <footer className="app-footer">
           <div>
-            <span className="footer-mark" aria-label="Protocol mark">◈</span>
+            <span className="footer-mark" aria-label="Protocol mark">
+              ◈
+            </span>
             <p>Non-custodial by design. You sign every transaction in your selected wallet.</p>
           </div>
           <div className="footer-links">
