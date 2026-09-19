@@ -21,6 +21,7 @@
   --radius-control: 8px;
   --rail-width: 248px;
 }
+
 * {
   box-sizing: border-box;
 }
@@ -1041,7 +1042,7 @@ h2 {
   width: min(1380px, calc(100% - 32px));
   min-height: 70px;
   margin: 16px auto 0;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 24px;
   border: 1px solid var(--line);
@@ -1058,7 +1059,7 @@ h2 {
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px;
 }
 
@@ -2881,5 +2882,106 @@ html[data-theme="light"] .ui-input {
     border-top: 1px solid var(--line);
     border-left: 0;
     padding: 18px 0 0;
+  }
+}
+
+/* Final composition overrides intentionally live last so route-specific legacy
+   rules cannot pull the hero back to the left. */
+.page-stack {
+  max-width: 1160px;
+  margin-inline: auto;
+  padding-top: 112px;
+}
+
+.page-stack::before {
+  display: block;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 28px;
+  border: 1px solid rgb(168 255 192 / 0.34);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 35% 30%, rgb(240 255 245 / 0.65), transparent 18%),
+    linear-gradient(145deg, rgb(114 238 154 / 0.28), rgb(255 255 255 / 0.04));
+  box-shadow:
+    inset 1px 1px rgb(255 255 255 / 0.3),
+    0 12px 34px rgb(50 214 106 / 0.14);
+  content: "";
+  transform: rotate(8deg);
+}
+
+.page-hero {
+  text-align: center;
+}
+
+.page-hero > div,
+.hero-summary {
+  margin-inline: auto;
+}
+
+.page-hero h1 {
+  margin-inline: auto;
+  font-family: var(--font-body), "Helvetica Neue", Arial, sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.055em;
+}
+
+.hero-aside {
+  display: block;
+  max-width: 640px;
+  margin: 24px auto 0;
+  border-top: 1px solid rgb(114 238 154 / 0.34);
+  border-left: 0;
+  padding: 14px 0 0;
+  text-align: center;
+}
+
+.hero-rule {
+  display: none;
+}
+
+.hero-aside p {
+  margin: 0 0 12px;
+}
+
+.hero-aside .ui-badge {
+  display: inline-flex;
+  margin-inline: 4px;
+}
+
+body,
+button,
+input,
+select,
+textarea,
+h1,
+h2,
+h3,
+.panel-head h2 {
+  font-family: var(--font-body), "Helvetica Neue", Arial, sans-serif;
+}
+
+h1,
+h2,
+h3,
+.panel-head h2 {
+  font-weight: 500;
+}
+
+.footer-mark {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgb(168 255 192 / 0.36);
+  border-radius: 10px;
+  background: rgb(114 238 154 / 0.13);
+  color: var(--red-soft);
+  font-size: 1.05rem;
+}
+
+@media (max-width: 767px) {
+  .page-stack {
+    padding-top: 76px;
   }
 }

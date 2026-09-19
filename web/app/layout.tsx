@@ -6,7 +6,7 @@ import { RouteTransition } from "@/components/route-transition";
 import { Providers } from "./providers";
 
 const display = localFont({
-  src: "../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-600-normal.woff2",
+  src: "../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2",
   variable: "--font-display",
   display: "swap",
 });

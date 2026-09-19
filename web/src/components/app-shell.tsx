@@ -1,7 +1,6 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   ArrowSquareOut,
@@ -53,15 +52,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-frame">
       <header className="app-navbar" aria-label="Primary navigation">
-        <Link href="/" className="brand-mark">
-          <span className="brand-stamp" aria-hidden="true">
-            LP
-          </span>
-          <span>
-            <strong>Launchpad</strong>
-            <small>Onchain launch desk</small>
-          </span>
-        </Link>
         <nav className="navbar-links" aria-label="Desktop primary navigation">
           {navItems.map(({ href, label, icon: Icon, primary }) => (
             <a
@@ -112,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {children}
         <footer className="app-footer">
           <div>
-            <strong>Launchpad</strong>
+            <span className="footer-mark" aria-label="Protocol mark">◈</span>
             <p>Non-custodial by design. You sign every transaction in your selected wallet.</p>
           </div>
           <div className="footer-links">

@@ -67,7 +67,9 @@ export function publicConfiguration(
     ) {
       return {
         status: "ready",
-        privyAppId: "cl_e2e_fixture_1234567890",
+        // Local stack previews do not have a real Privy application. Keep the
+        // indexed read surface live without initializing an invalid auth client.
+        privyAppId: env.NEXT_PUBLIC_LOCAL_DEV === "1" ? null : "cl_e2e_fixture_1234567890",
         chainId: 31337,
         deploymentId: "task6-anvil",
         apiBaseUrl: fixtureApi,
