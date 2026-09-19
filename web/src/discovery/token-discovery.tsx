@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Plus } from "@phosphor-icons/react";
 import {
   ApiClient,
   resolveApiAssetUrl,
@@ -340,7 +341,8 @@ export function TokenDiscovery({
             </span>
           </div>
           <Link className="ui-button ui-button-secondary ui-button-sm discovery-create-button" href="/create">
-            + Create
+            <Plus aria-hidden="true" size={16} weight="bold" />
+            <span>Create</span>
           </Link>
         </div>
       ) : null}
