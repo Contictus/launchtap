@@ -14,9 +14,9 @@ import {
   ShieldCheck,
   Sun,
   UserCircle,
-  Wallet,
 } from "./icons";
-import { Button, SafeExternalLink, Sheet } from "./primitives";
+import { SafeExternalLink, Sheet } from "./primitives";
+import { WalletConnectButton } from "@/wallet/connection";
 
 const navItems = [
   { href: "/", label: "Explore", icon: Compass },
@@ -80,14 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <a className="navbar-action" href="/profile" aria-label="Open profile">
             <UserCircle size={19} />
           </a>
-          <Button
-            variant="quiet"
-            size="sm"
-            onClick={() => setMenuOpen(true)}
-            className="navbar-wallet"
-          >
-            <Wallet size={17} /> <span>Connect wallet</span>
-          </Button>
+          <WalletConnectButton />
           <button
             className="ui-icon-button navbar-menu-button"
             onClick={() => setMenuOpen(true)}

@@ -7,8 +7,9 @@ import { useEffect, useState } from "react";
 import { ApiClient, type ProfileResponse } from "@/api/client";
 import { formatBaseUnits } from "@/amounts";
 import { publicConfiguration } from "@/config/public";
-import { Button, Badge, UnavailableState } from "@/components/primitives";
+import { Button, Badge } from "@/components/primitives";
 import { useWalletReadiness } from "@/wallet/readiness";
+import { WalletConnectButton } from "@/wallet/connection";
 import { shortAddress } from "@/token/address";
 
 type ProfileAction = NonNullable<ProfileResponse["items"]>[number];
@@ -72,10 +73,12 @@ export function ProfileView() {
   ]);
   if (!ready)
     return (
-      <UnavailableState
-        title="Identity provider loading"
-        description="Waiting for Privy to confirm the current identity."
-      />
+      <section className="workspace-panel profile-auth" aria-live="polite">
+        <p className="panel-kicker">Wallet access</p>
+        <h2>Connect your wallet to continue</h2>
+        <p>Identity is still loading. You can start the wallet connection from here while Privy confirms the session.</p>
+        <WalletConnectButton className="profile-wallet-button" />
+      </section>
     );
   if (!authenticated) {
     return (
@@ -89,6 +92,7 @@ export function ProfileView() {
         <Button variant="primary" onClick={() => login()}>
           Sign in with Privy
         </Button>
+        <WalletConnectButton className="profile-wallet-button" />
       </section>
     );
   }

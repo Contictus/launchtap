@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type PropsWithChildren } from "react";
 import { publicConfiguration } from "@/config/public";
 import { createWeb3Config } from "@/wallet/config";
+import { WalletConnectionBridge } from "@/wallet/connection";
 
 /**
  * Stable client boundary for app-wide providers. Wallet, query, and identity providers are
@@ -24,14 +25,18 @@ export function Providers({ children }: PropsWithChildren) {
     return (
       <WagmiProvider config={web3.config}>
         <PrivyProvider appId={configuration.privyAppId}>
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+          <QueryClientProvider client={queryClient}>
+            <WalletConnectionBridge>{children}</WalletConnectionBridge>
+          </QueryClientProvider>
         </PrivyProvider>
       </WagmiProvider>
     );
   return (
     <PrivyProvider appId={configuration.privyAppId}>
       <QueryClientProvider client={queryClient}>
-        <PrivyWagmiProvider config={web3.config}>{children}</PrivyWagmiProvider>
+        <PrivyWagmiProvider config={web3.config}>
+          <WalletConnectionBridge>{children}</WalletConnectionBridge>
+        </PrivyWagmiProvider>
       </QueryClientProvider>
     </PrivyProvider>
   );
