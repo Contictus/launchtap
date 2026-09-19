@@ -57,22 +57,6 @@ function displayAmount(raw: string, decimals = 18) {
   }
 }
 
-function finalityTone(finality: string): "success" | "warning" | "neutral" {
-  return finality === "safe" || finality === "finalized"
-    ? "success"
-    : finality === "provisional" || finality === "stale"
-      ? "warning"
-      : "neutral";
-}
-
-function finalityLabel(finality: string) {
-  if (finality === "safe") return "Safe snapshot";
-  if (finality === "finalized") return "Finalized snapshot";
-  if (finality === "provisional") return "Provisional snapshot";
-  if (finality === "stale") return "Stale snapshot";
-  return finality ? `${finality} snapshot` : "Snapshot status unavailable";
-}
-
 function tokenLabel(token: TokenCardData) {
   return token.name.trim() || token.symbol.trim() || "Unnamed token";
 }
@@ -284,26 +268,19 @@ export function TokenDiscovery({
         <div className="hero-aside">
           <span className="hero-rule" />
           <p>
-            Indexed reads stay separate from wallet signing. Every row carries its snapshot state.
+            Follow each route from curve to graduation. Wallet actions stay in your control.
           </p>
-          <Badge tone={configuration.status === "ready" ? "success" : "warning"}>
-            {configuration.status === "ready" ? "API connected" : "API unavailable · fail-closed"}
-          </Badge>
-          {configuration.status !== "ready" ? (
-            <span className="mono discovery-config-note">Not configured</span>
-          ) : null}
         </div>
       </section>
 
       <section className="workspace-panel discovery-panel" aria-labelledby="list-title">
         <div className="panel-head discovery-controls-head">
           <div>
-            <p className="panel-kicker">GET /v1/tokens</p>
+            <p className="panel-kicker">Explore</p>
             <h2 id="list-title">
-              {urlState.phase === "graduated" ? "Graduated routes" : "Curve routes"}
+              {urlState.phase === "graduated" ? "Graduated tokens" : "Tokens in motion"}
             </h2>
           </div>
-          {snapshot ? <SnapshotBadge snapshot={snapshot} /> : null}
         </div>
         <div className="discovery-controls" role="search">
           <Input
@@ -350,7 +327,7 @@ export function TokenDiscovery({
         </div>
         {resetNotice ? (
           <p className="discovery-notice" role="status">
-            This page marker expired. Showing page one from a fresh snapshot.
+            The list was refreshed with the latest available routes.
           </p>
         ) : null}
         {configuration.status !== "ready" ? (
@@ -374,11 +351,11 @@ export function TokenDiscovery({
         ) : items.length === 0 ? (
           <div className="discovery-state">
             <EmptyState
-              title={urlState.q ? "No matching tokens" : "No indexed tokens yet"}
+              title={urlState.q ? "No matching tokens" : "No tokens yet"}
               description={
                 urlState.q
                   ? "Try a different name or symbol."
-                  : "The connected API has no tokens for this route yet."
+                  : "New launches will appear here as they become available."
               }
               action={
                 urlState.q ? (
@@ -404,8 +381,7 @@ export function TokenDiscovery({
             </div>
             <div className="discovery-pagination">
               <span className="discovery-count">
-                Showing {items.length} indexed {items.length === 1 ? "route" : "routes"}; total
-                count unavailable.
+                {items.length} {items.length === 1 ? "token" : "tokens"} shown
               </span>
               {nextCursor ? (
                 <Button
@@ -414,22 +390,11 @@ export function TokenDiscovery({
                 >
                   Load more
                 </Button>
-              ) : (
-                <span className="discovery-end">End of snapshot</span>
-              )}
+              ) : null}
             </div>
           </>
         )}
       </section>
-    </div>
-  );
-}
-
-function SnapshotBadge({ snapshot }: { snapshot: Snapshot }) {
-  return (
-    <div className="snapshot-badge">
-      <Badge tone={finalityTone(snapshot.finality)}>{finalityLabel(snapshot.finality)}</Badge>
-      <span className="mono">Block {snapshot.as_of_block}</span>
     </div>
   );
 }
@@ -442,7 +407,7 @@ function TokenCard({ token }: { token: TokenCardData }) {
         <SafeImage
           src={undefined}
           alt={`${label} token`}
-          fallbackLabel="No token image"
+          fallbackLabel="No artwork"
           className="token-image"
         />
         <div className="token-identity">
@@ -500,10 +465,9 @@ function UnavailableDiscovery() {
         /
       </span>
       <div>
-        <h2>Indexed discovery unavailable</h2>
+        <h2>Token discovery unavailable</h2>
         <p>
-          Connect a reviewed API and deployment to load current tokens. Cached values are not
-          presented as current.
+          Token routes are temporarily unavailable. Try again shortly.
         </p>
       </div>
     </section>

@@ -6,7 +6,7 @@ export default function HomePage() {
     <Suspense fallback={<DiscoveryFallback />}>
       <TokenDiscovery
         title="Explore the launch route."
-        summary="Inspect indexed tokens, follow each lifecycle state, and sign only when the route is clear."
+        summary="Discover new tokens, follow each launch, and sign only when the route is clear."
       />
     </Suspense>
   );
@@ -16,7 +16,7 @@ function DiscoveryFallback() {
   return (
     <div className="page-stack discovery-page" aria-busy="true">
       <div className="discovery-state">
-        <p className="mono">Loading indexed routes…</p>
+        <p className="mono">Loading token routes…</p>
       </div>
     </div>
   );

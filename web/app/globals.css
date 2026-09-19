@@ -130,6 +130,8 @@ h3 { margin-bottom: 7px; font-size: 1.05rem; }
 .token-card:hover { background: rgba(255,255,255,.045); }
 .token-card-main { display: flex; align-items: center; gap: 15px; min-width: 0; }
 .token-image, .token-detail-image { flex: 0 0 auto; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.1); }
+.ui-image-fallback { display: grid; place-items: center; }
+.ui-image-fallback::before { width: 18px; height: 18px; border: 1px solid var(--line-bright); border-radius: 50%; content: ""; opacity: .72; }
 .token-image { width: 52px; height: 52px; }
 .token-image img, .token-detail-image img { width: 100%; height: 100%; object-fit: cover; }
 .token-identity { min-width: 0; }

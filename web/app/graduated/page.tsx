@@ -7,7 +7,7 @@ export default function GraduatedPage() {
       <TokenDiscovery
         defaultPhase="graduated"
         title="Graduated routes."
-        summary="Review completed launch routes from the canonical indexed snapshot."
+        summary="Review tokens that completed the launch route and moved into open liquidity."
       />
     </Suspense>
   );

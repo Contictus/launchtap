@@ -1018,7 +1018,7 @@ function TradingPanelReady({
     return (
       <UnavailableState
         title="Trading unavailable"
-        description="The indexed token contract address is not valid for this reviewed deployment."
+        description="This token contract is not valid for the selected network."
       />
     );
   if (graduated)
