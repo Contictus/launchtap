@@ -322,21 +322,23 @@ export function TokenDiscovery({
       ) : null}
 
       {showSearch ? (
-        <div className="discovery-searchbar" role="search">
-          <Input
-            label="Search tokens"
-            placeholder="Name or symbol"
-            value={searchDraft}
-            onChange={(event) => {
-              searchEditedRef.current = true;
-              setSearchDraft(event.target.value);
-            }}
-            maxLength={120}
-            autoComplete="off"
-          />
-          <span className="discovery-search-shortcut" aria-hidden="true">
-            ⌘K
-          </span>
+        <div className="discovery-toolbar">
+          <div className="discovery-searchbar" role="search">
+            <Input
+              label="Search tokens"
+              placeholder="Name or symbol"
+              value={searchDraft}
+              onChange={(event) => {
+                searchEditedRef.current = true;
+                setSearchDraft(event.target.value);
+              }}
+              maxLength={120}
+              autoComplete="off"
+            />
+            <span className="discovery-search-shortcut" aria-hidden="true">
+              ⌘K
+            </span>
+          </div>
           <Link className="ui-button ui-button-secondary ui-button-sm discovery-create-button" href="/create">
             + Create
           </Link>

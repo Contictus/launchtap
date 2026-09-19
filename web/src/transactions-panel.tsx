@@ -1978,6 +1978,60 @@ export function LaunchPanel() {
   );
 }
 
+function LaunchPreview({
+  imageUrl,
+  name,
+  symbol,
+  launchFee,
+  value,
+}: {
+  imageUrl: string;
+  name: string;
+  symbol: string;
+  launchFee: bigint | null;
+  value: bigint | null;
+}) {
+  return (
+    <aside className="launch-preview-card" aria-label="Token preview">
+      <div className="launch-preview-image">
+        {imageUrl.trim() ? (
+          <SafeImage src={imageUrl} alt="Token preview" />
+        ) : (
+          <span aria-hidden="true">◈</span>
+        )}
+      </div>
+      <h2>{name.trim() || "Your token"}</h2>
+      <p className="mono">{symbol.trim() || "ticker"}</p>
+      <dl>
+        <div>
+          <dt>Launch fee</dt>
+          <dd>{launchFee === null ? "Unavailable" : eth(launchFee)}</dd>
+        </div>
+        <div>
+          <dt>Paired with</dt>
+          <dd>ETH</dd>
+        </div>
+        <div>
+          <dt>Trade fee</dt>
+          <dd>1.00%</dd>
+        </div>
+        <div>
+          <dt>Launch value</dt>
+          <dd>{value === null ? "Unavailable" : eth(value)}</dd>
+        </div>
+        <div>
+          <dt>Graduation</dt>
+          <dd>4.2 ETH</dd>
+        </div>
+        <div>
+          <dt>Liquidity</dt>
+          <dd>Locked</dd>
+        </div>
+      </dl>
+    </aside>
+  );
+}
+
 function LaunchPanelReady() {
   const configuration = publicConfiguration();
   const readiness = useWalletReadiness();
@@ -2228,12 +2282,10 @@ function LaunchPanelReady() {
       className="workspace-panel transaction-panel launch-panel"
       aria-labelledby="launch-title"
     >
-      <div className="panel-head">
+      <div className="launch-panel-head">
         <div>
-          <p className="panel-kicker">Launch desk</p>
-          <h2 id="launch-title">Create a token</h2>
+          <h1 id="launch-title">Launch token</h1>
         </div>
-        <Badge tone="accent">Fixed supply</Badge>
       </div>
       {error ? (
         <ErrorState title="Launch unavailable" description={error} />
@@ -2242,17 +2294,6 @@ function LaunchPanelReady() {
           {!readiness.address ? (
             <div className="transaction-warning" role="status">
               Connect the selected wallet before reviewing this launch.
-              <Button
-                size="sm"
-                loading={connectPending}
-                disabled={connectors.length === 0}
-                onClick={() => {
-                  const connector = connectors[0];
-                  if (connector) connect({ connector });
-                }}
-              >
-                Connect wallet
-              </Button>
             </div>
           ) : null}
           {launchChainId !== configuration.chainId ? (
@@ -2263,55 +2304,72 @@ function LaunchPanelReady() {
               </Button>
             </div>
           ) : null}
-          <div className="transaction-form">
-            <Input
-              label="Token name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={64}
-              placeholder="A clear name"
-            />
-            <Input
-              label="Symbol"
-              value={symbol}
-              onChange={(event) => setSymbol(event.target.value.toUpperCase())}
-              maxLength={16}
-              placeholder="TICKER"
-            />
-            <Input
-              label="Image URL (optional)"
-              value={imageUrl}
-              onChange={(event) => setImageUrl(event.target.value)}
-              placeholder="https://…"
-            />
-            <Input
-              label="X URL (optional)"
-              value={xUrl}
-              onChange={(event) => setXUrl(event.target.value)}
-              placeholder="https://x.com/…"
-            />
-            <Input
-              label="Telegram URL (optional)"
-              value={telegramUrl}
-              onChange={(event) => setTelegramUrl(event.target.value)}
-              placeholder="https://t.me/…"
-            />
-            <Input
-              label="Developer buy (ETH, optional)"
-              value={buy}
-              onChange={(event) => setBuy(event.target.value)}
-              inputMode="decimal"
-              hint="Launch value is exactly launch fee + developer buy gross."
-            />
-            {imageUrl ? (
-              <SafeImage
-                src={imageUrl}
-                alt="Token image preview"
-                className="launch-image-preview"
-              />
-            ) : null}
-          </div>
-          <div className="quote-summary">
+          <div className="launch-layout">
+            <div className="launch-main">
+              <div className="transaction-form">
+                <div className="launch-field-row">
+                  <Input
+                    label="Name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={64}
+                    placeholder="Token name"
+                  />
+                  <Input
+                    label="Ticker"
+                    value={symbol}
+                    onChange={(event) => setSymbol(event.target.value.toUpperCase())}
+                    maxLength={16}
+                    placeholder="Symbol"
+                  />
+                </div>
+                <Input
+                  label="Token image"
+                  value={imageUrl}
+                  onChange={(event) => setImageUrl(event.target.value)}
+                  placeholder="https://…"
+                />
+                <div className="launch-field-row">
+                  <Input
+                    label="X profile"
+                    value={xUrl}
+                    onChange={(event) => setXUrl(event.target.value)}
+                    placeholder="https://x.com/handle"
+                  />
+                  <Input
+                    label="Telegram"
+                    value={telegramUrl}
+                    onChange={(event) => setTelegramUrl(event.target.value)}
+                    placeholder="https://t.me/community"
+                  />
+                </div>
+                <label className="ui-field">
+                  <span>Paired asset</span>
+                  <select className="ui-input" defaultValue="ETH" aria-label="Paired asset">
+                    <option>ETH</option>
+                  </select>
+                  <small className="ui-field-hint">Graduates once the curve raises 4.2 ETH.</small>
+                </label>
+                <Input
+                  label="Developer buy (ETH)"
+                  value={buy}
+                  onChange={(event) => setBuy(event.target.value)}
+                  inputMode="decimal"
+                  hint="Launch value is exactly launch fee + developer buy gross."
+                />
+                {imageUrl ? (
+                  <SafeImage
+                    src={imageUrl}
+                    alt="Token image preview"
+                    className="launch-image-preview"
+                  />
+                ) : null}
+                <details className="launch-advanced">
+                  <summary>Advanced</summary>
+                  <p>Engine version and pause state are read from the reviewed factory.</p>
+                </details>
+              </div>
+              <div className="quote-summary">
             <span>
               Factory launch fee{" "}
               <strong className="mono">
@@ -2348,12 +2406,13 @@ function LaunchPanelReady() {
               Exact launch value{" "}
               <strong className="mono">{value === null ? "Unavailable" : eth(value)}</strong>
             </span>
-          </div>
-          <p className="transaction-risk">
-            Non-custodial: your selected wallet signs directly. Launch is irreversible and may lose
-            value. Metadata links and image preview are validated before this confirmation step.
-          </p>
-          {confirming ? (
+              </div>
+              <p className="transaction-risk">
+                Non-custodial: your selected wallet signs directly. Launch is irreversible and may
+                lose value. Metadata links and image preview are validated before this confirmation
+                step.
+              </p>
+              {confirming ? (
             <div className="transaction-confirmation">
               <h3>Confirm launch</h3>
               <dl>
@@ -2397,25 +2456,47 @@ function LaunchPanelReady() {
                 </Button>
               </div>
             </div>
-          ) : (
-            <Button
-              variant="primary"
-              size="lg"
-              disabled={
-                Object.keys(validMetadata).length > 0 ||
-                value === null ||
-                !defaultsRead ||
-                launchesPaused !== false ||
-                engineEnabled !== true ||
-                !readiness.selectedAccountVerified ||
-                !transaction.ready ||
-                hasUnresolvedSubmission(state)
-              }
-              onClick={() => setConfirming(true)}
-            >
-              Review launch
-            </Button>
-          )}
+              ) : !readiness.address ? (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  loading={connectPending}
+                  disabled={connectors.length === 0}
+                  onClick={() => {
+                    const connector = connectors[0];
+                    if (connector) connect({ connector });
+                  }}
+                >
+                  Connect wallet
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={
+                    Object.keys(validMetadata).length > 0 ||
+                    value === null ||
+                    !defaultsRead ||
+                    launchesPaused !== false ||
+                    engineEnabled !== true ||
+                    !readiness.selectedAccountVerified ||
+                    !transaction.ready ||
+                    hasUnresolvedSubmission(state)
+                  }
+                  onClick={() => setConfirming(true)}
+                >
+                  Review launch
+                </Button>
+              )}
+            </div>
+            <LaunchPreview
+              imageUrl={imageUrl}
+              name={name}
+              symbol={symbol}
+              launchFee={launchFee}
+              value={value}
+            />
+          </div>
         </>
       )}
       {state.status !== "disconnected" ? (
