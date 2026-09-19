@@ -36,26 +36,26 @@ acceptance.
 
 ## Project status and release boundary
 
-The checkout's active development branch is `dev` (HEAD `8b21a11`). `main` contains milestone
-PR #6 at `538beef`. Task-level implementation work is normally linear on `dev`, while a
+The checkout's active development branch is `dev`. `main` contains milestone PR #7 at
+`37fb6ee`. Task-level implementation work is normally linear on `dev`, while a
 short-lived `task/<slug>` branch is reserved for unusually large or uncertain high-risk work.
 See [AGENTS.md](AGENTS.md) for the working and Git handoff rules.
 
-| Area                                                 | Repository status                                                          | What that status does not establish                                                       |
-| ---------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Contract Foundations, Tasks 1–12                     | Complete                                                                   | An external audit or production authorization                                             |
-| Backend Foundations, Tasks 1–12                      | Complete                                                                   | A running hosted service                                                                  |
-| Backend Indexer, Plan 2, Tasks 1–5                   | Implementation and deterministic Anvil/health gates complete               | The reviewed chain-46630 deployment manifest or live testnet acceptance                   |
-| API and identity, Plan 3, Tasks 1–7                  | Implementation complete                                                    | A configured production Privy organization or hosted API                                  |
-| Web client, Plan 4, Tasks 1–8                        | Implementation and deterministic CI gates complete on `dev`                | A live release, hosted API, configured Privy application, or production acceptance        |
-| Full codebase audit and hardening, Plan 5, Tasks 1–8 | Repository remediation and available deterministic gates complete on `dev` | A new Slither detector run, archive-RPC fork run, external audit, or production readiness |
+| Area                                                 | Repository status                                                               | What that status does not establish                                                       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Contract Foundations, Tasks 1–12                     | Complete                                                                        | An external audit or production authorization                                             |
+| Backend Foundations, Tasks 1–12                      | Complete                                                                        | A running hosted service                                                                  |
+| Backend Indexer, Plan 2, Tasks 1–5                   | Implementation, deterministic gates, and reviewed chain-46630 manifest complete | Live testnet product acceptance                                                           |
+| API and identity, Plan 3, Tasks 1–7                  | Implementation complete                                                         | A configured production Privy organization or hosted API                                  |
+| Web client, Plan 4, Tasks 1–8                        | Implementation and deterministic CI gates complete on `dev`                     | A live release, hosted API, configured Privy application, or production acceptance        |
+| Full codebase audit and hardening, Plan 5, Tasks 1–8 | Repository remediation and available deterministic gates complete on `dev`      | A new Slither detector run, archive-RPC fork run, external audit, or production readiness |
 
-The Robinhood Chain Testnet deployment is deliberately disabled until a testnet-specific WETH
-and Uniswap v2 dependency deployment has been produced and independently reviewed. The
-repository has a deployment/bootstrap procedure, but no testnet launch is authorized or
-represented as completed. The production runbook still has external inputs to be supplied by
-the product, infrastructure, security, Privy, and governance owners. Current open work is listed
-under [Current active backlog](#current-active-backlog) and in [backlog.md](backlog.md).
+The reviewed Robinhood Chain Testnet dependency and Launchpad manifests are active. Deployment
+receipts, runtime bytecode hashes, and LaunchFactory configuration were verified, but the first
+live product acceptance run with separate creator and trader wallets remains open. The
+production runbook still has external inputs to be supplied by the product, infrastructure,
+security, Privy, and governance owners. Current open work is listed under
+[Current active backlog](#current-active-backlog) and in [backlog.md](backlog.md).
 
 The source-selection decision for optional ETH/USD enrichment is documented, but the runtime
 provider adapter, production key, timestamps, and UI attribution are not implemented. ETH-native
@@ -223,7 +223,7 @@ below explains this expected state.
 | `contracts/test/`                                                                                       | Foundry unit, fuzz, invariant, deployment, and fork-test sources                      |
 | `contracts/script/`                                                                                     | Deployment, vector/fixture generation, and local Uniswap/WETH sources for Anvil       |
 | `contracts/scripts/`                                                                                    | Formatting/build/test/release/deployment checks and PowerShell deployment tools       |
-| `contracts/deployments/`                                                                                | Deployment schemas and reviewed chain config; testnet is currently disabled           |
+| `contracts/deployments/`                                                                                | Deployment schemas, reviewed chain config, and active testnet manifest                |
 | `contracts/vectors/`, `contracts/fixtures/`, `contracts/abi/`                                           | Canonical curve vectors, event fixtures, and contract ABI artifacts                   |
 | `backend/cmd/api/`                                                                                      | HTTP API process                                                                      |
 | `backend/cmd/indexer/`                                                                                  | Chain ingestion, canonical ledger, and projection worker process                      |
@@ -293,9 +293,9 @@ contract is [`backend/openapi/v1.json`](backend/openapi/v1.json).
   pipeline. Do not interpret `/profile` or token metadata as forum functionality.
 - There is no market heatmap or protocol USD chart series. ETH/USD source selection alone does
   not implement an adapter or prove fresh USD values.
-- No Robinhood Chain Testnet launch configuration is selectable while
-  `robinhood-testnet.disabled.json` remains present. Mainnet manifest data in source does not
-  mean the site or contracts are deployed and ready for trading.
+- Robinhood Chain Testnet is selectable only when the browser has the complete reviewed
+  chain-46630 API, RPC, Privy, and deployment configuration. An active source manifest alone
+  does not mean the site is operated or the live product acceptance run has passed.
 - There is no persistent local demo stack command. Frontend-only development and the temporary
   full Anvil E2E gate are distinct workflows.
 - Governance/admin transaction screens, server-side signing, relaying, custody, and transaction
@@ -403,9 +403,9 @@ other required public configuration and a matching enabled reviewed deployment.
 
 With the blank values in the checked-in `web/.env.example`, public configuration is
 `fail-closed`: the application remains a read-only shell, does not mount Privy/wallet providers,
-and cannot submit transactions. There is no local Privy app ID in the repository. The
-chain-46630 testnet manifest is also disabled. A local UI server alone is not a launchpad demo
-or a live application.
+and cannot submit transactions. There is no local Privy app ID or public API/RPC configuration
+in the repository. Although the reviewed chain-46630 manifest is active, a local UI server alone
+is not a launchpad demo or a live application.
 
 For browser development against an already operated API/RPC and reviewed manifest, supply the
 values from [Configuration reference](#configuration-reference) in `web/.env.local` and make
@@ -629,23 +629,25 @@ acceptance required for launch.
 | Network                 | Chain ID | Repository state                                                                                                                       |
 | ----------------------- | -------: | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Local Anvil             |  `31337` | Temporary deterministic deployments are generated by test harnesses                                                                    |
-| Robinhood Chain Testnet |  `46630` | Disabled marker remains; no reviewed testnet dependency/Launchpad manifest                                                             |
+| Robinhood Chain Testnet |  `46630` | Reviewed dependency and Launchpad manifests are active; live creator/trader product acceptance remains open                            |
 | Robinhood Chain Mainnet |   `4663` | Mainnet dependency configuration exists in source and has a pinned fork-evidence record; this is not a Launchpad production deployment |
 
-The checked-in mainnet config records the reviewed WETH and Uniswap v2 dependencies. Contract
-and browser deployment address artifacts must be generated/checked from their canonical
-manifest sources; do not copy addresses into application code. The mainnet launch script blocks
-broadcast until its fork/audit gate, and production readiness remains blocked by the outstanding
-human-owned inputs.
+The checked-in testnet manifest records the reviewed WETH, Uniswap v2 factory, BondingCurveV1,
+and LaunchFactory deployment. The checked-in mainnet config records the reviewed WETH and
+Uniswap v2 dependencies, but not a Launchpad production deployment. Contract and browser
+deployment address artifacts must be generated/checked from their canonical manifest sources;
+do not copy addresses into application code. The mainnet launch script blocks broadcast until
+its fork/audit gate, and production readiness remains blocked by the outstanding human-owned
+inputs.
 
 ### Testnet deployment path
 
 The [testnet deployment runbook](docs/runbooks/robinhood-testnet-deployment.md) is the
-authoritative sequence to bootstrap testnet-only dependencies, verify receipts and deployed code,
-review and enable their manifest, then deploy Launchpad and review the resulting chain-46630
-manifest. It begins with a dry run and named Foundry account; no private key is passed to the
-script. The testnet disabled marker must stay in place until evidence is complete. Never reuse
-mainnet WETH or Uniswap addresses on testnet.
+authoritative sequence used to bootstrap testnet-only dependencies, verify receipts and deployed
+code, review and enable their manifest, and deploy Launchpad. That deployment phase is complete.
+The remaining step is the live creator/trader acceptance flow and its recorded API, indexer,
+finality, and transaction evidence. Use named Foundry accounts; never pass a private key to the
+script or reuse mainnet WETH or Uniswap addresses on testnet.
 
 The [RPC probe](docs/runbooks/robinhood-rpc-probe.md) records provider observations for chain
 IDs 4663 and 46630, including `latest`/`safe`/`finalized` availability and bounded log-query
@@ -737,10 +739,10 @@ do not infer USD prices from a selected source when no runtime adapter has been 
 
 There are exactly **2 active items** in [`backlog.md`](backlog.md):
 
-1. **Robinhood testnet deployment manifest.** Produce and review testnet WETH/Uniswap
-   dependencies and the Launchpad chain-46630 manifest through
+1. **Robinhood testnet live acceptance.** Use separate funded test-only creator and trader
+   wallets to exercise create, buy, sell, and graduation against the active chain-46630 manifest,
+   then record the transaction, API/indexer health, finality, and reorg observations required by
    [`docs/runbooks/robinhood-testnet-deployment.md`](docs/runbooks/robinhood-testnet-deployment.md).
-   Keep graduation disabled until that evidence is complete.
 2. **Production release, governance, and audit inputs.** The responsible human owners must
    complete the pending rows and evidence in
    [`docs/runbooks/production-readiness.md`](docs/runbooks/production-readiness.md), then run
@@ -774,11 +776,11 @@ supplies a test-only local identity configuration inside its temporary process e
 
 ### Testnet cannot be selected
 
-This is expected until the reviewed `contracts/deployments/config/robinhood-testnet.json` and
-dependency evidence are available and the disabled marker is removed through the documented
-review. Check `robinhood-testnet.disabled.json` and follow the
-[testnet runbook](docs/runbooks/robinhood-testnet-deployment.md). Do not substitute mainnet
-addresses or enable graduation manually.
+The reviewed chain-46630 config and deployment manifest are active. Confirm that
+`NEXT_PUBLIC_CHAIN_ID=46630` and `NEXT_PUBLIC_DEPLOYMENT_ID=robinhood-testnet-v1`, then verify
+the remaining public API, RPC, and Privy settings as a complete set. Follow the
+[testnet runbook](docs/runbooks/robinhood-testnet-deployment.md) and do not substitute mainnet
+addresses or bypass the fail-closed configuration checks.
 
 ### Backend API or indexer exits during startup
 

@@ -25,7 +25,7 @@
   been performed with separate creator and trader wallets.
 - **Related files:** `docs/runbooks/robinhood-testnet-deployment.md`,
   `contracts/deployments/robinhood-testnet-v1.json`,
-  `backend/internal/deployments/robinhood-testnet-v1.json`
+  `backend/deployments/testdata/robinhood-testnet-v1.json`
 - **Resume (next step):** Create and faucet-fund fresh test-only creator and trader wallets,
   start PostgreSQL plus the API/indexer against the reviewed testnet manifest, execute the
   create/buy/sell/graduation acceptance flow, and record the exact manifest digest,
@@ -35,6 +35,7 @@
   creator/trader pair. Never commit wallet private keys, passwords, or private RPC URLs.
 
 ### Production release, governance, and audit inputs
+
 - **Date:** 2026-09-01
 - **Reason:** production-only external coordination
 - **Where it stopped:** The repository now contains the production input sheet, Privy

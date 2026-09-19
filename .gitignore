@@ -6,6 +6,7 @@
 # Go
 /backend/bin/
 /backend/.cache/
+/backend/.gocache/
 *.test
 *.out
 coverage.*
@@ -16,6 +17,8 @@ node_modules/
 dist/
 .turbo/
 pnpm-debug.log*
+/web/AGENTS.md
+/web/CLAUDE.md
 
 # Foundry
 /contracts/out/
