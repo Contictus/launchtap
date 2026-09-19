@@ -440,14 +440,14 @@ html[data-theme="light"] .ui-input { background: rgba(255,255,255,.18); }
 .discovery-section .discovery-panel { width: 100%; }
 .discovery-section .panel-head { align-items: end; }
 .section-description { max-width: 400px; margin: 9px 0 0; color: var(--text-soft); font-size: .82rem; }
-.discovery-toolbar { display: flex; align-items: center; justify-content: flex-start; gap: 10px; margin: 0 0 22px; }
-.discovery-searchbar { position: relative; display: flex; flex: 1 1 auto; min-width: 0; align-items: end; gap: 12px; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 999px; background: linear-gradient(110deg, var(--glass-highlight), var(--glass)); box-shadow: inset 0 1px rgba(255,255,255,.08), 0 18px 45px var(--shadow); backdrop-filter: blur(28px) saturate(1.15); -webkit-backdrop-filter: blur(28px) saturate(1.15); }
+.discovery-toolbar { display: flex; align-items: stretch; justify-content: flex-start; gap: 10px; margin: 0 0 22px; }
+.discovery-searchbar { position: relative; display: flex; flex: 1 1 auto; min-width: 0; height: 44px; min-height: 44px; align-items: center; gap: 12px; padding: 3px 10px; border: 1px solid var(--line-soft); border-radius: 999px; background: linear-gradient(110deg, var(--glass-highlight), var(--glass)); box-shadow: inset 0 1px rgba(255,255,255,.08), 0 18px 45px var(--shadow); backdrop-filter: blur(28px) saturate(1.15); -webkit-backdrop-filter: blur(28px) saturate(1.15); }
 .discovery-searchbar .ui-field { flex: 1; gap: 0; }
 .discovery-searchbar .ui-field label { position: absolute; overflow: hidden; width: 1px; height: 1px; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-.discovery-searchbar .ui-input { min-height: 38px; border: 0; background: transparent; box-shadow: none; padding-left: 8px; padding-right: 55px; }
+.discovery-searchbar .ui-input { min-height: 36px; border: 0; background: transparent; box-shadow: none; padding-left: 8px; padding-right: 55px; }
 .discovery-searchbar .ui-input:focus { background: transparent; box-shadow: none; }
-.discovery-search-shortcut { position: absolute; right: 23px; bottom: 22px; color: var(--text-faint); font-family: var(--font-mono), monospace; font-size: .65rem; }
-.discovery-create-button { flex: 0 0 140px; width: 140px; min-width: 0; }
+.discovery-search-shortcut { position: absolute; top: 50%; right: 18px; color: var(--text-faint); font-family: var(--font-mono), monospace; font-size: .65rem; transform: translateY(-50%); }
+.discovery-create-button { flex: 0 0 auto; width: auto; min-width: 0; height: 44px; min-height: 44px; padding-left: 16px; padding-right: 16px; }
 .discovery-filter-groups { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
 .discovery-filter-group { display: inline-flex; align-items: center; border: 1px solid var(--line-soft); border-radius: 999px; background: rgba(255,255,255,.035); padding: 3px; }
 .discovery-filter { min-height: 29px; border: 0; border-radius: 999px; color: var(--text-faint); background: transparent; cursor: pointer; padding: 0 11px; font-size: .68rem; white-space: nowrap; transition: color .2s ease, background .2s ease, transform .2s ease; }
@@ -496,7 +496,8 @@ html[data-theme="light"] .ui-input { background: rgba(255,255,255,.18); }
   .launch-field-row { grid-template-columns: 1fr; gap: 14px; }
   .launch-preview-card { order: -1; margin-top: 18px; }
   .launch-status { margin-left: 18px; margin-right: 18px; }
-  .discovery-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .discovery-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
   .discovery-searchbar, .discovery-create-button { width: auto; max-width: none; }
+  .discovery-create-button { justify-self: start; }
   .discovery-create-button { padding-left: 10px; padding-right: 10px; }
 }
