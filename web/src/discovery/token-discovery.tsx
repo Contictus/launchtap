@@ -21,11 +21,7 @@ import {
   defaultTokenListQuery,
   encodeTokenListQuery,
   normalizeTokenListQuery,
-  PHASE_LABELS,
-  SORT_LABELS,
   sameTokenListQuery,
-  TOKEN_PHASES,
-  TOKEN_SORTS,
   tokenListFilters,
   type TokenListQueryState,
   type TokenPhase,
@@ -54,6 +50,7 @@ type TokenDiscoveryProps = {
   fixedPhase?: TokenPhase;
   showHero?: boolean;
   showSearch?: boolean;
+  showSortControls?: boolean;
   sectionLabel?: string;
 };
 type TokenCardData = components["schemas"]["TokenDTO"];
@@ -70,6 +67,27 @@ function tokenLabel(token: TokenCardData) {
   return token.name.trim() || token.symbol.trim() || "Unnamed token";
 }
 
+type SortView = TokenListQueryState["sort"] | "recent";
+type TimeRange = "all" | "24h" | "7d";
+
+const SORT_VIEWS: ReadonlyArray<{
+  value: SortView;
+  label: string;
+  sort: TokenListQueryState["sort"];
+}> = [
+  { value: "recent", label: "Recent buys", sort: "newest" },
+  { value: "newest", label: "Newest", sort: "newest" },
+  { value: "oldest", label: "Oldest", sort: "oldest" },
+  { value: "market_cap", label: "Market cap", sort: "market_cap" },
+  { value: "volume_24h", label: "Volume", sort: "volume_24h" },
+];
+
+const TIME_RANGES: ReadonlyArray<{ value: TimeRange; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7d" },
+];
+
 export function TokenDiscovery({
   defaultPhase = "curve",
   title,
@@ -78,6 +96,7 @@ export function TokenDiscovery({
   fixedPhase,
   showHero = true,
   showSearch = true,
+  showSortControls = true,
   sectionLabel = "Explore",
 }: TokenDiscoveryProps) {
   const configuration = publicConfiguration();
@@ -102,6 +121,8 @@ export function TokenDiscovery({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<ApiProblem | Error | null>(null);
   const [resetNotice, setResetNotice] = useState(false);
+  const [sortView, setSortView] = useState<SortView>(urlState.sort === "newest" ? "recent" : urlState.sort);
+  const [timeRange, setTimeRange] = useState<TimeRange>("all");
   const pagesRef = useRef<TokenListResponse[]>([]);
   const requestId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -274,8 +295,10 @@ export function TokenDiscovery({
     searchEditedRef.current = false;
     writeUrlState(commitTokenListFilters(urlState, searchDraft, changes));
   };
-  const choosePhase = (phase: TokenPhase) => commitFilters({ phase });
-  const chooseSort = (sort: TokenListQueryState["sort"]) => commitFilters({ sort });
+  const chooseSort = (sort: TokenListQueryState["sort"], view: SortView = sort) => {
+    setSortView(view);
+    if (urlState.sort !== sort) commitFilters({ sort });
+  };
   const retry = () => void loadPage(urlState);
   const listTitleId = fixedPhase ? `${fixedPhase}-list-title` : "list-title";
 
@@ -298,6 +321,25 @@ export function TokenDiscovery({
         </section>
       ) : null}
 
+      {showSearch ? (
+        <div className="discovery-searchbar" role="search">
+          <Input
+            label="Search tokens"
+            placeholder="Name or symbol"
+            value={searchDraft}
+            onChange={(event) => {
+              searchEditedRef.current = true;
+              setSearchDraft(event.target.value);
+            }}
+            maxLength={120}
+            autoComplete="off"
+          />
+          <span className="discovery-search-shortcut" aria-hidden="true">
+            ⌘K
+          </span>
+        </div>
+      ) : null}
+
       <section className="workspace-panel discovery-panel" aria-labelledby={listTitleId}>
         <div className="panel-head discovery-controls-head">
           <div>
@@ -305,52 +347,37 @@ export function TokenDiscovery({
             <h2 id={listTitleId}>{urlState.phase === "graduated" ? "Graduated" : "All tokens"}</h2>
             <p className="section-description">{summary}</p>
           </div>
-          <label className="sort-control">
-            <span>Sort</span>
-            <select
-              className="ui-input"
-              value={urlState.sort}
-              onChange={(event) => chooseSort(event.target.value as TokenListQueryState["sort"])}
-            >
-              {TOKEN_SORTS.map((sort) => (
-                <option key={sort} value={sort}>
-                  {SORT_LABELS[sort]}
-                </option>
-              ))}
-            </select>
-          </label>
+          {showSortControls ? (
+            <div className="discovery-filter-groups" aria-label="Token list filters">
+              <div className="discovery-filter-group" role="group" aria-label="Sort tokens">
+                {SORT_VIEWS.map((view) => (
+                  <button
+                    className={`discovery-filter ${sortView === view.value ? "is-active" : ""}`}
+                    key={view.value}
+                    type="button"
+                    aria-pressed={sortView === view.value}
+                    onClick={() => chooseSort(view.sort, view.value)}
+                  >
+                    {view.label}
+                  </button>
+                ))}
+              </div>
+              <div className="discovery-filter-group discovery-range-group" role="group" aria-label="Time range">
+                {TIME_RANGES.map((range) => (
+                  <button
+                    className={`discovery-filter ${timeRange === range.value ? "is-active" : ""}`}
+                    key={range.value}
+                    type="button"
+                    aria-pressed={timeRange === range.value}
+                    onClick={() => setTimeRange(range.value)}
+                  >
+                    {range.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
-        {showSearch ? (
-          <div className="discovery-controls" role="search">
-            <Input
-              label="Search tokens"
-              placeholder="Name or symbol"
-              value={searchDraft}
-              onChange={(event) => {
-                searchEditedRef.current = true;
-                setSearchDraft(event.target.value);
-              }}
-              maxLength={120}
-              autoComplete="off"
-            />
-            {!fixedPhase && defaultPhase !== "graduated" ? (
-              <label className="ui-field">
-                <span>Phase</span>
-                <select
-                  className="ui-input"
-                  value={urlState.phase}
-                  onChange={(event) => choosePhase(event.target.value as TokenPhase)}
-                >
-                  {TOKEN_PHASES.map((phase) => (
-                    <option key={phase} value={phase}>
-                      {PHASE_LABELS[phase]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
-        ) : null}
         {resetNotice ? (
           <p className="discovery-notice" role="status">
             The list was refreshed with the latest available routes.

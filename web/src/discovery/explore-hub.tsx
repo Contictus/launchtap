@@ -17,7 +17,8 @@ export function ExploreHub() {
           defaultPhase="graduated"
           fixedPhase="graduated"
           showHero={false}
-          showSearch={false}
+          showSearch
+          showSortControls={false}
           sectionLabel="Recently completed"
           title="Graduated"
           summary="Tokens that cleared the graduation threshold."
@@ -28,7 +29,8 @@ export function ExploreHub() {
           defaultPhase="curve"
           fixedPhase="curve"
           showHero={false}
-          showSearch
+          showSearch={false}
+          showSortControls
           sectionLabel="In progress"
           title="All tokens"
           summary="New launches and tokens still moving toward graduation."
