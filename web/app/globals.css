@@ -406,6 +406,7 @@ html[data-theme="light"] .ui-input { background: rgba(255,255,255,.18); }
 .discovery-searchbar .ui-input { min-height: 38px; border: 0; background: transparent; box-shadow: none; padding-left: 8px; padding-right: 55px; }
 .discovery-searchbar .ui-input:focus { background: transparent; box-shadow: none; }
 .discovery-search-shortcut { position: absolute; right: 23px; bottom: 22px; color: var(--text-faint); font-family: var(--font-mono), monospace; font-size: .65rem; }
+.discovery-create-button { flex: 0 0 auto; }
 .discovery-filter-groups { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
 .discovery-filter-group { display: inline-flex; align-items: center; border: 1px solid var(--line-soft); border-radius: 999px; background: rgba(255,255,255,.035); padding: 3px; }
 .discovery-filter { min-height: 29px; border: 0; border-radius: 999px; color: var(--text-faint); background: transparent; cursor: pointer; padding: 0 11px; font-size: .68rem; white-space: nowrap; transition: color .2s ease, background .2s ease, transform .2s ease; }

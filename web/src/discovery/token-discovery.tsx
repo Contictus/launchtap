@@ -97,7 +97,7 @@ export function TokenDiscovery({
   showHero = true,
   showSearch = true,
   showSortControls = true,
-  sectionLabel = "Explore",
+  sectionLabel = "",
 }: TokenDiscoveryProps) {
   const configuration = publicConfiguration();
   const phaseDefault = fixedPhase ?? defaultPhase;
@@ -337,14 +337,17 @@ export function TokenDiscovery({
           <span className="discovery-search-shortcut" aria-hidden="true">
             ⌘K
           </span>
+          <Link className="ui-button ui-button-secondary ui-button-sm discovery-create-button" href="/create">
+            + Create
+          </Link>
         </div>
       ) : null}
 
       <section className="workspace-panel discovery-panel" aria-labelledby={listTitleId}>
         <div className="panel-head discovery-controls-head">
           <div>
-            <p className="panel-kicker">{sectionLabel}</p>
-            <h2 id={listTitleId}>{urlState.phase === "graduated" ? "Graduated" : "All tokens"}</h2>
+            {sectionLabel ? <p className="panel-kicker">{sectionLabel}</p> : null}
+            <h2 id={listTitleId}>{title}</h2>
             <p className="section-description">{summary}</p>
           </div>
           {showSortControls ? (
