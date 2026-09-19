@@ -2,16 +2,18 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowSquareOut,
   BookOpenText,
   ChartLineUp,
   Compass,
   List,
+  Moon,
   Plus,
   RocketLaunch,
   ShieldCheck,
+  Sun,
   Trophy,
   UserCircle,
   Wallet,
@@ -31,8 +33,23 @@ const navItems = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const configuration = publicConfiguration();
   const deploymentReady = configuration.status === "ready";
+  useEffect(() => {
+    const saved = window.localStorage.getItem("launchpad-theme");
+    const next = saved === "light" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    if (next === "dark") return;
+    const sync = window.setTimeout(() => setTheme(next), 0);
+    return () => window.clearTimeout(sync);
+  }, []);
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    window.localStorage.setItem("launchpad-theme", next);
+  }
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   return (
     <div className="app-frame">
@@ -83,13 +100,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </span>
           <strong>Launchpad</strong>
         </Link>
-        <button
-          className="ui-icon-button"
-          onClick={() => setMenuOpen(true)}
-          aria-label="Open navigation"
-        >
-          <List size={22} />
-        </button>
+        <div className="mobile-topbar-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button
+            className="ui-icon-button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open navigation"
+          >
+            <List size={22} />
+          </button>
+        </div>
       </header>
       <main className="app-content">
         <div className="content-topline">
@@ -106,6 +134,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Wallet size={15} /> Connect wallet
           </Button>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            <span>{theme === "dark" ? "Light" : "Dark"}</span>
+          </button>
         </div>
         {children}
         <footer className="app-footer">
