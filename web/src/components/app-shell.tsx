@@ -11,7 +11,6 @@ import {
   List,
   Moon,
   Plus,
-  RocketLaunch,
   ShieldCheck,
   Sun,
   Trophy,
@@ -53,7 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   return (
     <div className="app-frame">
-      <aside className="app-rail" aria-label="Desktop application rail">
+      <header className="app-navbar" aria-label="Primary navigation">
         <Link href="/" className="brand-mark">
           <span className="brand-stamp" aria-hidden="true">
             LP
@@ -63,44 +62,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <small>Onchain launch desk</small>
           </span>
         </Link>
-        <div className="rail-rule" />
-        <nav className="rail-nav" aria-label="Desktop primary navigation">
+        <nav className="navbar-links" aria-label="Desktop primary navigation">
           {navItems.map(({ href, label, icon: Icon, primary }) => (
             <a
               key={href}
               href={href}
-              className={`rail-link ${active(href) ? "is-active" : ""} ${primary ? "is-primary" : ""}`}
+              className={`navbar-link ${active(href) ? "is-active" : ""} ${primary ? "is-primary" : ""}`}
               aria-current={active(href) ? "page" : undefined}
             >
               <Icon size={18} weight={active(href) ? "fill" : "regular"} aria-hidden="true" />
               <span>{label}</span>
-              {primary ? <span className="rail-link-key">+</span> : null}
             </a>
           ))}
         </nav>
-        <div className="rail-bottom">
-          <div className="network-label">
-            <span className="state-dot state-dot-warning" aria-hidden="true" />
-            {deploymentReady ? configuration.deployment?.name : "Deployment unavailable"}
-          </div>
-          <p>
-            {deploymentReady
-              ? "Reviewed deployment connected. Contract reads and wallet actions remain user-controlled."
-              : "Public configuration is not connected. The shell stays read-only until a reviewed deployment is available."}
-          </p>
-          <SafeExternalLink href="https://robinhoodchain.blockscout.com" className="rail-external">
-            Open explorer <ArrowSquareOut size={13} />
-          </SafeExternalLink>
-        </div>
-      </aside>
-      <header className="mobile-topbar">
-        <Link href="/" className="brand-mark">
-          <span className="brand-stamp" aria-hidden="true">
-            LP
+        <div className="navbar-actions">
+          <span className="navbar-network">
+            <span
+              className={`state-dot ${deploymentReady ? "state-dot-success" : "state-dot-warning"}`}
+            />
+            {deploymentReady ? "Testnet ready" : "Read-only mode"}
           </span>
-          <strong>Launchpad</strong>
-        </Link>
-        <div className="mobile-topbar-actions">
           <button
             type="button"
             className="theme-toggle"
@@ -110,8 +91,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={() => setMenuOpen(true)}
+            className="navbar-wallet"
+          >
+            <Wallet size={15} /> <span>Connect wallet</span>
+          </Button>
           <button
-            className="ui-icon-button"
+            className="ui-icon-button navbar-menu-button"
             onClick={() => setMenuOpen(true)}
             aria-label="Open navigation"
           >
@@ -120,31 +109,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main className="app-content">
-        <div className="content-topline">
-          <span className="route-label">
-            <RocketLaunch size={15} aria-hidden="true" /> Launch route
-          </span>
-          <span className="route-line" aria-hidden="true" />
-          <span className="route-state">Read-only shell</span>
-          <Button
-            variant="quiet"
-            size="sm"
-            onClick={() => setMenuOpen(true)}
-            className="desktop-menu-button"
-          >
-            <Wallet size={15} /> Connect wallet
-          </Button>
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            <span>{theme === "dark" ? "Light" : "Dark"}</span>
-          </button>
-        </div>
         {children}
         <footer className="app-footer">
           <div>
@@ -159,19 +123,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </footer>
       </main>
-      <nav className="mobile-bottom-nav" aria-label="Mobile primary navigation">
-        {navItems.slice(0, 4).map(({ href, label, icon: Icon }) => (
-          <a
-            key={href}
-            href={href}
-            className={active(href) ? "is-active" : ""}
-            aria-current={active(href) ? "page" : undefined}
-          >
-            <Icon size={20} weight={active(href) ? "fill" : "regular"} aria-hidden="true" />
-            <span>{label}</span>
-          </a>
-        ))}
-      </nav>
       <Sheet open={menuOpen} title="Navigate" onClose={() => setMenuOpen(false)}>
         <nav className="sheet-nav" aria-label="Mobile menu navigation">
           {navItems.map(({ href, label, icon: Icon }) => (
