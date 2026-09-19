@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useAccount, useConnect, usePublicClient, useWalletClient } from "wagmi";
+import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { formatBaseUnits, parseDecimal } from "@/amounts";
 import { ApiClient } from "@/api/client";
 import { ApiProblem } from "@/api/problems";
@@ -9,6 +9,7 @@ import { browserAbis, type ReviewedDeployment } from "@/contracts/generated";
 import { publicConfiguration } from "@/config/public";
 import { addressExplorerUrl } from "@/wallet/explorer";
 import { useWalletReadiness } from "@/wallet/readiness";
+import { WalletConnectButton } from "@/wallet/connection";
 import {
   calculateLaunchValue,
   classifyTransactionFailure,
@@ -2025,7 +2026,7 @@ function LaunchPreview({
         </div>
         <div>
           <dt>Liquidity</dt>
-          <dd>Locked</dd>
+          <dd>Initial LP burned</dd>
         </div>
       </dl>
     </aside>
@@ -2036,7 +2037,6 @@ function LaunchPanelReady() {
   const configuration = publicConfiguration();
   const readiness = useWalletReadiness();
   const account = useAccount();
-  const { connect, connectors, isPending: connectPending } = useConnect();
   const launchChainId = readiness.chainId;
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
@@ -2296,7 +2296,7 @@ function LaunchPanelReady() {
               Connect the selected wallet before reviewing this launch.
             </div>
           ) : null}
-          {launchChainId !== configuration.chainId ? (
+          {readiness.address && launchChainId !== configuration.chainId ? (
             <div className="transaction-warning" role="alert">
               Wrong network. Switch to {deployment.name} before signing.
               <Button size="sm" onClick={switchNetwork}>
@@ -2457,18 +2457,7 @@ function LaunchPanelReady() {
               </div>
             </div>
               ) : !readiness.address ? (
-                <Button
-                  variant="primary"
-                  size="lg"
-                  loading={connectPending}
-                  disabled={connectors.length === 0}
-                  onClick={() => {
-                    const connector = connectors[0];
-                    if (connector) connect({ connector });
-                  }}
-                >
-                  Connect wallet
-                </Button>
+                <WalletConnectButton className="launch-wallet-button" variant="primary" size="lg" />
               ) : (
                 <Button
                   variant="primary"

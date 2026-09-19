@@ -68,25 +68,14 @@ function tokenLabel(token: TokenCardData) {
   return token.name.trim() || token.symbol.trim() || "Unnamed token";
 }
 
-type SortView = TokenListQueryState["sort"] | "recent";
-type TimeRange = "all" | "24h" | "7d";
-
 const SORT_VIEWS: ReadonlyArray<{
-  value: SortView;
+  value: TokenListQueryState["sort"];
   label: string;
-  sort: TokenListQueryState["sort"];
 }> = [
-  { value: "recent", label: "Recent buys", sort: "newest" },
-  { value: "newest", label: "Newest", sort: "newest" },
-  { value: "oldest", label: "Oldest", sort: "oldest" },
-  { value: "market_cap", label: "Market cap", sort: "market_cap" },
-  { value: "volume_24h", label: "Volume", sort: "volume_24h" },
-];
-
-const TIME_RANGES: ReadonlyArray<{ value: TimeRange; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7d" },
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "market_cap", label: "Market cap" },
+  { value: "volume_24h", label: "Volume" },
 ];
 
 export function TokenDiscovery({
@@ -122,8 +111,6 @@ export function TokenDiscovery({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<ApiProblem | Error | null>(null);
   const [resetNotice, setResetNotice] = useState(false);
-  const [sortView, setSortView] = useState<SortView>(urlState.sort === "newest" ? "recent" : urlState.sort);
-  const [timeRange, setTimeRange] = useState<TimeRange>("all");
   const pagesRef = useRef<TokenListResponse[]>([]);
   const requestId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -296,8 +283,7 @@ export function TokenDiscovery({
     searchEditedRef.current = false;
     writeUrlState(commitTokenListFilters(urlState, searchDraft, changes));
   };
-  const chooseSort = (sort: TokenListQueryState["sort"], view: SortView = sort) => {
-    setSortView(view);
+  const chooseSort = (sort: TokenListQueryState["sort"]) => {
     if (urlState.sort !== sort) commitFilters({ sort });
   };
   const retry = () => void loadPage(urlState);
@@ -336,11 +322,11 @@ export function TokenDiscovery({
               maxLength={120}
               autoComplete="off"
             />
-            <span className="discovery-search-shortcut" aria-hidden="true">
-              ⌘K
-            </span>
           </div>
-          <Link className="ui-button ui-button-secondary ui-button-sm discovery-create-button" href="/create">
+          <Link
+            className="ui-button ui-button-secondary ui-button-sm discovery-create-button"
+            href="/create"
+          >
             <Plus aria-hidden="true" size={16} weight="bold" />
             <span>Create</span>
           </Link>
@@ -359,26 +345,13 @@ export function TokenDiscovery({
               <div className="discovery-filter-group" role="group" aria-label="Sort tokens">
                 {SORT_VIEWS.map((view) => (
                   <button
-                    className={`discovery-filter ${sortView === view.value ? "is-active" : ""}`}
+                    className={`discovery-filter ${urlState.sort === view.value ? "is-active" : ""}`}
                     key={view.value}
                     type="button"
-                    aria-pressed={sortView === view.value}
-                    onClick={() => chooseSort(view.sort, view.value)}
+                    aria-pressed={urlState.sort === view.value}
+                    onClick={() => chooseSort(view.value)}
                   >
                     {view.label}
-                  </button>
-                ))}
-              </div>
-              <div className="discovery-filter-group discovery-range-group" role="group" aria-label="Time range">
-                {TIME_RANGES.map((range) => (
-                  <button
-                    className={`discovery-filter ${timeRange === range.value ? "is-active" : ""}`}
-                    key={range.value}
-                    type="button"
-                    aria-pressed={timeRange === range.value}
-                    onClick={() => setTimeRange(range.value)}
-                  >
-                    {range.label}
                   </button>
                 ))}
               </div>

@@ -192,30 +192,26 @@ test("reduced motion covers core routes without clipping or animation dependence
   }
 });
 
-test("mobile bottom navigation leaves the final page content reachable", async ({
-  page,
-}, testInfo) => {
+test("mobile footer remains reachable below the final page content", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "Mobile project only.");
   await page.goto("/create", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const geometry = await page.evaluate(() => {
-    const nav = document.querySelector(".mobile-bottom-nav")?.getBoundingClientRect();
     const footer = document.querySelector(".app-footer")?.getBoundingClientRect();
     return {
-      navBottom: nav?.bottom ?? 0,
-      navTop: nav?.top ?? 0,
+      footerTop: footer?.top ?? 0,
       footerBottom: footer?.bottom ?? 0,
     };
   });
-  expect(geometry.navBottom).toBeLessThanOrEqual(800);
-  expect(geometry.footerBottom).toBeLessThanOrEqual(geometry.navTop);
+  expect(geometry.footerTop).toBeGreaterThanOrEqual(0);
+  expect(geometry.footerBottom).toBeLessThanOrEqual(801);
 });
 
 test("reduced motion preserves route content without authored transition motion", async ({
   page,
 }, testInfo) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Explore the launch route." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Explore launches." })).toBeVisible();
   await page.screenshot({
     path: path.resolve(
       process.cwd(),

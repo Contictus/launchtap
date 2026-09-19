@@ -188,7 +188,7 @@ test("populated token detail renders controls, pages, and responsive captures", 
   await expect(page.getByRole("heading", { name: "Fixture Route" })).toBeVisible();
   await expect(page.getByText("Market and reserves")).toBeVisible();
   await expect(page.getByText("Spot price")).toBeVisible();
-  await expect(page.getByText("Safe snapshot").first()).toBeVisible();
+  await expect(page.getByText("Verified").first()).toBeVisible();
   await expect(page.getByText("About this token")).toBeVisible();
   await expect(page.getByRole("button", { name: "Candles" })).toBeVisible();
   await expect(page.getByRole("table", { name: "Recent trades" })).toContainText("buy");

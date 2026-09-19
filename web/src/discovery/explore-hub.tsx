@@ -5,12 +5,8 @@ export function ExploreHub() {
   return (
     <div className="page-stack explore-hub">
       <section className="explore-intro" aria-labelledby="explore-title">
-        <p className="section-kicker">Explore</p>
-        <h1 id="explore-title">Discover the next launch.</h1>
-        <p>
-          Browse tokens by where they are in the route. Images, names, and market context come
-          first; the mechanics stay out of the way.
-        </p>
+        <h1 id="explore-title">Explore launches.</h1>
+        <p>Search graduated tokens, then follow active launches moving toward liquidity.</p>
       </section>
       <Suspense fallback={<ExploreFallback label="Loading graduated tokens…" />}>
         <TokenDiscovery
@@ -18,7 +14,7 @@ export function ExploreHub() {
           fixedPhase="graduated"
           showHero={false}
           showSearch
-          showSortControls
+          showSortControls={false}
           title="Graduated"
           summary="Tokens that cleared the graduation threshold."
         />

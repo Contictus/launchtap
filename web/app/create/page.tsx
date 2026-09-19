@@ -8,10 +8,7 @@ export default function CreatePage() {
         <Link className="create-back-button" href="/">
           <span aria-hidden="true">‹</span> Back
         </Link>
-        <div className="create-version-switch" aria-label="Launch version">
-          <span className="is-active">v2</span>
-          <span>v1</span>
-        </div>
+        <span className="create-protocol-label">Protocol v1</span>
       </div>
       <LaunchPanel />
     </div>

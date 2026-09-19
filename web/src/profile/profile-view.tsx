@@ -74,25 +74,21 @@ export function ProfileView() {
   if (!ready)
     return (
       <section className="workspace-panel profile-auth" aria-live="polite">
-        <p className="panel-kicker">Wallet access</p>
-        <h2>Connect your wallet to continue</h2>
-        <p>Identity is still loading. You can start the wallet connection from here while Privy confirms the session.</p>
-        <WalletConnectButton className="profile-wallet-button" />
+        <h2>Loading your account</h2>
+        <p>Checking the current sign-in session and linked wallets.</p>
       </section>
     );
   if (!authenticated) {
     return (
       <section className="workspace-panel profile-auth">
-        <p className="panel-kicker">Identity</p>
-        <h2>Sign in to see your profile</h2>
+        <h2>Sign in to view your account</h2>
         <p>
-          Launchpad does not create an account from a connected address. Privy is the source of
-          identity and linked-wallet proof.
+          Choose a wallet or another available sign-in method. Connecting does not give Launchpad
+          custody of your assets.
         </p>
         <Button variant="primary" onClick={() => login()}>
-          Sign in with Privy
+          Sign in
         </Button>
-        <WalletConnectButton className="profile-wallet-button" />
       </section>
     );
   }
@@ -104,14 +100,14 @@ export function ProfileView() {
       >
         <div className="panel-head">
           <div>
-            <p className="panel-kicker">Authenticated identity</p>
-            <h2 id="profile-identity-title">Your signing context</h2>
+            <p className="panel-kicker">Account</p>
+            <h2 id="profile-identity-title">Your account</h2>
           </div>
-          <Badge tone="success">Privy verified</Badge>
+          <Badge tone="success">Signed in</Badge>
         </div>
         <dl className="profile-details">
           <div>
-            <dt>Privy user</dt>
+            <dt>Account ID</dt>
             <dd className="mono">{user?.id ?? "Unavailable"}</dd>
           </div>
           <div>
@@ -136,7 +132,7 @@ export function ProfileView() {
       <section className="workspace-panel" aria-labelledby="profile-wallets-title">
         <div className="panel-head">
           <div>
-            <p className="panel-kicker">Wallet proof</p>
+            <p className="panel-kicker">Wallets</p>
             <h2 id="profile-wallets-title">Linked wallets</h2>
           </div>
           <Badge tone={readiness.linkedWalletState === "linked" ? "success" : "warning"}>
@@ -156,12 +152,12 @@ export function ProfileView() {
             ))}
           </ul>
         ) : (
-          <p>No linked EVM wallet is available. Link one in Privy before creator actions.</p>
+          <div className="profile-wallet-empty">
+            <p>No EVM wallet is linked to this account.</p>
+            <WalletConnectButton className="profile-wallet-button" variant="secondary" />
+          </div>
         )}
-        <p className="ui-field-hint">
-          A connected wallet is not automatically authorized as a token creator. The API verifies
-          the linked wallet on each metadata write.
-        </p>
+        <p className="ui-field-hint">Only a linked wallet can update tokens it created.</p>
       </section>
       <section className="workspace-panel profile-claims" aria-labelledby="profile-claims-title">
         <div className="panel-head">
@@ -170,9 +166,7 @@ export function ProfileView() {
             <h2 id="profile-claims-title">Claims and refunds</h2>
           </div>
         </div>
-        <p>
-          Availability comes from the authenticated API snapshot of canonical fee and refund events.
-        </p>
+        <p>See creator fees and refunds available to your linked wallets.</p>
         {actionsLoading ? <p role="status">Loading authoritative availability…</p> : null}
         {actionsError ? <p className="discovery-notice">{actionsError}</p> : null}
         {!actionsLoading && !actionsError && actions.length === 0 ? (

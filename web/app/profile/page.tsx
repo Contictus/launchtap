@@ -8,11 +8,9 @@ export default function ProfilePage() {
     <div className="page-stack">
       <section className="page-hero">
         <div>
-          <div className="section-kicker">Profile</div>
-          <h1>Your signing context.</h1>
+          <h1>Your account.</h1>
           <p className="hero-summary">
-            Identity and linked wallets remain user-controlled. Creator authorization stays on the
-            server and claim balances stay on-chain.
+            Review linked wallets, creator fees, and refunds without giving up custody.
           </p>
         </div>
       </section>
@@ -20,8 +18,8 @@ export default function ProfilePage() {
         <ProfileView />
       ) : (
         <UnavailableState
-          title="Profile unavailable"
-          description="Privy and a reviewed public deployment are not configured. No account is inferred from a wallet address."
+          title="Account unavailable"
+          description="Account access is not configured for this environment. Public launch data remains available."
         />
       )}
     </div>

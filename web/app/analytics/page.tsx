@@ -4,8 +4,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ApiClient, type ProtocolDailyResponse } from "@/api/client";
-import { ApiProblem } from "@/api/problems";
 import { publicConfiguration } from "@/config/public";
 import { formatCanonicalBaseUnits } from "@/amounts";
 import { Badge, Button, ErrorState, Skeleton, UnavailableState } from "@/components/primitives";
@@ -64,16 +64,23 @@ export default function AnalyticsPage() {
           <div className="section-kicker">Analytics</div>
           <h1>Read the launch route.</h1>
           <p className="hero-summary">
-            Protocol activity across launches, trades, volume, and graduations.
-            ETH-native values are shown without USD enrichment.
+            Protocol activity across launches, trades, volume, and graduations. ETH-native values
+            are shown without USD enrichment.
           </p>
         </div>
       </section>
       {error ? (
         <ErrorState
-          title="Analytics unavailable"
-          description={error instanceof ApiProblem ? error.message : error.message}
-          action={<Button onClick={() => void load()}>Retry</Button>}
+          title="Live analytics are unavailable"
+          description="The indexed protocol snapshot could not be loaded. No estimated or cached market values are being substituted."
+          action={
+            <div className="state-actions">
+              <Button onClick={() => void load()}>Retry</Button>
+              <Link className="ui-button ui-button-quiet ui-button-md" href="/docs#contracts">
+                How data finality works
+              </Link>
+            </div>
+          }
         />
       ) : null}
       {loading ? (

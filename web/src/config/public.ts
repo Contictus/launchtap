@@ -28,6 +28,7 @@ function publicEndpoint(value: string | null): string | null {
 export function publicConfiguration(
   env: Record<string, string | undefined> = {
     NEXT_PUBLIC_E2E_FIXTURE: process.env.NEXT_PUBLIC_E2E_FIXTURE,
+    NEXT_PUBLIC_LOCAL_DEV: process.env.NEXT_PUBLIC_LOCAL_DEV,
     NEXT_PUBLIC_TASK6_ANVIL_FACTORY: process.env.NEXT_PUBLIC_TASK6_ANVIL_FACTORY,
     NEXT_PUBLIC_TASK6_ANVIL_WETH: process.env.NEXT_PUBLIC_TASK6_ANVIL_WETH,
     NEXT_PUBLIC_TASK6_ANVIL_ROUTER: process.env.NEXT_PUBLIC_TASK6_ANVIL_ROUTER,

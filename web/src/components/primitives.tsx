@@ -3,7 +3,7 @@
 import { Check, CircleNotch, WarningCircle, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState } from "react";
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet" | "danger";
   size?: "sm" | "md" | "lg";
   loading?: boolean;
