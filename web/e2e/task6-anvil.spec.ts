@@ -141,7 +141,7 @@ test.describe("Task 6 Anvil transaction gate", () => {
   }, testInfo) => {
     await installWallet(page);
     await page.goto("/create");
-    await expect(page.getByRole("heading", { name: "Create a token" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Launch token" })).toBeVisible();
     await connectWallet(page);
     await page.getByLabel("Token name").fill("Browser Task 6");
     await page.getByLabel("Symbol").fill("B6");
