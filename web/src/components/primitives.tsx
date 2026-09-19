@@ -449,7 +449,11 @@ export function SafeImage({
         className={`ui-image-fallback ${className}`}
         role="img"
         aria-label={`${alt}. ${fallbackLabel}`}
-      />
+      >
+        <span aria-hidden="true" className="ui-image-fallback-letter">
+          {alt.trim().charAt(0).toUpperCase() || "•"}
+        </span>
+      </span>
     );
   return (
     // SafeImage validates remote input before this intentionally unoptimized external image.

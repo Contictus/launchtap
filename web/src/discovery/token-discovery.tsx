@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiClient, type TokenListQuery, type TokenListResponse } from "@/api/client";
+import {
+  ApiClient,
+  resolveApiAssetUrl,
+  type TokenListQuery,
+  type TokenListResponse,
+} from "@/api/client";
 import type { components } from "@/api/generated";
 import { ApiProblem } from "@/api/problems";
 import { queryKeys, snapshotIdentity, type Snapshot } from "@/api/types";
@@ -46,6 +51,10 @@ type TokenDiscoveryProps = {
   title: string;
   summary: string;
   fetchPage?: TokenListFetcher;
+  fixedPhase?: TokenPhase;
+  showHero?: boolean;
+  showSearch?: boolean;
+  sectionLabel?: string;
 };
 type TokenCardData = components["schemas"]["TokenDTO"];
 
@@ -66,18 +75,26 @@ export function TokenDiscovery({
   title,
   summary,
   fetchPage: injectedFetcher,
+  fixedPhase,
+  showHero = true,
+  showSearch = true,
+  sectionLabel = "Explore",
 }: TokenDiscoveryProps) {
   const configuration = publicConfiguration();
+  const phaseDefault = fixedPhase ?? defaultPhase;
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlState = useMemo(
     () =>
-      normalizeTokenListQuery(
-        decodeTokenListQuery(searchParams.toString(), defaultPhase),
-        defaultPhase,
-      ),
-    [defaultPhase, searchParams],
+      (() => {
+        const next = normalizeTokenListQuery(
+          decodeTokenListQuery(searchParams.toString(), phaseDefault),
+          phaseDefault,
+        );
+        return fixedPhase ? { ...next, phase: fixedPhase } : next;
+      })(),
+    [fixedPhase, phaseDefault, searchParams],
   );
   const [searchDraft, setSearchDraft] = useState(urlState.q);
   const [pages, setPages] = useState<TokenListResponse[]>([]);
@@ -103,19 +120,23 @@ export function TokenDiscovery({
 
   const writeUrlState = useCallback(
     (next: TokenListQueryState, replace = false) => {
-      const query = encodeTokenListQuery(normalizeTokenListQuery(next, defaultPhase), defaultPhase);
+      const normalized = normalizeTokenListQuery(next, phaseDefault);
+      const query = encodeTokenListQuery(
+        fixedPhase ? { ...normalized, phase: fixedPhase } : normalized,
+        phaseDefault,
+      );
       const target = query ? `${pathname}?${query}` : pathname;
       if (replace) router.replace(target as never, { scroll: false });
       else router.push(target as never, { scroll: false });
     },
-    [defaultPhase, pathname, router],
+    [fixedPhase, pathname, phaseDefault, router],
   );
 
   useEffect(() => {
-    if (defaultPhase !== "graduated" || searchParams.get("phase") === null) return;
+    if (fixedPhase || defaultPhase !== "graduated" || searchParams.get("phase") === null) return;
     const query = encodeTokenListQuery(urlState, defaultPhase);
     router.replace((query ? `${pathname}?${query}` : pathname) as never, { scroll: false });
-  }, [defaultPhase, pathname, router, searchParams, urlState]);
+  }, [defaultPhase, fixedPhase, pathname, router, searchParams, urlState]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -256,61 +277,35 @@ export function TokenDiscovery({
   const choosePhase = (phase: TokenPhase) => commitFilters({ phase });
   const chooseSort = (sort: TokenListQueryState["sort"]) => commitFilters({ sort });
   const retry = () => void loadPage(urlState);
+  const listTitleId = fixedPhase ? `${fixedPhase}-list-title` : "list-title";
 
   return (
-    <div className="page-stack discovery-page" data-query-key={JSON.stringify(queryKey)}>
-      <section className="page-hero" aria-labelledby="discovery-title">
-        <div>
-          <div className="section-kicker">Token ledger</div>
-          <h1 id="discovery-title">{title}</h1>
-          <p className="hero-summary">{summary}</p>
-        </div>
-        <div className="hero-aside">
-          <span className="hero-rule" />
-          <p>
-            Follow each route from curve to graduation. Wallet actions stay in your control.
-          </p>
-        </div>
-      </section>
+    <div
+      className={`${showHero ? "page-stack" : "discovery-section"} discovery-page`}
+      data-query-key={JSON.stringify(queryKey)}
+    >
+      {showHero ? (
+        <section className="page-hero" aria-labelledby="discovery-title">
+          <div>
+            <div className="section-kicker">Token ledger</div>
+            <h1 id="discovery-title">{title}</h1>
+            <p className="hero-summary">{summary}</p>
+          </div>
+          <div className="hero-aside">
+            <span className="hero-rule" />
+            <p>Follow each route from curve to graduation. Wallet actions stay in your control.</p>
+          </div>
+        </section>
+      ) : null}
 
-      <section className="workspace-panel discovery-panel" aria-labelledby="list-title">
+      <section className="workspace-panel discovery-panel" aria-labelledby={listTitleId}>
         <div className="panel-head discovery-controls-head">
           <div>
-            <p className="panel-kicker">Explore</p>
-            <h2 id="list-title">
-              {urlState.phase === "graduated" ? "Graduated tokens" : "Tokens in motion"}
-            </h2>
+            <p className="panel-kicker">{sectionLabel}</p>
+            <h2 id={listTitleId}>{urlState.phase === "graduated" ? "Graduated" : "All tokens"}</h2>
+            <p className="section-description">{summary}</p>
           </div>
-        </div>
-        <div className="discovery-controls" role="search">
-          <Input
-            label="Search tokens"
-            placeholder="Name or symbol"
-            value={searchDraft}
-            onChange={(event) => {
-              searchEditedRef.current = true;
-              setSearchDraft(event.target.value);
-            }}
-            maxLength={120}
-            autoComplete="off"
-          />
-          {defaultPhase !== "graduated" ? (
-            <label className="ui-field">
-              <span>Phase</span>
-              <select
-                className="ui-input"
-                value={urlState.phase}
-                onChange={(event) => choosePhase(event.target.value as TokenPhase)}
-              >
-                {TOKEN_PHASES.map((phase) => (
-                  <option key={phase} value={phase}>
-                    {PHASE_LABELS[phase]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <label className="ui-field">
+          <label className="sort-control">
             <span>Sort</span>
             <select
               className="ui-input"
@@ -325,6 +320,37 @@ export function TokenDiscovery({
             </select>
           </label>
         </div>
+        {showSearch ? (
+          <div className="discovery-controls" role="search">
+            <Input
+              label="Search tokens"
+              placeholder="Name or symbol"
+              value={searchDraft}
+              onChange={(event) => {
+                searchEditedRef.current = true;
+                setSearchDraft(event.target.value);
+              }}
+              maxLength={120}
+              autoComplete="off"
+            />
+            {!fixedPhase && defaultPhase !== "graduated" ? (
+              <label className="ui-field">
+                <span>Phase</span>
+                <select
+                  className="ui-input"
+                  value={urlState.phase}
+                  onChange={(event) => choosePhase(event.target.value as TokenPhase)}
+                >
+                  {TOKEN_PHASES.map((phase) => (
+                    <option key={phase} value={phase}>
+                      {PHASE_LABELS[phase]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+        ) : null}
         {resetNotice ? (
           <p className="discovery-notice" role="status">
             The list was refreshed with the latest available routes.
@@ -341,7 +367,7 @@ export function TokenDiscovery({
               description={
                 error instanceof ApiProblem
                   ? error.message
-                  : "The API could not be reached. Try again."
+                  : "Token routes are temporarily unavailable. Try again shortly."
               }
               action={<Button onClick={retry}>Retry</Button>}
             />
@@ -376,7 +402,11 @@ export function TokenDiscovery({
           <>
             <div className="token-list" aria-live="polite" aria-busy={loadingMore}>
               {items.map((token) => (
-                <TokenCard key={token.address} token={token} />
+                <TokenCard
+                  key={token.address}
+                  token={token}
+                  apiBaseUrl={configuration.apiBaseUrl}
+                />
               ))}
             </div>
             <div className="discovery-pagination">
@@ -399,13 +429,17 @@ export function TokenDiscovery({
   );
 }
 
-function TokenCard({ token }: { token: TokenCardData }) {
+function TokenCard({ token, apiBaseUrl }: { token: TokenCardData; apiBaseUrl: string | null }) {
   const label = tokenLabel(token);
+  const imageUrl = resolveApiAssetUrl(
+    apiBaseUrl,
+    `/v1/tokens/${encodeURIComponent(token.address)}/image`,
+  );
   return (
     <article className="token-card">
       <div className="token-card-main">
         <SafeImage
-          src={undefined}
+          src={imageUrl}
           alt={`${label} token`}
           fallbackLabel="No artwork"
           className="token-image"
@@ -466,9 +500,7 @@ function UnavailableDiscovery() {
       </span>
       <div>
         <h2>Token discovery unavailable</h2>
-        <p>
-          Token routes are temporarily unavailable. Try again shortly.
-        </p>
+        <p>Token routes are temporarily unavailable. Try again shortly.</p>
       </div>
     </section>
   );

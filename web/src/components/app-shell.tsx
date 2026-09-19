@@ -13,7 +13,6 @@ import {
   Plus,
   ShieldCheck,
   Sun,
-  Trophy,
   UserCircle,
   Wallet,
 } from "./icons";
@@ -24,7 +23,6 @@ const navItems = [
   { href: "/create", label: "Create", icon: Plus, primary: true },
   { href: "/analytics", label: "Analytics", icon: ChartLineUp },
   { href: "/docs", label: "Docs", icon: BookOpenText },
-  { href: "/graduated", label: "Graduated", icon: Trophy },
   { href: "/profile", label: "Profile", icon: UserCircle },
 ];
 

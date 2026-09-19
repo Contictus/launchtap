@@ -1,24 +1,5 @@
-import { Suspense } from "react";
-import { TokenDiscovery } from "@/discovery/token-discovery";
+import { redirect } from "next/navigation";
 
 export default function GraduatedPage() {
-  return (
-    <Suspense fallback={<DiscoveryFallback />}>
-      <TokenDiscovery
-        defaultPhase="graduated"
-        title="Graduated routes."
-        summary="Review tokens that completed the launch route and moved into open liquidity."
-      />
-    </Suspense>
-  );
-}
-
-function DiscoveryFallback() {
-  return (
-    <div className="page-stack discovery-page" aria-busy="true">
-      <div className="discovery-state">
-        <p className="mono">Loading graduated routes…</p>
-      </div>
-    </div>
-  );
+  redirect("/");
 }
