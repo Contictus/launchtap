@@ -1914,14 +1914,14 @@ export const reviewedDeployments: readonly ReviewedDeployment[] = [
     "uniswapV2Router02": "0x89e5DB8B5aA49aA85AC63f691524311AEB649eba"
   },
   {
-    "deploymentId": "robinhood-testnet",
+    "deploymentId": "robinhood-testnet-v1",
     "chainId": 46630,
-    "name": "robinhood-testnet",
-    "enabled": false,
-    "factory": null,
-    "explorerBase": null,
-    "weth": null,
-    "uniswapV2Factory": null,
+    "name": "Robinhood Chain Testnet",
+    "enabled": true,
+    "factory": "0xedddb61a53226ffdc6ecf7c042b803e769168d55",
+    "explorerBase": "https://explorer.testnet.chain.robinhood.com",
+    "weth": "0xcc02c43352422cc5ce27d8f222302050aeecbd6f",
+    "uniswapV2Factory": "0x76748a790c21335ac0a170504e362b8859c514f5",
     "uniswapV2Router02": null
   }
 ];

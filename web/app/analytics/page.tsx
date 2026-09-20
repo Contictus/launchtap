@@ -4,8 +4,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ApiClient, type ProtocolDailyResponse } from "@/api/client";
-import { ApiProblem } from "@/api/problems";
 import { publicConfiguration } from "@/config/public";
 import { formatCanonicalBaseUnits } from "@/amounts";
 import { Badge, Button, ErrorState, Skeleton, UnavailableState } from "@/components/primitives";
@@ -15,7 +15,9 @@ function eth(value: string) {
   return formatted === null ? "Unavailable" : `${formatted} ETH`;
 }
 function snapshotLabel(snapshot: ProtocolDailyResponse["snapshot"]) {
-  return `${snapshot.finality || "unknown"} · block ${snapshot.as_of_block}`;
+  return snapshot.finality === "finalized" || snapshot.finality === "safe"
+    ? "Verified data"
+    : "Updating data";
 }
 
 export default function AnalyticsPage() {
@@ -62,16 +64,23 @@ export default function AnalyticsPage() {
           <div className="section-kicker">Analytics</div>
           <h1>Read the launch route.</h1>
           <p className="hero-summary">
-            Canonical indexed protocol activity, labelled with the snapshot that produced it.
-            ETH-native values are shown without USD enrichment.
+            Protocol activity across launches, trades, volume, and graduations. ETH-native values
+            are shown without USD enrichment.
           </p>
         </div>
       </section>
       {error ? (
         <ErrorState
-          title="Analytics unavailable"
-          description={error instanceof ApiProblem ? error.message : error.message}
-          action={<Button onClick={() => void load()}>Retry</Button>}
+          title="Live analytics are unavailable"
+          description="The indexed protocol snapshot could not be loaded. No estimated or cached market values are being substituted."
+          action={
+            <div className="state-actions">
+              <Button onClick={() => void load()}>Retry</Button>
+              <Link className="ui-button ui-button-quiet ui-button-md" href="/docs#contracts">
+                How data finality works
+              </Link>
+            </div>
+          }
         />
       ) : null}
       {loading ? (
@@ -86,8 +95,8 @@ export default function AnalyticsPage() {
       ) : null}
       {!loading && !error && summary && daily ? (
         <>
-          <section className="workspace-panel analytics-snapshot" aria-label="Analytics snapshot">
-            <span className="panel-kicker">Protocol snapshot</span>
+          <section className="workspace-panel analytics-snapshot" aria-label="Current analytics">
+            <span className="panel-kicker">Current window</span>
             <Badge
               tone={
                 summary.snapshot.finality === "finalized" || summary.snapshot.finality === "safe"
@@ -121,7 +130,7 @@ export default function AnalyticsPage() {
           >
             <div className="panel-head">
               <div>
-                <p className="panel-kicker">Indexed history</p>
+                <p className="panel-kicker">Activity history</p>
                 <h2 id="daily-history-title">Daily activity</h2>
               </div>
               <span className="mono">{daily.items?.length ?? 0} days · ETH only</span>
@@ -153,8 +162,7 @@ export default function AnalyticsPage() {
             )}
           </section>
           <p className="ui-field-hint">
-            Daily values are canonical indexer aggregates. A reorg or stale snapshot can make a
-            previous page invalid; refresh returns a single replacement snapshot.
+            Daily values update as new chain activity becomes available.
           </p>
         </>
       ) : null}

@@ -28,6 +28,7 @@ function publicEndpoint(value: string | null): string | null {
 export function publicConfiguration(
   env: Record<string, string | undefined> = {
     NEXT_PUBLIC_E2E_FIXTURE: process.env.NEXT_PUBLIC_E2E_FIXTURE,
+    NEXT_PUBLIC_LOCAL_DEV: process.env.NEXT_PUBLIC_LOCAL_DEV,
     NEXT_PUBLIC_TASK6_ANVIL_FACTORY: process.env.NEXT_PUBLIC_TASK6_ANVIL_FACTORY,
     NEXT_PUBLIC_TASK6_ANVIL_WETH: process.env.NEXT_PUBLIC_TASK6_ANVIL_WETH,
     NEXT_PUBLIC_TASK6_ANVIL_ROUTER: process.env.NEXT_PUBLIC_TASK6_ANVIL_ROUTER,
@@ -67,7 +68,9 @@ export function publicConfiguration(
     ) {
       return {
         status: "ready",
-        privyAppId: "cl_e2e_fixture_1234567890",
+        // Local stack previews do not have a real Privy application. Keep the
+        // indexed read surface live without initializing an invalid auth client.
+        privyAppId: env.NEXT_PUBLIC_LOCAL_DEV === "1" ? null : "cl_e2e_fixture_1234567890",
         chainId: 31337,
         deploymentId: "task6-anvil",
         apiBaseUrl: fixtureApi,

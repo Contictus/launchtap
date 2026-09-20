@@ -87,6 +87,13 @@ async function installWallet(page: Page, initialChainId = "0x7a69") {
   );
 }
 
+async function connectWallet(page: Page) {
+  await page.getByRole("button", { name: "Connect wallet" }).last().click();
+  const dialog = page.getByRole("dialog", { name: "Choose a wallet" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Browser wallet" }).click();
+}
+
 async function canonicalTokenForLaunch(page: Page, api: string, hash: string, name: string) {
   const response = await page.request.get(`${api}/v1/transactions/${hash}`);
   if (response.ok()) {
@@ -134,10 +141,10 @@ test.describe("Task 6 Anvil transaction gate", () => {
   }, testInfo) => {
     await installWallet(page);
     await page.goto("/create");
-    await expect(page.getByRole("heading", { name: "Create a token" })).toBeVisible();
-    await page.getByRole("button", { name: "Connect wallet" }).last().click();
-    await page.getByLabel("Token name").fill("Browser Task 6");
-    await page.getByLabel("Symbol").fill("B6");
+    await expect(page.getByRole("heading", { name: "Launch token" })).toBeVisible();
+    await connectWallet(page);
+    await page.getByLabel("Name").fill("Browser Task 6");
+    await page.getByLabel("Ticker").fill("B6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await expect(page.getByRole("heading", { name: "Confirm launch" })).toBeVisible();
     const evidenceDir = path.resolve(process.cwd(), "..", ".impeccable", "review");
@@ -167,9 +174,9 @@ test.describe("Task 6 Anvil transaction gate", () => {
   }, testInfo) => {
     await installWallet(page);
     await page.goto("/create");
-    await page.getByRole("button", { name: "Connect wallet" }).last().click();
-    await page.getByLabel("Token name").fill("Browser Trade Task 6");
-    await page.getByLabel("Symbol").fill("BT6");
+    await connectWallet(page);
+    await page.getByLabel("Name").fill("Browser Trade Task 6");
+    await page.getByLabel("Ticker").fill("BT6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
     const launchStatus = page.getByRole("status").last();
@@ -400,12 +407,12 @@ test.describe("Task 6 Anvil transaction gate", () => {
   test("switches from a wrong chain before signing", async ({ page }) => {
     await installWallet(page, "0x1");
     await page.goto("/create");
-    await page.getByRole("button", { name: "Connect wallet" }).last().click();
+    await connectWallet(page);
     await expect(page.getByText(/Wrong network/i)).toBeVisible();
     await page.getByRole("button", { name: "Switch network" }).click();
     await expect(page.getByText(/Wrong network/i)).toHaveCount(0);
-    await page.getByLabel("Token name").fill("Wrong Chain Task 6");
-    await page.getByLabel("Symbol").fill("WC6");
+    await page.getByLabel("Name").fill("Wrong Chain Task 6");
+    await page.getByLabel("Ticker").fill("WC6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.evaluate(() => {
       (window as unknown as { __task6ChainId: string }).__task6ChainId = "0x1";
@@ -419,9 +426,9 @@ test.describe("Task 6 Anvil transaction gate", () => {
   test("keeps wallet rejection distinct while using the launch controls", async ({ page }) => {
     await installWallet(page);
     await page.goto("/create");
-    await page.getByRole("button", { name: "Connect wallet" }).last().click();
-    await page.getByLabel("Token name").fill("Rejected Task 6");
-    await page.getByLabel("Symbol").fill("R6");
+    await connectWallet(page);
+    await page.getByLabel("Name").fill("Rejected Task 6");
+    await page.getByLabel("Ticker").fill("R6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.evaluate(() => {
       (window as unknown as { __task6RejectNext: boolean }).__task6RejectNext = true;
@@ -435,9 +442,9 @@ test.describe("Task 6 Anvil transaction gate", () => {
   test("surfaces a decoded contract cap revert from the real launch controls", async ({ page }) => {
     await installWallet(page);
     await page.goto("/create");
-    await page.getByRole("button", { name: "Connect wallet" }).last().click();
-    await page.getByLabel("Token name").fill("Revert Task 6");
-    await page.getByLabel("Symbol").fill("RV6");
+    await connectWallet(page);
+    await page.getByLabel("Name").fill("Revert Task 6");
+    await page.getByLabel("Ticker").fill("RV6");
     await page.getByLabel("Developer buy (ETH, optional)").fill("0.02");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
@@ -453,9 +460,9 @@ test.describe("Task 6 Anvil transaction gate", () => {
   }, testInfo) => {
     await installWallet(page);
     await page.goto("/create");
-    await page.getByRole("button", { name: "Connect wallet" }).last().click();
-    await page.getByLabel("Token name").fill("Graduated Task 6");
-    await page.getByLabel("Symbol").fill("GR6");
+    await connectWallet(page);
+    await page.getByLabel("Name").fill("Graduated Task 6");
+    await page.getByLabel("Ticker").fill("GR6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
     const launchStatus = page.getByRole("status").last();
@@ -567,9 +574,9 @@ test.describe("Task 6 Anvil transaction gate", () => {
     });
     const snapshot = ((await snapshotResponse.json()) as { result: string }).result;
     await page.goto("/create");
-    await page.getByRole("button", { name: "Connect wallet" }).last().click();
-    await page.getByLabel("Token name").fill("Reorg Task 6");
-    await page.getByLabel("Symbol").fill("RG6");
+    await connectWallet(page);
+    await page.getByLabel("Name").fill("Reorg Task 6");
+    await page.getByLabel("Ticker").fill("RG6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
     const status = page.getByRole("status").last();

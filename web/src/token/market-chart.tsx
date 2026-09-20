@@ -99,7 +99,7 @@ export function MarketChart({
         <p className="chart-empty">No candles in this range.</p>
       )}
       <p className="chart-attribution">
-        Market data from indexed candle snapshots ·{" "}
+        Market data updates as activity is recorded ·{" "}
         <a href="https://www.tradingview.com" target="_blank" rel="noopener noreferrer">
           TradingView Lightweight Charts
         </a>

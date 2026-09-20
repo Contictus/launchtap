@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiClient, type TokenListQuery, type TokenListResponse } from "@/api/client";
+import { Plus } from "@phosphor-icons/react";
+import {
+  ApiClient,
+  resolveApiAssetUrl,
+  type TokenListQuery,
+  type TokenListResponse,
+} from "@/api/client";
 import type { components } from "@/api/generated";
 import { ApiProblem } from "@/api/problems";
 import { queryKeys, snapshotIdentity, type Snapshot } from "@/api/types";
@@ -16,11 +22,7 @@ import {
   defaultTokenListQuery,
   encodeTokenListQuery,
   normalizeTokenListQuery,
-  PHASE_LABELS,
-  SORT_LABELS,
   sameTokenListQuery,
-  TOKEN_PHASES,
-  TOKEN_SORTS,
   tokenListFilters,
   type TokenListQueryState,
   type TokenPhase,
@@ -46,6 +48,11 @@ type TokenDiscoveryProps = {
   title: string;
   summary: string;
   fetchPage?: TokenListFetcher;
+  fixedPhase?: TokenPhase;
+  showHero?: boolean;
+  showSearch?: boolean;
+  showSortControls?: boolean;
+  sectionLabel?: string;
 };
 type TokenCardData = components["schemas"]["TokenDTO"];
 
@@ -57,43 +64,46 @@ function displayAmount(raw: string, decimals = 18) {
   }
 }
 
-function finalityTone(finality: string): "success" | "warning" | "neutral" {
-  return finality === "safe" || finality === "finalized"
-    ? "success"
-    : finality === "provisional" || finality === "stale"
-      ? "warning"
-      : "neutral";
-}
-
-function finalityLabel(finality: string) {
-  if (finality === "safe") return "Safe snapshot";
-  if (finality === "finalized") return "Finalized snapshot";
-  if (finality === "provisional") return "Provisional snapshot";
-  if (finality === "stale") return "Stale snapshot";
-  return finality ? `${finality} snapshot` : "Snapshot status unavailable";
-}
-
 function tokenLabel(token: TokenCardData) {
   return token.name.trim() || token.symbol.trim() || "Unnamed token";
 }
+
+const SORT_VIEWS: ReadonlyArray<{
+  value: TokenListQueryState["sort"];
+  label: string;
+}> = [
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "market_cap", label: "Market cap" },
+  { value: "volume_24h", label: "Volume" },
+];
 
 export function TokenDiscovery({
   defaultPhase = "curve",
   title,
   summary,
   fetchPage: injectedFetcher,
+  fixedPhase,
+  showHero = true,
+  showSearch = true,
+  showSortControls = true,
+  sectionLabel = "",
 }: TokenDiscoveryProps) {
   const configuration = publicConfiguration();
+  const phaseDefault = fixedPhase ?? defaultPhase;
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlState = useMemo(
     () =>
-      normalizeTokenListQuery(
-        decodeTokenListQuery(searchParams.toString(), defaultPhase),
-        defaultPhase,
-      ),
-    [defaultPhase, searchParams],
+      (() => {
+        const next = normalizeTokenListQuery(
+          decodeTokenListQuery(searchParams.toString(), phaseDefault),
+          phaseDefault,
+        );
+        return fixedPhase ? { ...next, phase: fixedPhase } : next;
+      })(),
+    [fixedPhase, phaseDefault, searchParams],
   );
   const [searchDraft, setSearchDraft] = useState(urlState.q);
   const [pages, setPages] = useState<TokenListResponse[]>([]);
@@ -119,19 +129,23 @@ export function TokenDiscovery({
 
   const writeUrlState = useCallback(
     (next: TokenListQueryState, replace = false) => {
-      const query = encodeTokenListQuery(normalizeTokenListQuery(next, defaultPhase), defaultPhase);
+      const normalized = normalizeTokenListQuery(next, phaseDefault);
+      const query = encodeTokenListQuery(
+        fixedPhase ? { ...normalized, phase: fixedPhase } : normalized,
+        phaseDefault,
+      );
       const target = query ? `${pathname}?${query}` : pathname;
       if (replace) router.replace(target as never, { scroll: false });
       else router.push(target as never, { scroll: false });
     },
-    [defaultPhase, pathname, router],
+    [fixedPhase, pathname, phaseDefault, router],
   );
 
   useEffect(() => {
-    if (defaultPhase !== "graduated" || searchParams.get("phase") === null) return;
+    if (fixedPhase || defaultPhase !== "graduated" || searchParams.get("phase") === null) return;
     const query = encodeTokenListQuery(urlState, defaultPhase);
     router.replace((query ? `${pathname}?${query}` : pathname) as never, { scroll: false });
-  }, [defaultPhase, pathname, router, searchParams, urlState]);
+  }, [defaultPhase, fixedPhase, pathname, router, searchParams, urlState]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -269,88 +283,84 @@ export function TokenDiscovery({
     searchEditedRef.current = false;
     writeUrlState(commitTokenListFilters(urlState, searchDraft, changes));
   };
-  const choosePhase = (phase: TokenPhase) => commitFilters({ phase });
-  const chooseSort = (sort: TokenListQueryState["sort"]) => commitFilters({ sort });
+  const chooseSort = (sort: TokenListQueryState["sort"]) => {
+    if (urlState.sort !== sort) commitFilters({ sort });
+  };
   const retry = () => void loadPage(urlState);
+  const listTitleId = fixedPhase ? `${fixedPhase}-list-title` : "list-title";
 
   return (
-    <div className="page-stack discovery-page" data-query-key={JSON.stringify(queryKey)}>
-      <section className="page-hero" aria-labelledby="discovery-title">
-        <div>
-          <div className="section-kicker">Token ledger</div>
-          <h1 id="discovery-title">{title}</h1>
-          <p className="hero-summary">{summary}</p>
-        </div>
-        <div className="hero-aside">
-          <span className="hero-rule" />
-          <p>
-            Indexed reads stay separate from wallet signing. Every row carries its snapshot state.
-          </p>
-          <Badge tone={configuration.status === "ready" ? "success" : "warning"}>
-            {configuration.status === "ready" ? "API connected" : "API unavailable · fail-closed"}
-          </Badge>
-          {configuration.status !== "ready" ? (
-            <span className="mono discovery-config-note">Not configured</span>
-          ) : null}
-        </div>
-      </section>
+    <div
+      className={`${showHero ? "page-stack" : "discovery-section"} discovery-page`}
+      data-query-key={JSON.stringify(queryKey)}
+    >
+      {showHero ? (
+        <section className="page-hero" aria-labelledby="discovery-title">
+          <div>
+            <div className="section-kicker">Token ledger</div>
+            <h1 id="discovery-title">{title}</h1>
+            <p className="hero-summary">{summary}</p>
+          </div>
+          <div className="hero-aside">
+            <span className="hero-rule" />
+            <p>Follow each route from curve to graduation. Wallet actions stay in your control.</p>
+          </div>
+        </section>
+      ) : null}
 
-      <section className="workspace-panel discovery-panel" aria-labelledby="list-title">
+      {showSearch ? (
+        <div className="discovery-toolbar">
+          <div className="discovery-searchbar" role="search">
+            <Input
+              label="Search tokens"
+              placeholder="Name or symbol"
+              value={searchDraft}
+              onChange={(event) => {
+                searchEditedRef.current = true;
+                setSearchDraft(event.target.value);
+              }}
+              maxLength={120}
+              autoComplete="off"
+            />
+          </div>
+          <Link
+            className="ui-button ui-button-secondary ui-button-sm discovery-create-button"
+            href="/create"
+          >
+            <Plus aria-hidden="true" size={16} weight="bold" />
+            <span>Create</span>
+          </Link>
+        </div>
+      ) : null}
+
+      <section className="workspace-panel discovery-panel" aria-labelledby={listTitleId}>
         <div className="panel-head discovery-controls-head">
           <div>
-            <p className="panel-kicker">GET /v1/tokens</p>
-            <h2 id="list-title">
-              {urlState.phase === "graduated" ? "Graduated routes" : "Curve routes"}
-            </h2>
+            {sectionLabel ? <p className="panel-kicker">{sectionLabel}</p> : null}
+            <h2 id={listTitleId}>{title}</h2>
+            <p className="section-description">{summary}</p>
           </div>
-          {snapshot ? <SnapshotBadge snapshot={snapshot} /> : null}
-        </div>
-        <div className="discovery-controls" role="search">
-          <Input
-            label="Search tokens"
-            placeholder="Name or symbol"
-            value={searchDraft}
-            onChange={(event) => {
-              searchEditedRef.current = true;
-              setSearchDraft(event.target.value);
-            }}
-            maxLength={120}
-            autoComplete="off"
-          />
-          {defaultPhase !== "graduated" ? (
-            <label className="ui-field">
-              <span>Phase</span>
-              <select
-                className="ui-input"
-                value={urlState.phase}
-                onChange={(event) => choosePhase(event.target.value as TokenPhase)}
-              >
-                {TOKEN_PHASES.map((phase) => (
-                  <option key={phase} value={phase}>
-                    {PHASE_LABELS[phase]}
-                  </option>
+          {showSortControls ? (
+            <div className="discovery-filter-groups" aria-label="Token list filters">
+              <div className="discovery-filter-group" role="group" aria-label="Sort tokens">
+                {SORT_VIEWS.map((view) => (
+                  <button
+                    className={`discovery-filter ${urlState.sort === view.value ? "is-active" : ""}`}
+                    key={view.value}
+                    type="button"
+                    aria-pressed={urlState.sort === view.value}
+                    onClick={() => chooseSort(view.value)}
+                  >
+                    {view.label}
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
           ) : null}
-          <label className="ui-field">
-            <span>Sort</span>
-            <select
-              className="ui-input"
-              value={urlState.sort}
-              onChange={(event) => chooseSort(event.target.value as TokenListQueryState["sort"])}
-            >
-              {TOKEN_SORTS.map((sort) => (
-                <option key={sort} value={sort}>
-                  {SORT_LABELS[sort]}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
         {resetNotice ? (
           <p className="discovery-notice" role="status">
-            This page marker expired. Showing page one from a fresh snapshot.
+            The list was refreshed with the latest available routes.
           </p>
         ) : null}
         {configuration.status !== "ready" ? (
@@ -364,7 +374,7 @@ export function TokenDiscovery({
               description={
                 error instanceof ApiProblem
                   ? error.message
-                  : "The API could not be reached. Try again."
+                  : "Token routes are temporarily unavailable. Try again shortly."
               }
               action={<Button onClick={retry}>Retry</Button>}
             />
@@ -374,11 +384,11 @@ export function TokenDiscovery({
         ) : items.length === 0 ? (
           <div className="discovery-state">
             <EmptyState
-              title={urlState.q ? "No matching tokens" : "No indexed tokens yet"}
+              title={urlState.q ? "No matching tokens" : "No tokens yet"}
               description={
                 urlState.q
                   ? "Try a different name or symbol."
-                  : "The connected API has no tokens for this route yet."
+                  : "New launches will appear here as they become available."
               }
               action={
                 urlState.q ? (
@@ -399,13 +409,16 @@ export function TokenDiscovery({
           <>
             <div className="token-list" aria-live="polite" aria-busy={loadingMore}>
               {items.map((token) => (
-                <TokenCard key={token.address} token={token} />
+                <TokenCard
+                  key={token.address}
+                  token={token}
+                  apiBaseUrl={configuration.apiBaseUrl}
+                />
               ))}
             </div>
             <div className="discovery-pagination">
               <span className="discovery-count">
-                Showing {items.length} indexed {items.length === 1 ? "route" : "routes"}; total
-                count unavailable.
+                {items.length} {items.length === 1 ? "token" : "tokens"} shown
               </span>
               {nextCursor ? (
                 <Button
@@ -414,9 +427,7 @@ export function TokenDiscovery({
                 >
                   Load more
                 </Button>
-              ) : (
-                <span className="discovery-end">End of snapshot</span>
-              )}
+              ) : null}
             </div>
           </>
         )}
@@ -425,24 +436,19 @@ export function TokenDiscovery({
   );
 }
 
-function SnapshotBadge({ snapshot }: { snapshot: Snapshot }) {
-  return (
-    <div className="snapshot-badge">
-      <Badge tone={finalityTone(snapshot.finality)}>{finalityLabel(snapshot.finality)}</Badge>
-      <span className="mono">Block {snapshot.as_of_block}</span>
-    </div>
-  );
-}
-
-function TokenCard({ token }: { token: TokenCardData }) {
+function TokenCard({ token, apiBaseUrl }: { token: TokenCardData; apiBaseUrl: string | null }) {
   const label = tokenLabel(token);
+  const imageUrl = resolveApiAssetUrl(
+    apiBaseUrl,
+    `/v1/tokens/${encodeURIComponent(token.address)}/image`,
+  );
   return (
     <article className="token-card">
       <div className="token-card-main">
         <SafeImage
-          src={undefined}
+          src={imageUrl}
           alt={`${label} token`}
-          fallbackLabel="No token image"
+          fallbackLabel="No artwork"
           className="token-image"
         />
         <div className="token-identity">
@@ -500,11 +506,8 @@ function UnavailableDiscovery() {
         /
       </span>
       <div>
-        <h2>Indexed discovery unavailable</h2>
-        <p>
-          Connect a reviewed API and deployment to load current tokens. Cached values are not
-          presented as current.
-        </p>
+        <h2>Token discovery unavailable</h2>
+        <p>Token routes are temporarily unavailable. Try again shortly.</p>
       </div>
     </section>
   );

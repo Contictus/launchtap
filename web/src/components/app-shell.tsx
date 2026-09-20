@@ -2,142 +2,137 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowSquareOut,
   BookOpenText,
   ChartLineUp,
   Compass,
   List,
+  Moon,
   Plus,
-  RocketLaunch,
   ShieldCheck,
-  Trophy,
+  Sun,
   UserCircle,
-  Wallet,
 } from "./icons";
-import { Button, SafeExternalLink, Sheet } from "./primitives";
+import { SafeExternalLink, Sheet } from "./primitives";
+import { WalletConnectButton } from "@/wallet/connection";
 import { publicConfiguration } from "@/config/public";
 
 const navItems = [
-  { href: "/", label: "Explore", icon: Compass },
-  { href: "/graduated", label: "Graduated", icon: Trophy },
+  { href: "/", label: "Explore", icon: Compass, primary: false },
   { href: "/create", label: "Create", icon: Plus, primary: true },
-  { href: "/analytics", label: "Analytics", icon: ChartLineUp },
-  { href: "/docs", label: "Docs", icon: BookOpenText },
-  { href: "/profile", label: "Profile", icon: UserCircle },
-];
+  { href: "/analytics", label: "Analytics", icon: ChartLineUp, primary: false },
+  { href: "/docs", label: "Docs", icon: BookOpenText, primary: false },
+  { href: "/profile", label: "Profile", icon: UserCircle, primary: false },
+] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
   const configuration = publicConfiguration();
-  const deploymentReady = configuration.status === "ready";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => {
+    const saved = window.localStorage.getItem("launchpad-theme");
+    const next = saved === "light" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    if (next === "dark") return;
+    const sync = window.setTimeout(() => setTheme(next), 0);
+    return () => window.clearTimeout(sync);
+  }, []);
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    window.localStorage.setItem("launchpad-theme", next);
+  }
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   return (
     <div className="app-frame">
-      <aside className="app-rail" aria-label="Desktop application rail">
-        <Link href="/" className="brand-mark">
-          <span className="brand-stamp" aria-hidden="true">
-            LP
-          </span>
-          <span>
-            <strong>Launchpad</strong>
-            <small>Onchain launch desk</small>
-          </span>
+      <header className="app-navbar" aria-label="Primary navigation">
+        <Link className="navbar-brand" href="/" aria-label="Open home">
+          <span className="brand-orbit" aria-hidden="true" />
         </Link>
-        <div className="rail-rule" />
-        <nav className="rail-nav" aria-label="Desktop primary navigation">
-          {navItems.map(({ href, label, icon: Icon, primary }) => (
-            <a
-              key={href}
-              href={href}
-              className={`rail-link ${active(href) ? "is-active" : ""} ${primary ? "is-primary" : ""}`}
-              aria-current={active(href) ? "page" : undefined}
-            >
-              <Icon size={18} weight={active(href) ? "fill" : "regular"} aria-hidden="true" />
-              <span>{label}</span>
-              {primary ? <span className="rail-link-key">+</span> : null}
-            </a>
-          ))}
+        <nav className="navbar-links" aria-label="Desktop primary navigation">
+          {navItems
+            .filter(({ href }) => href !== "/profile")
+            .map(({ href, label, icon: Icon, primary }) => (
+              <Link
+                key={href}
+                href={href}
+                className={`navbar-link ${active(href) ? "is-active" : ""} ${primary ? "is-primary" : ""}`}
+                aria-current={active(href) ? "page" : undefined}
+              >
+                <Icon size={18} weight={active(href) ? "fill" : "regular"} aria-hidden="true" />
+                <span>{label}</span>
+              </Link>
+            ))}
         </nav>
-        <div className="rail-bottom">
-          <div className="network-label">
-            <span className="state-dot state-dot-warning" aria-hidden="true" />
-            {deploymentReady ? configuration.deployment?.name : "Deployment unavailable"}
-          </div>
-          <p>
-            {deploymentReady
-              ? "Reviewed deployment connected. Contract reads and wallet actions remain user-controlled."
-              : "Public configuration is not connected. The shell stays read-only until a reviewed deployment is available."}
-          </p>
-          <SafeExternalLink href="https://robinhoodchain.blockscout.com" className="rail-external">
-            Open explorer <ArrowSquareOut size={13} />
-          </SafeExternalLink>
+        <div className="navbar-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          >
+            <Sun size={16} weight={theme === "dark" ? "fill" : "regular"} />
+            <Moon size={16} weight={theme === "light" ? "fill" : "regular"} />
+          </button>
+          <Link className="navbar-action" href="/profile" aria-label="Open profile">
+            <UserCircle size={19} />
+          </Link>
+          <WalletConnectButton />
+          <button
+            className="ui-icon-button navbar-menu-button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open navigation"
+          >
+            <List size={22} />
+          </button>
         </div>
-      </aside>
-      <header className="mobile-topbar">
-        <Link href="/" className="brand-mark">
-          <span className="brand-stamp" aria-hidden="true">
-            LP
-          </span>
-          <strong>Launchpad</strong>
-        </Link>
-        <button
-          className="ui-icon-button"
-          onClick={() => setMenuOpen(true)}
-          aria-label="Open navigation"
-        >
-          <List size={22} />
-        </button>
       </header>
       <main className="app-content">
-        <div className="content-topline">
-          <span className="route-label">
-            <RocketLaunch size={15} aria-hidden="true" /> Launch route
-          </span>
-          <span className="route-line" aria-hidden="true" />
-          <span className="route-state">Read-only shell</span>
-          <Button
-            variant="quiet"
-            size="sm"
-            onClick={() => setMenuOpen(true)}
-            className="desktop-menu-button"
-          >
-            <Wallet size={15} /> Connect wallet
-          </Button>
-        </div>
         {children}
-        <footer className="app-footer">
-          <div>
-            <strong>Launchpad</strong>
-            <p>Non-custodial by design. You sign every transaction in your selected wallet.</p>
+        <footer className="app-footer" aria-label="Site footer">
+          <div className="footer-brand">
+            <span className="footer-name">Launchpad</span>
+            <p>
+              Launch fixed-supply tokens on Robinhood Chain. Your selected wallet signs every
+              transaction; Launchpad never takes custody.
+            </p>
           </div>
-          <div className="footer-links">
-            <a href="/docs">Risk and finality</a>
-            <SafeExternalLink href="https://robinhoodchain.blockscout.com">
-              Explorer <ArrowSquareOut size={13} />
-            </SafeExternalLink>
+          <nav className="footer-navigation" aria-label="Footer navigation">
+            <span>Product</span>
+            <Link href="/">Explore</Link>
+            <Link href="/create">Create</Link>
+            <Link href="/analytics">Analytics</Link>
+            <Link href="/profile">Profile</Link>
+            <Link href="/docs">Docs</Link>
+          </nav>
+          <div className="footer-risk">
+            <span>Risk notice</span>
+            <p>
+              On-chain transactions may be irreversible. Tokens can be volatile or lose all value.
+            </p>
+            <div className="footer-links">
+              <Link href="/docs#risk">Risk and finality</Link>
+              {configuration.deployment?.explorerBase ? (
+                <SafeExternalLink href={configuration.deployment.explorerBase}>
+                  Explorer <ArrowSquareOut size={13} />
+                </SafeExternalLink>
+              ) : (
+                <span className="ui-disabled-link">Explorer unavailable</span>
+              )}
+            </div>
           </div>
+          <p className="footer-meta">© 2026 Launchpad</p>
         </footer>
       </main>
-      <nav className="mobile-bottom-nav" aria-label="Mobile primary navigation">
-        {navItems.slice(0, 4).map(({ href, label, icon: Icon }) => (
-          <a
-            key={href}
-            href={href}
-            className={active(href) ? "is-active" : ""}
-            aria-current={active(href) ? "page" : undefined}
-          >
-            <Icon size={20} weight={active(href) ? "fill" : "regular"} aria-hidden="true" />
-            <span>{label}</span>
-          </a>
-        ))}
-      </nav>
       <Sheet open={menuOpen} title="Navigate" onClose={() => setMenuOpen(false)}>
         <nav className="sheet-nav" aria-label="Mobile menu navigation">
           {navItems.map(({ href, label, icon: Icon }) => (
-            <a
+            <Link
               key={href}
               href={href}
               onClick={() => setMenuOpen(false)}
@@ -145,7 +140,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Icon size={20} />
               {label}
-            </a>
+            </Link>
           ))}
         </nav>
         <div className="sheet-note">

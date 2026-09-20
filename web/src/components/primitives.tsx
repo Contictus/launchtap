@@ -3,7 +3,7 @@
 import { Check, CircleNotch, WarningCircle, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState } from "react";
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet" | "danger";
   size?: "sm" | "md" | "lg";
   loading?: boolean;
@@ -450,7 +450,9 @@ export function SafeImage({
         role="img"
         aria-label={`${alt}. ${fallbackLabel}`}
       >
-        Image unavailable
+        <span aria-hidden="true" className="ui-image-fallback-letter">
+          {alt.trim().charAt(0).toUpperCase() || "•"}
+        </span>
       </span>
     );
   return (

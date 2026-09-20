@@ -54,7 +54,7 @@ function finalityTone(value: string): "success" | "warning" | "neutral" {
 }
 
 function finalityLabel(value: string) {
-  return value ? `${value[0]?.toUpperCase()}${value.slice(1)}` : "Unavailable";
+  return value === "safe" || value === "finalized" ? "Verified" : "Updating";
 }
 
 export function TokenDetail({
@@ -403,10 +403,10 @@ export function TokenDetail({
             src={currentImageUrl}
             alt={`${token.name || token.symbol || "Token"} token`}
             className="token-detail-image"
-            fallbackLabel="Metadata image unavailable"
+            fallbackLabel="No artwork"
           />
           <div>
-            <p className="section-kicker">Token route · engine v{token.engine_version}</p>
+            <p className="section-kicker">Token overview</p>
             <h1 id="token-title">{token.name.trim() || token.symbol.trim() || "Unnamed token"}</h1>
             <p className="token-detail-symbol mono">
               {token.symbol || "—"} · {shortAddress(token.address)}
@@ -416,7 +416,7 @@ export function TokenDetail({
                 {token.phase || "Phase unavailable"}
               </Badge>
               <Badge tone={finalityTone(snapshot.finality)}>
-                {finalityLabel(snapshot.finality)} snapshot
+                {finalityLabel(snapshot.finality)}
               </Badge>
             </div>
           </div>
@@ -438,8 +438,7 @@ export function TokenDetail({
 
       {snapshot.finality === "stale" || snapshot.finality === "provisional" ? (
         <p className="token-trust-notice" role="status">
-          This is a {snapshot.finality} indexed snapshot. It may change after reorganization; no
-          cached value is presented as current.
+          This data is still updating and may change as the chain settles.
         </p>
       ) : null}
       <section
@@ -448,10 +447,10 @@ export function TokenDetail({
       >
         <div className="panel-head">
           <div>
-            <p className="panel-kicker">Route manifest</p>
+            <p className="panel-kicker">Token stats</p>
             <h2 id="token-summary-title">Market and reserves</h2>
           </div>
-          <span className="mono token-block">Block {snapshot.as_of_block}</span>
+          <span className="mono token-block">Live values</span>
         </div>
         <dl className="token-summary-grid">
           <Metric label="Spot price" value={amount(token.spot_price_eth)} />
@@ -494,8 +493,8 @@ export function TokenDetail({
       <section className="workspace-panel market-panel" aria-labelledby="market-title">
         <div className="panel-head market-panel-head">
           <div>
-            <p className="panel-kicker">Candle snapshots</p>
-            <h2 id="market-title">Market route</h2>
+            <p className="panel-kicker">Price history</p>
+            <h2 id="market-title">Market activity</h2>
           </div>
           <div className="chart-controls">
             <label className="chart-control-label">
@@ -535,7 +534,7 @@ export function TokenDetail({
         ) : chartError ? (
           <ErrorState
             title="Chart unavailable"
-            description="Indexed candles could not be loaded."
+            description="Price history could not be loaded."
             action={<Button onClick={() => void loadCandles()}>Retry</Button>}
           />
         ) : (
@@ -546,18 +545,18 @@ export function TokenDetail({
       <section className="workspace-panel token-history-panel" aria-labelledby="history-title">
         <div className="panel-head">
           <div>
-            <p className="panel-kicker">Indexed history</p>
+            <p className="panel-kicker">Activity</p>
             <h2 id="history-title">Recent activity</h2>
           </div>
           {collectionSnapshot ? (
             <Badge tone={finalityTone(collectionSnapshot.finality)}>
-              {finalityLabel(collectionSnapshot.finality)} snapshot
+              {finalityLabel(collectionSnapshot.finality)}
             </Badge>
           ) : null}
         </div>
         {resetNotice ? (
           <p className="discovery-notice" role="status">
-            This page marker expired. Showing page one from a fresh snapshot.
+            The activity list was refreshed with the latest available data.
           </p>
         ) : null}
         <Tabs
@@ -587,7 +586,7 @@ export function TokenDetail({
         />
         {nextCursor ? (
           <div className="history-pagination">
-            <span className="mono">Snapshot page · {pagesItems.length} rows</span>
+            <span className="mono">{pagesItems.length} rows</span>
             <Button
               loading={collectionLoading}
               onClick={() => void loadCollection(tab, nextCursor, true)}
@@ -664,17 +663,11 @@ function Trades({
     );
   if (error)
     return (
-      <ErrorState
-        title="Trades unavailable"
-        description="The indexed trade history could not be loaded."
-      />
+      <ErrorState title="Trades unavailable" description="Trade history could not be loaded." />
     );
   if (!items.length)
     return (
-      <EmptyState
-        title="No indexed trades"
-        description="This token has no trades in the selected snapshot."
-      />
+      <EmptyState title="No trades yet" description="This token has no recorded trades yet." />
     );
   return (
     <div className="history-table" role="table" aria-label="Recent trades">
@@ -724,17 +717,11 @@ function Holders({
     );
   if (error)
     return (
-      <ErrorState
-        title="Holders unavailable"
-        description="The indexed holder history could not be loaded."
-      />
+      <ErrorState title="Holders unavailable" description="Holder data could not be loaded." />
     );
   if (!items.length)
     return (
-      <EmptyState
-        title="No indexed holders"
-        description="No holder balances are available in this snapshot."
-      />
+      <EmptyState title="No holders yet" description="No holder balances are available yet." />
     );
   return (
     <div className="history-table" role="table" aria-label="Token holders">
@@ -778,7 +765,7 @@ function TokenMissing({ address }: { address: string }) {
     <div className="page-stack token-page">
       <UnavailableBlock
         title="Token not found"
-        description={`No indexed token was found for ${shortAddress(address)}.`}
+        description={`No token was found for ${shortAddress(address)}.`}
       />
     </div>
   );
@@ -788,7 +775,7 @@ function TokenLoadError({ onRetry }: { onRetry: () => void }) {
     <div className="page-stack token-page">
       <ErrorState
         title="Token unavailable"
-        description="The API could not load this token. Try again."
+        description="This token could not be loaded. Try again."
         action={<Button onClick={onRetry}>Retry</Button>}
       />
     </div>

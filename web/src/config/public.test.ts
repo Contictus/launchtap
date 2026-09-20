@@ -16,6 +16,19 @@ describe("publicConfiguration", () => {
     expect(publicConfiguration(env).status).toBe("fail-closed");
   });
 
+  it("resolves the reviewed Robinhood testnet deployment", () => {
+    const configuration = publicConfiguration({
+      NEXT_PUBLIC_PRIVY_APP_ID: "cl_test_1234567890",
+      NEXT_PUBLIC_DEPLOYMENT_ID: "robinhood-testnet-v1",
+      NEXT_PUBLIC_CHAIN_ID: "46630",
+      NEXT_PUBLIC_API_BASE_URL: "https://api.testnet.example",
+      NEXT_PUBLIC_RPC_URL: "https://rpc.testnet.example",
+    });
+
+    expect(configuration.status).toBe("ready");
+    expect(configuration.deployment?.factory).toBe("0xedddb61a53226ffdc6ecf7c042b803e769168d55");
+  });
+
   it("uses the real backend URL for the Anvil fixture instead of a receipt fixture", () => {
     const configuration = publicConfiguration({
       NEXT_PUBLIC_E2E_FIXTURE: "1",
@@ -29,6 +42,23 @@ describe("publicConfiguration", () => {
     });
     expect(configuration.status).toBe("ready");
     expect(configuration.apiBaseUrl).toBe("http://127.0.0.1:18080");
+  });
+
+  it("does not initialize a fake identity client for the local Anvil preview", () => {
+    const configuration = publicConfiguration({
+      NEXT_PUBLIC_E2E_FIXTURE: "1",
+      NEXT_PUBLIC_LOCAL_DEV: "1",
+      NEXT_PUBLIC_TASK6_ANVIL_FACTORY: "0x0000000000000000000000000000000000000001",
+      NEXT_PUBLIC_TASK6_ANVIL_WETH: "0x0000000000000000000000000000000000000002",
+      NEXT_PUBLIC_TASK6_ANVIL_ROUTER: "0x0000000000000000000000000000000000000003",
+      NEXT_PUBLIC_TASK6_ANVIL_UNISWAP_FACTORY: "0x0000000000000000000000000000000000000004",
+      NEXT_PUBLIC_TASK6_ANVIL_RPC_URL: "http://127.0.0.1:8545",
+      NEXT_PUBLIC_TASK6_ANVIL_API_URL: "http://127.0.0.1:18080",
+      NEXT_PUBLIC_TASK6_ANVIL_WEB_URL: "http://127.0.0.1:3000",
+    });
+
+    expect(configuration.status).toBe("ready");
+    expect(configuration.privyAppId).toBeNull();
   });
 
   it("rejects credentials or query material in public endpoints", () => {
