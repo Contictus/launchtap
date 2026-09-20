@@ -1,6 +1,6 @@
 "use client";
 
-import { useConnectWallet } from "@privy-io/react-auth";
+import { useConnectOrCreateWallet } from "@privy-io/react-auth";
 import { createContext, useContext, useMemo, useState, type PropsWithChildren } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { Wallet } from "@/components/icons";
@@ -111,19 +111,23 @@ export function WagmiWalletConnectionBridge({ children }: PropsWithChildren) {
 }
 
 export function PrivyWalletConnectionBridge({ children }: PropsWithChildren) {
-  const { connectWallet } = useConnectWallet();
+  // The launch flow requires a Privy-authenticated user with the selected wallet
+  // in linkedAccounts. connectWallet() only connects an external wallet and can
+  // leave the app in connected-unlinked state, which correctly blocks signing.
+  // connectOrCreateWallet() completes the wallet auth/link flow as one operation.
+  const { connectOrCreateWallet } = useConnectOrCreateWallet();
   const { disconnect } = useDisconnect();
   const { address, isConnected } = useAccount();
   const value = useMemo<WalletConnection>(
     () => ({
-      open: () => connectWallet(),
+      open: () => connectOrCreateWallet(),
       disconnect: () => disconnect(),
       connected: isConnected,
       pending: false,
       available: true,
       address,
     }),
-    [address, connectWallet, disconnect, isConnected],
+    [address, connectOrCreateWallet, disconnect, isConnected],
   );
   return (
     <WalletConnectionContext.Provider value={value}>{children}</WalletConnectionContext.Provider>
