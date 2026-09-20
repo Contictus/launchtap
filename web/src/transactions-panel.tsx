@@ -2351,7 +2351,7 @@ function LaunchPanelReady() {
                   <small className="ui-field-hint">Graduates once the curve raises 4.2 ETH.</small>
                 </label>
                 <Input
-                  label="Developer buy (ETH)"
+                  label="Developer buy (ETH, optional)"
                   value={buy}
                   onChange={(event) => setBuy(event.target.value)}
                   inputMode="decimal"
