@@ -23,6 +23,10 @@
   active. Contract receipts, runtime hashes, configuration getters, repository gates, and
   local backend/web verification passed. The first live product acceptance run has not yet
   been performed with separate creator and trader wallets.
+- **Current test identities:** creator `0x08B42F27E4CF57a8f46c0f7d2eE452BA43bdCAee`,
+  trader `0xf4cc408c6003ACD688b18DfDB00B0BCaaA02aC5A`, and deployment operator/deployer
+  `0x12cB30400339831107589695E5C71455e223Bf02`. The creator and trader are distinct from
+  the deployer; read-only RPC checks confirmed non-zero testnet ETH balances for all three.
 - **Related files:** `docs/runbooks/robinhood-testnet-deployment.md`,
   `contracts/deployments/robinhood-testnet-v1.json`,
   `backend/deployments/testdata/robinhood-testnet-v1.json`
