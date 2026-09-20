@@ -143,8 +143,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await page.goto("/create");
     await expect(page.getByRole("heading", { name: "Launch token" })).toBeVisible();
     await connectWallet(page);
-    await page.getByLabel("Token name").fill("Browser Task 6");
-    await page.getByLabel("Symbol").fill("B6");
+    await page.getByLabel("Name").fill("Browser Task 6");
+    await page.getByLabel("Ticker").fill("B6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await expect(page.getByRole("heading", { name: "Confirm launch" })).toBeVisible();
     const evidenceDir = path.resolve(process.cwd(), "..", ".impeccable", "review");
@@ -175,8 +175,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await installWallet(page);
     await page.goto("/create");
     await connectWallet(page);
-    await page.getByLabel("Token name").fill("Browser Trade Task 6");
-    await page.getByLabel("Symbol").fill("BT6");
+    await page.getByLabel("Name").fill("Browser Trade Task 6");
+    await page.getByLabel("Ticker").fill("BT6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
     const launchStatus = page.getByRole("status").last();
@@ -411,8 +411,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await expect(page.getByText(/Wrong network/i)).toBeVisible();
     await page.getByRole("button", { name: "Switch network" }).click();
     await expect(page.getByText(/Wrong network/i)).toHaveCount(0);
-    await page.getByLabel("Token name").fill("Wrong Chain Task 6");
-    await page.getByLabel("Symbol").fill("WC6");
+    await page.getByLabel("Name").fill("Wrong Chain Task 6");
+    await page.getByLabel("Ticker").fill("WC6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.evaluate(() => {
       (window as unknown as { __task6ChainId: string }).__task6ChainId = "0x1";
@@ -427,8 +427,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await installWallet(page);
     await page.goto("/create");
     await connectWallet(page);
-    await page.getByLabel("Token name").fill("Rejected Task 6");
-    await page.getByLabel("Symbol").fill("R6");
+    await page.getByLabel("Name").fill("Rejected Task 6");
+    await page.getByLabel("Ticker").fill("R6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.evaluate(() => {
       (window as unknown as { __task6RejectNext: boolean }).__task6RejectNext = true;
@@ -443,8 +443,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await installWallet(page);
     await page.goto("/create");
     await connectWallet(page);
-    await page.getByLabel("Token name").fill("Revert Task 6");
-    await page.getByLabel("Symbol").fill("RV6");
+    await page.getByLabel("Name").fill("Revert Task 6");
+    await page.getByLabel("Ticker").fill("RV6");
     await page.getByLabel("Developer buy (ETH, optional)").fill("0.02");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
@@ -461,8 +461,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     await installWallet(page);
     await page.goto("/create");
     await connectWallet(page);
-    await page.getByLabel("Token name").fill("Graduated Task 6");
-    await page.getByLabel("Symbol").fill("GR6");
+    await page.getByLabel("Name").fill("Graduated Task 6");
+    await page.getByLabel("Ticker").fill("GR6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
     const launchStatus = page.getByRole("status").last();
@@ -575,8 +575,8 @@ test.describe("Task 6 Anvil transaction gate", () => {
     const snapshot = ((await snapshotResponse.json()) as { result: string }).result;
     await page.goto("/create");
     await connectWallet(page);
-    await page.getByLabel("Token name").fill("Reorg Task 6");
-    await page.getByLabel("Symbol").fill("RG6");
+    await page.getByLabel("Name").fill("Reorg Task 6");
+    await page.getByLabel("Ticker").fill("RG6");
     await page.getByRole("button", { name: "Review launch" }).click();
     await page.getByRole("button", { name: "Sign launch" }).click();
     const status = page.getByRole("status").last();
