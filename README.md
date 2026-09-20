@@ -727,6 +727,7 @@ do not infer USD prices from a selected source when no runtime adapter has been 
 | [Web client plan](docs/plans/2026-09-09-web-client.md)                             | Web route, accessibility, browser, and Anvil acceptance criteria                     |
 | [Audit and hardening plan](docs/plans/2026-09-11-full-codebase-audit-hardening.md) | Plan 5 scope, finding triage, and remediation closeout                               |
 | [Testnet deployment runbook](docs/runbooks/robinhood-testnet-deployment.md)        | Testnet dependency and Launchpad manifest evidence path                              |
+| [Testnet user journey](docs/runbooks/robinhood-testnet-user-journey.md)             | Wallet setup, faucet funding, first launch/trade, graduation, and acceptance evidence |
 | [RPC probe](docs/runbooks/robinhood-rpc-probe.md)                                  | Recorded read-only endpoint/finality/log-capacity observations                       |
 | [Web release runbook](docs/runbooks/web-release.md)                                | Public web configuration, CSP, release, browser, and rollback checks                 |
 | [Production readiness runbook](docs/runbooks/production-readiness.md)              | Human-owned production inputs, governance, audit, health, and release approval       |
